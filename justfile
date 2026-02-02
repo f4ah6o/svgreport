@@ -49,13 +49,32 @@ run-and-open: run-simple
 run-and-open-mac: run-simple
     open out/2026-02-02T10_00_00+09_00__INV-0001/index.html
 
-# リント
+# 型チェック（TypeScript）
+typecheck:
+    pnpm typecheck
+
+# リント（oxlint）
 lint:
-    pnpm run lint
+    pnpm lint
+
+# リント自動修正
+lint-fix:
+    pnpm lint:fix
+
+# フォーマット（oxc format）
+format:
+    pnpm format
+
+# フォーマットチェック
+format-check:
+    pnpm format:check
+
+# 品質チェック（全て）
+check: typecheck lint format-check
 
 # テスト（未実装）
 test:
-    pnpm run test
+    pnpm test
 
 # 完全リセット
 @reset: clean
