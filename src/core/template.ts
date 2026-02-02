@@ -1,8 +1,6 @@
 // core/template.ts
 // Template.json validation and loader with AJV
 
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import type {
   TemplateConfig,
   PageConfig,
@@ -11,14 +9,13 @@ import type {
   TemplateRef,
 } from '../types/index.js';
 import { SVGReportError } from '../types/index.js';
-import { createRequire } from 'module';
+import { getTemplateValidator } from './schema-registry.js';
 
-const require = createRequire(import.meta.url);
-const templateSchema = require('../../svgreport-template/v0.1.schema.json');
+const validateTemplate = getTemplateValidator();
 
-const ajv = new Ajv({ strict: true });
-addFormats(ajv);
-const validateTemplate = ajv.compile(templateSchema);
+if (!validateTemplate) {
+  throw new Error('Failed to compile template validator');
+}
 
 /**
  * Parse and validate template.json
@@ -36,10 +33,10 @@ export function parseTemplate(content: string | Buffer): TemplateConfig {
     );
   }
 
-  const valid = validateTemplate(json);
+  const valid = validateTemplate!(json);
 
   if (!valid) {
-    const errors = validateTemplate.errors ?? [];
+    const errors = validateTemplate!.errors ?? [];
     const reasons = errors.map(e => `${e.instancePath || 'root'}: ${e.message}`).join('; ');
     throw new SVGReportError(
       'Template validation failed',

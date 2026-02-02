@@ -1,18 +1,15 @@
 // core/manifest.ts
 // Job manifest validation and loader with AJV
 
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import type { JobManifest, TemplateRef, InputSpec } from '../types/index.js';
 import { SVGReportError } from '../types/index.js';
-import { createRequire } from 'module';
+import { getManifestValidator } from './schema-registry.js';
 
-const require = createRequire(import.meta.url);
-const manifestSchema = require('../../svgreport-job/v0.1.schema.json');
+const validateManifest = getManifestValidator();
 
-const ajv = new Ajv({ strict: true });
-addFormats(ajv);
-const validateManifest = ajv.compile(manifestSchema);
+if (!validateManifest) {
+  throw new Error('Failed to compile manifest validator');
+}
 
 /**
  * Parse and validate manifest.json
@@ -30,10 +27,10 @@ export function parseManifest(content: string | Buffer): JobManifest {
     );
   }
 
-  const valid = validateManifest(json);
+  const valid = validateManifest!(json);
 
   if (!valid) {
-    const errors = validateManifest.errors ?? [];
+    const errors = validateManifest!.errors ?? [];
     const reasons = errors.map(e => `${e.instancePath || 'root'}: ${e.message}`).join('; ');
     throw new SVGReportError(
       'Manifest validation failed',

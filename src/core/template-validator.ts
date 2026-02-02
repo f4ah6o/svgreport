@@ -1,20 +1,17 @@
 // core/template-validator.ts
 // Template validation: schema validation and SVG reference integrity checks
 
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import { DOMParser } from '@xmldom/xmldom';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { createRequire } from 'module';
 import type { TemplateConfig } from '../types/index.js';
+import { getTemplateValidator } from './schema-registry.js';
 
-const require = createRequire(import.meta.url);
-const templateSchema = require('../../svgreport-template/v0.1.schema.json');
+const validateTemplate = getTemplateValidator();
 
-const ajv = new Ajv({ strict: true, allErrors: true });
-addFormats(ajv);
-const validateTemplate = ajv.compile(templateSchema);
+if (!validateTemplate) {
+  throw new Error('Failed to compile template validator');
+}
 
 export interface ValidationResult {
   valid: boolean;
@@ -61,11 +58,11 @@ export async function validateTemplateFull(
     return result;
   }
 
-  const valid = validateTemplate(config);
+  const valid = validateTemplate!(config);
 
-  if (!valid && validateTemplate.errors) {
+  if (!valid && validateTemplate!.errors) {
     result.valid = false;
-    for (const err of validateTemplate.errors) {
+    for (const err of validateTemplate!.errors) {
       result.schemaErrors.push({
         path: err.instancePath || 'root',
         message: err.message || 'Validation error',
@@ -264,13 +261,13 @@ export function validateTemplateSchema(content: string): {
 } {
   try {
     const config = JSON.parse(content);
-    const valid = validateTemplate(config);
+    const valid = validateTemplate!(config);
 
     if (valid) {
       return { valid: true, errors: [] };
     }
 
-    const errors = (validateTemplate.errors || []).map(
+    const errors = (validateTemplate!.errors || []).map(
       e => `${e.instancePath || 'root'}: ${e.message}`
     );
 
