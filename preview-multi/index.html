@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview: invoice vv2</title>
+  <style>
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: #f0f0f0;
+    padding: 20px;
+  }
+  
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto 20px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    page-break-after: always;
+    page-break-inside: avoid;
+  }
+  
+  .page:last-child {
+    page-break-after: auto;
+  }
+  
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  
+  @media print {
+    body {
+      background: white;
+      padding: 0;
+    }
+    
+    .page {
+      width: 100%;
+      margin: 0;
+      box-shadow: none;
+      page-break-after: always;
+    }
+    
+    .no-print {
+      display: none !important;
+    }
+  }
+  
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  </style>
+</head>
+<body>
+
+  <div class="no-print" style="text-align: center; margin: 20px;">
+    <button onclick="window.print()" style="
+      padding: 12px 24px;
+      font-size: 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    ">
+      印刷
+    </button>
+    <span style="margin-left: 10px; color: #666;">
+      Ctrl+P (Windows) / ⌘+P (Mac)
+    </span>
+  </div>
+
+  <div class="page" data-page="1" data-total-pages="4">
+    <?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 595.28 841.89">
+  <defs>
+    <style>
+      .title { font-size: 24px; font-weight: bold; }
+      .label { font-size: 10px; }
+      .value { font-size: 12px; }
+      .header { font-size: 11px; font-weight: bold; }
+      .cell { font-size: 10px; }
+      .total { font-size: 14px; font-weight: bold; }
+      .page { font-size: 9px; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="595.28" height="841.89" fill="white"/>
+  
+  <!-- Title -->
+  <text x="297.64" y="50" text-anchor="middle" class="title">請求書</text>
+  
+  <!-- Customer Info -->
+  <text x="50" y="100" class="label">請求先</text>
+  <text id="customer_name" x="50" y="120" class="value">株式会社サンプル商事</text>
+  <text id="customer_address" x="50" y="140" class="value">東京都新宿区西新宿1-1-1 サンプルビル10F</text>
+  
+  <!-- Invoice Info -->
+  <text x="400" y="100" class="label">請求書番号</text>
+  <text id="invoice_no" x="500" y="100" text-anchor="end" class="value">INV-9306</text>
+  
+  <text x="400" y="120" class="label">発行日</text>
+  <text id="issue_date" x="500" y="120" text-anchor="end" class="value">2026年2月2日</text>
+  
+  <text x="400" y="140" class="label">支払期限</text>
+  <text id="due_date" x="500" y="140" text-anchor="end" class="value">2026年2月2日</text>
+  
+  <!-- Table Header -->
+  <g transform="translate(50, 200)">
+    <rect width="495.28" height="20" fill="#f0f0f0" stroke="#000" stroke-width="0.5"/>
+    <text x="25" y="14" text-anchor="middle" class="header">No</text>
+    <text x="150" y="14" text-anchor="middle" class="header">品名</text>
+    <text x="320" y="14" text-anchor="middle" class="header">数量</text>
+    <text x="370" y="14" text-anchor="middle" class="header">単位</text>
+    <text x="430" y="14" text-anchor="middle" class="header">単価</text>
+    <text x="470" y="14" text-anchor="end" class="header">金額</text>
+  </g>
+  
+  <!-- Table Body Container -->
+  <g id="table-body" transform="translate(50, 220)">
+    <!-- Row Template -->
+    <g id="row-template" transform="translate(0, 0)">
+      <rect width="495.28" height="22.68" fill="none" stroke="#ccc" stroke-width="0.25"/>
+      <text id="item_no" x="25" y="14" text-anchor="middle" class="cell">1</text>
+      <text id="item_name" x="60" y="14" class="cell">商品名</text>
+      <text id="item_qty" x="320" y="14" text-anchor="right" class="cell">1</text>
+      <text id="item_unit" x="370" y="14" text-anchor="middle" class="cell">個</text>
+      <text id="item_price" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
+      <text id="item_amount" x="470" y="14" text-anchor="end" class="cell">¥1,000</text>
+    </g>
+  </g>
+  
+  <!-- Totals -->
+  <g transform="translate(350, 500)">
+    <text x="0" y="0" class="label">小計</text>
+    <text id="subtotal" x="145" y="0" text-anchor="end" class="value">¥993,264</text>
+    
+    <text x="0" y="25" class="label">消費税(10%)</text>
+    <text id="tax" x="145" y="25" text-anchor="end" class="value">¥508,322</text>
+    
+    <rect x="-10" y="40" width="165" height="30" fill="none" stroke="#000" stroke-width="1"/>
+    <text x="0" y="60" class="label">合計</text>
+    <text id="total" x="145" y="60" text-anchor="end" class="total">¥237,022</text>
+  </g>
+  
+  <!-- Page Number -->
+  <text id="page_no" x="297.64" y="820" text-anchor="middle" class="page">1/4</text>
+</svg>
+  </div>
+  <div class="page" data-page="2" data-total-pages="4">
+    <?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 595.28 841.89">
+  <defs>
+    <style>
+      .label { font-size: 10px; }
+      .value { font-size: 12px; }
+      .header { font-size: 11px; font-weight: bold; }
+      .cell { font-size: 10px; }
+      .page { font-size: 9px; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="595.28" height="841.89" fill="white"/>
+  
+  <!-- Header (minimal) -->
+  <text x="50" y="40" class="label">請求書</text>
+  <text id="customer_name" x="100" y="40" class="value">株式会社サンプル商事</text>
+  <text id="invoice_no" x="450" y="40" text-anchor="end" class="value">INV-9306</text>
+  
+  <!-- Table Header -->
+  <g transform="translate(50, 70)">
+    <rect width="495.28" height="20" fill="#f0f0f0" stroke="#000" stroke-width="0.5"/>
+    <text x="25" y="14" text-anchor="middle" class="header">No</text>
+    <text x="150" y="14" text-anchor="middle" class="header">品名</text>
+    <text x="320" y="14" text-anchor="middle" class="header">数量</text>
+    <text x="370" y="14" text-anchor="middle" class="header">単位</text>
+    <text x="430" y="14" text-anchor="middle" class="header">単価</text>
+    <text x="470" y="14" text-anchor="end" class="header">金額</text>
+  </g>
+  
+  <!-- Table Body Container -->
+  <g id="table-body" transform="translate(50, 90)">
+    <!-- Row Template -->
+    <g id="row-template" transform="translate(0, 0)">
+      <rect width="495.28" height="22.68" fill="none" stroke="#ccc" stroke-width="0.25"/>
+      <text id="item_no" x="25" y="14" text-anchor="middle" class="cell">1</text>
+      <text id="item_name" x="60" y="14" class="cell">商品名</text>
+      <text id="item_qty" x="320" y="14" text-anchor="right" class="cell">1</text>
+      <text id="item_unit" x="370" y="14" text-anchor="middle" class="cell">個</text>
+      <text id="item_price" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
+      <text id="item_amount" x="470" y="14" text-anchor="end" class="cell">¥1,000</text>
+    </g>
+  </g>
+  
+  <!-- Page Number -->
+  <text id="page_no" x="297.64" y="820" text-anchor="middle" class="page">2/4</text>
+</svg>
+  </div>
+  <div class="page" data-page="3" data-total-pages="4">
+    <?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 595.28 841.89">
+  <defs>
+    <style>
+      .label { font-size: 10px; }
+      .value { font-size: 12px; }
+      .header { font-size: 11px; font-weight: bold; }
+      .cell { font-size: 10px; }
+      .page { font-size: 9px; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="595.28" height="841.89" fill="white"/>
+  
+  <!-- Header (minimal) -->
+  <text x="50" y="40" class="label">請求書</text>
+  <text id="customer_name" x="100" y="40" class="value">株式会社サンプル商事</text>
+  <text id="invoice_no" x="450" y="40" text-anchor="end" class="value">INV-9306</text>
+  
+  <!-- Table Header -->
+  <g transform="translate(50, 70)">
+    <rect width="495.28" height="20" fill="#f0f0f0" stroke="#000" stroke-width="0.5"/>
+    <text x="25" y="14" text-anchor="middle" class="header">No</text>
+    <text x="150" y="14" text-anchor="middle" class="header">品名</text>
+    <text x="320" y="14" text-anchor="middle" class="header">数量</text>
+    <text x="370" y="14" text-anchor="middle" class="header">単位</text>
+    <text x="430" y="14" text-anchor="middle" class="header">単価</text>
+    <text x="470" y="14" text-anchor="end" class="header">金額</text>
+  </g>
+  
+  <!-- Table Body Container -->
+  <g id="table-body" transform="translate(50, 90)">
+    <!-- Row Template -->
+    <g id="row-template" transform="translate(0, 0)">
+      <rect width="495.28" height="22.68" fill="none" stroke="#ccc" stroke-width="0.25"/>
+      <text id="item_no" x="25" y="14" text-anchor="middle" class="cell">1</text>
+      <text id="item_name" x="60" y="14" class="cell">商品名</text>
+      <text id="item_qty" x="320" y="14" text-anchor="right" class="cell">1</text>
+      <text id="item_unit" x="370" y="14" text-anchor="middle" class="cell">個</text>
+      <text id="item_price" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
+      <text id="item_amount" x="470" y="14" text-anchor="end" class="cell">¥1,000</text>
+    </g>
+  </g>
+  
+  <!-- Page Number -->
+  <text id="page_no" x="297.64" y="820" text-anchor="middle" class="page">3/4</text>
+</svg>
+  </div>
+  <div class="page" data-page="4" data-total-pages="4">
+    <?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 595.28 841.89">
+  <defs>
+    <style>
+      .label { font-size: 10px; }
+      .value { font-size: 12px; }
+      .header { font-size: 11px; font-weight: bold; }
+      .cell { font-size: 10px; }
+      .page { font-size: 9px; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="595.28" height="841.89" fill="white"/>
+  
+  <!-- Header (minimal) -->
+  <text x="50" y="40" class="label">請求書</text>
+  <text id="customer_name" x="100" y="40" class="value">株式会社サンプル商事</text>
+  <text id="invoice_no" x="450" y="40" text-anchor="end" class="value">INV-9306</text>
+  
+  <!-- Table Header -->
+  <g transform="translate(50, 70)">
+    <rect width="495.28" height="20" fill="#f0f0f0" stroke="#000" stroke-width="0.5"/>
+    <text x="25" y="14" text-anchor="middle" class="header">No</text>
+    <text x="150" y="14" text-anchor="middle" class="header">品名</text>
+    <text x="320" y="14" text-anchor="middle" class="header">数量</text>
+    <text x="370" y="14" text-anchor="middle" class="header">単位</text>
+    <text x="430" y="14" text-anchor="middle" class="header">単価</text>
+    <text x="470" y="14" text-anchor="end" class="header">金額</text>
+  </g>
+  
+  <!-- Table Body Container -->
+  <g id="table-body" transform="translate(50, 90)">
+    <!-- Row Template -->
+    <g id="row-template" transform="translate(0, 0)">
+      <rect width="495.28" height="22.68" fill="none" stroke="#ccc" stroke-width="0.25"/>
+      <text id="item_no" x="25" y="14" text-anchor="middle" class="cell">1</text>
+      <text id="item_name" x="60" y="14" class="cell">商品名</text>
+      <text id="item_qty" x="320" y="14" text-anchor="right" class="cell">1</text>
+      <text id="item_unit" x="370" y="14" text-anchor="middle" class="cell">個</text>
+      <text id="item_price" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
+      <text id="item_amount" x="470" y="14" text-anchor="end" class="cell">¥1,000</text>
+    </g>
+  </g>
+  
+  <!-- Page Number -->
+  <text id="page_no" x="297.64" y="820" text-anchor="middle" class="page">4/4</text>
+</svg>
+  </div>
+</body>
+</html>

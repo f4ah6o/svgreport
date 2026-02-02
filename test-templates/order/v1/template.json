@@ -1,0 +1,46 @@
+{
+  "schema": "svgreport-template/v0.1",
+  "template": {
+    "id": "order",
+    "version": "v1"
+  },
+  "pages": [
+    {
+      "id": "first",
+      "svg": "page-1.svg",
+      "kind": "first",
+      "tables": [
+        {
+          "source": "items",
+          "row_group_id": "row-template",
+          "row_height_mm": 8,
+          "rows_per_page": 10,
+          "cells": []
+        }
+      ],
+      "page_number": {
+        "svg_id": "page_no",
+        "format": "{current}/{total}"
+      }
+    },
+    {
+      "id": "repeat-1",
+      "svg": "page-follow.svg",
+      "kind": "repeat",
+      "tables": [
+        {
+          "source": "items",
+          "row_group_id": "row-template",
+          "row_height_mm": 8,
+          "rows_per_page": 15,
+          "cells": []
+        }
+      ],
+      "page_number": {
+        "svg_id": "page_no",
+        "format": "{current}/{total}"
+      }
+    }
+  ],
+  "fields": []
+}

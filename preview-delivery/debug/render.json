@@ -1,0 +1,12 @@
+{
+  "jobId": "preview-delivery-slip-1770009120994",
+  "templateId": "delivery-slip",
+  "templateVersion": "v1",
+  "totalPages": 1,
+  "pages": [
+    {
+      "pageNumber": 1,
+      "svgLength": 2857
+    }
+  ]
+}

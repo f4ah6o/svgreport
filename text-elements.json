@@ -1,0 +1,372 @@
+{
+  "file": "templates/invoice/v2/page-1.svg",
+  "pageSize": {
+    "width": 210,
+    "height": 297,
+    "unit": "mm"
+  },
+  "elements": [
+    {
+      "index": 1,
+      "id": "",
+      "suggestedId": "text_0_0",
+      "content": "小計",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 2,
+      "id": "subtotal",
+      "suggestedId": "100000",
+      "content": "¥100,000",
+      "position": {
+        "x": 145,
+        "y": 0
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 3,
+      "id": "",
+      "suggestedId": "text_25_14",
+      "content": "No",
+      "position": {
+        "x": 25,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 4,
+      "id": "item_no",
+      "suggestedId": "text_25_14",
+      "content": "1",
+      "position": {
+        "x": 25,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": "",
+      "parentGroup": "row-template"
+    },
+    {
+      "index": 5,
+      "id": "item_name",
+      "suggestedId": "text_60_14",
+      "content": "商品名",
+      "position": {
+        "x": 60,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": "",
+      "parentGroup": "row-template"
+    },
+    {
+      "index": 6,
+      "id": "",
+      "suggestedId": "text_150_14",
+      "content": "品名",
+      "position": {
+        "x": 150,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 7,
+      "id": "",
+      "suggestedId": "text_320_14",
+      "content": "数量",
+      "position": {
+        "x": 320,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 8,
+      "id": "item_qty",
+      "suggestedId": "text_320_14",
+      "content": "1",
+      "position": {
+        "x": 320,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": "",
+      "parentGroup": "row-template"
+    },
+    {
+      "index": 9,
+      "id": "",
+      "suggestedId": "text_370_14",
+      "content": "単位",
+      "position": {
+        "x": 370,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 10,
+      "id": "item_unit",
+      "suggestedId": "text_370_14",
+      "content": "個",
+      "position": {
+        "x": 370,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": "",
+      "parentGroup": "row-template"
+    },
+    {
+      "index": 11,
+      "id": "",
+      "suggestedId": "text_430_14",
+      "content": "単価",
+      "position": {
+        "x": 430,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 12,
+      "id": "item_price",
+      "suggestedId": "1000",
+      "content": "¥1,000",
+      "position": {
+        "x": 430,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": "",
+      "parentGroup": "row-template"
+    },
+    {
+      "index": 13,
+      "id": "",
+      "suggestedId": "text_470_14",
+      "content": "金額",
+      "position": {
+        "x": 470,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 14,
+      "id": "item_amount",
+      "suggestedId": "1000",
+      "content": "¥1,000",
+      "position": {
+        "x": 470,
+        "y": 14
+      },
+      "fontSize": null,
+      "fontFamily": "",
+      "parentGroup": "row-template"
+    },
+    {
+      "index": 15,
+      "id": "",
+      "suggestedId": "10",
+      "content": "消費税(10%)",
+      "position": {
+        "x": 0,
+        "y": 25
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 16,
+      "id": "tax",
+      "suggestedId": "10000",
+      "content": "¥10,000",
+      "position": {
+        "x": 145,
+        "y": 25
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 17,
+      "id": "",
+      "suggestedId": "text_298_50",
+      "content": "請求書",
+      "position": {
+        "x": 297.64,
+        "y": 50
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 18,
+      "id": "",
+      "suggestedId": "text_0_60",
+      "content": "合計",
+      "position": {
+        "x": 0,
+        "y": 60
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 19,
+      "id": "total",
+      "suggestedId": "110000",
+      "content": "¥110,000",
+      "position": {
+        "x": 145,
+        "y": 60
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 20,
+      "id": "",
+      "suggestedId": "text_50_100",
+      "content": "請求先",
+      "position": {
+        "x": 50,
+        "y": 100
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 21,
+      "id": "",
+      "suggestedId": "text_400_100",
+      "content": "請求書番号",
+      "position": {
+        "x": 400,
+        "y": 100
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 22,
+      "id": "invoice_no",
+      "suggestedId": "inv-0001",
+      "content": "INV-0001",
+      "position": {
+        "x": 500,
+        "y": 100
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 23,
+      "id": "customer_name",
+      "suggestedId": "text_50_120",
+      "content": "株式会社サンプル",
+      "position": {
+        "x": 50,
+        "y": 120
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 24,
+      "id": "",
+      "suggestedId": "text_400_120",
+      "content": "発行日",
+      "position": {
+        "x": 400,
+        "y": 120
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 25,
+      "id": "issue_date",
+      "suggestedId": "202622",
+      "content": "2026年2月2日",
+      "position": {
+        "x": 500,
+        "y": 120
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 26,
+      "id": "customer_address",
+      "suggestedId": "text_50_140",
+      "content": "東京都新宿区...",
+      "position": {
+        "x": 50,
+        "y": 140
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 27,
+      "id": "",
+      "suggestedId": "text_400_140",
+      "content": "支払期限",
+      "position": {
+        "x": 400,
+        "y": 140
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 28,
+      "id": "due_date",
+      "suggestedId": "202632",
+      "content": "2026年3月2日",
+      "position": {
+        "x": 500,
+        "y": 140
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    },
+    {
+      "index": 29,
+      "id": "page_no",
+      "suggestedId": "11",
+      "content": "1/1",
+      "position": {
+        "x": 297.64,
+        "y": 820
+      },
+      "fontSize": null,
+      "fontFamily": ""
+    }
+  ],
+  "statistics": {
+    "total": 29,
+    "withId": 15,
+    "withoutId": 14,
+    "pathText": 0,
+    "averageFontSize": null
+  },
+  "warnings": []
+}

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 595.28 841.89">
+  <defs>
+    <style>
+      .label { font-size: 10px; }
+      .value { font-size: 12px; }
+      .header { font-size: 11px; font-weight: bold; }
+      .cell { font-size: 10px; }
+      .page { font-size: 9px; }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="595.28" height="841.89" fill="white"/>
+  
+  <!-- Header (minimal) -->
+  <text x="50" y="40" class="label">請求書</text>
+  <text id="customer_name" x="100" y="40" class="value">株式会社サンプル商事</text>
+  <text id="invoice_no" x="450" y="40" text-anchor="end" class="value">INV-9306</text>
+  
+  <!-- Table Header -->
+  <g transform="translate(50, 70)">
+    <rect width="495.28" height="20" fill="#f0f0f0" stroke="#000" stroke-width="0.5"/>
+    <text x="25" y="14" text-anchor="middle" class="header">No</text>
+    <text x="150" y="14" text-anchor="middle" class="header">品名</text>
+    <text x="320" y="14" text-anchor="middle" class="header">数量</text>
+    <text x="370" y="14" text-anchor="middle" class="header">単位</text>
+    <text x="430" y="14" text-anchor="middle" class="header">単価</text>
+    <text x="470" y="14" text-anchor="end" class="header">金額</text>
+  </g>
+  
+  <!-- Table Body Container -->
+  <g id="table-body" transform="translate(50, 90)">
+    <!-- Row Template -->
+    <g id="row-template" transform="translate(0, 0)">
+      <rect width="495.28" height="22.68" fill="none" stroke="#ccc" stroke-width="0.25"/>
+      <text id="item_no" x="25" y="14" text-anchor="middle" class="cell">1</text>
+      <text id="item_name" x="60" y="14" class="cell">商品名</text>
+      <text id="item_qty" x="320" y="14" text-anchor="right" class="cell">1</text>
+      <text id="item_unit" x="370" y="14" text-anchor="middle" class="cell">個</text>
+      <text id="item_price" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
+      <text id="item_amount" x="470" y="14" text-anchor="end" class="cell">¥1,000</text>
+    </g>
+  </g>
+  
+  <!-- Page Number -->
+  <text id="page_no" x="297.64" y="820" text-anchor="middle" class="page">4/4</text>
+</svg>

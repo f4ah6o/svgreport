@@ -1,0 +1,78 @@
+{
+  "schema": "svgreport-template/v0.1",
+  "template": {
+    "id": "delivery-slip",
+    "version": "v1"
+  },
+  "pages": [
+    {
+      "id": "first",
+      "svg": "page-1.svg",
+      "kind": "first",
+      "tables": [
+        {
+          "source": "items",
+          "row_group_id": "row-template",
+          "row_height_mm": 8,
+          "rows_per_page": 10,
+          "cells": [
+            {
+              "svg_id": "item_no",
+              "column": "no",
+              "align": "center"
+            },
+            {
+              "svg_id": "item_name",
+              "column": "name",
+              "fit": "shrink"
+            },
+            {
+              "svg_id": "item_qty",
+              "column": "qty",
+              "align": "right"
+            }
+          ]
+        }
+      ],
+      "page_number": {
+        "svg_id": "page_no",
+        "format": "{current}/{total}"
+      }
+    },
+    {
+      "id": "repeat-1",
+      "svg": "page-follow.svg",
+      "kind": "repeat",
+      "tables": [
+        {
+          "source": "items",
+          "row_group_id": "row-template",
+          "row_height_mm": 8,
+          "rows_per_page": 15,
+          "cells": [
+            {
+              "svg_id": "item_no",
+              "column": "no",
+              "align": "center"
+            },
+            {
+              "svg_id": "item_name",
+              "column": "name",
+              "fit": "shrink"
+            },
+            {
+              "svg_id": "item_qty",
+              "column": "qty",
+              "align": "right"
+            }
+          ]
+        }
+      ],
+      "page_number": {
+        "svg_id": "page_no",
+        "format": "{current}/{total}"
+      }
+    }
+  ],
+  "fields": []
+}

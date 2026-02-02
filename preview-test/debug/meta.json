@@ -1,0 +1,10 @@
+{
+  "customer.name": "株式会社サンプル商事",
+  "customer.address": "東京都新宿区西新宿1-1-1 サンプルビル10F",
+  "invoice_no": "INV-1083",
+  "issue_date": "2026-02-02",
+  "due_date": "2026-02-02",
+  "subtotal": "135665",
+  "tax": "601863",
+  "total": "787567"
+}

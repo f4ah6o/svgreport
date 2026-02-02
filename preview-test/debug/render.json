@@ -1,0 +1,12 @@
+{
+  "jobId": "preview-invoice-1770008793508",
+  "templateId": "invoice",
+  "templateVersion": "v2",
+  "totalPages": 1,
+  "pages": [
+    {
+      "pageNumber": 1,
+      "svgLength": 3364
+    }
+  ]
+}
