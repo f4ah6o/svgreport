@@ -14,3 +14,6 @@ export * from './core/zip-handler.js';
 export * from './core/pdf-converter.js';
 export * from './core/svg-normalizer.js';
 export * from './core/template-validator.js';
+export * from './core/preview-generator.js';
+export * from './core/text-inspector.js';
+export * from './core/template-generator.js';

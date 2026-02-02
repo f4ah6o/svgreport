@@ -14,6 +14,9 @@ import { SVGReportError } from './types/index.js';
 import { convertPdfToSvg, printQualityReport } from './core/pdf-converter.js';
 import { normalizeSvg, normalizeSvgBatch } from './core/svg-normalizer.js';
 import { validateTemplateFull, printValidationReport } from './core/template-validator.js';
+import { generatePreview } from './core/preview-generator.js';
+import { extractTextElements, analyzeTemplateSvgs, printTextReport, exportTextElementsJson } from './core/text-inspector.js';
+import { generateTemplate } from './core/template-generator.js';
 
 const program = new Command();
 
@@ -228,6 +231,119 @@ program
       printValidationReport(result);
 
       process.exit(result.valid ? 0 : 1);
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+// preview command: Generate preview with dummy data
+program
+  .command('preview')
+  .description('Generate preview HTML/SVG from template with sample data')
+  .argument('<template>', 'Template directory (contains template.json)')
+  .option('-o, --output <path>', 'Output directory', './preview-out')
+  .option('-s, --sample <type>', 'Sample data type (minimal, realistic, multi-page)', 'realistic')
+  .option('--no-debug', 'Skip debug output')
+  .action(async (templateDir, options) => {
+    try {
+      console.log(`Generating preview for template: ${templateDir}`);
+      console.log(`Sample data: ${options.sample}`);
+
+      const result = await generatePreview(templateDir, {
+        sampleData: options.sample,
+        outputDir: options.output,
+        includeDebug: options.debug,
+      });
+
+      console.log('\n=== Preview Generation Complete ===');
+      console.log(`Template: ${result.templateId} ${result.templateVersion}`);
+      console.log(`Pages: ${result.pageCount}`);
+      console.log(`Data: ${result.dataSummary.metaFields} meta fields, ${result.dataSummary.itemCount} items`);
+      console.log(`\n✓ HTML: ${result.htmlPath}`);
+      console.log(`✓ SVG Pages: ${path.join(result.outputDir, 'pages')}/`);
+      if (options.debug) {
+        console.log(`✓ Debug: ${path.join(result.outputDir, 'debug')}/`);
+      }
+      console.log('\nOpen the HTML in a browser:');
+      console.log(`  ${result.htmlPath}`);
+      console.log('====================================\n');
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+// inspect-text command: Extract and analyze text elements
+program
+  .command('inspect-text')
+  .description('Extract and analyze text elements from SVG for template editing')
+  .argument('<path>', 'SVG file or template directory')
+  .option('-j, --json <path>', 'Export to JSON file')
+  .action(async (inputPath, options) => {
+    try {
+      const stats = await fs.stat(inputPath);
+
+      if (stats.isDirectory()) {
+        // Analyze all SVG files in directory
+        console.log(`Analyzing SVG files in: ${inputPath}`);
+        const analyses = await analyzeTemplateSvgs(inputPath);
+        
+        for (const analysis of analyses) {
+          printTextReport(analysis);
+        }
+
+        console.log(`\n✓ Analyzed ${analyses.length} SVG files`);
+      } else {
+        // Analyze single SVG file
+        console.log(`Analyzing SVG: ${inputPath}`);
+        const analysis = await extractTextElements(inputPath);
+        printTextReport(analysis);
+
+        // Export to JSON if requested
+        if (options.json) {
+          await exportTextElementsJson(inputPath, options.json);
+          console.log(`✓ Exported to JSON: ${options.json}`);
+        }
+      }
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+// generate command: Create new template package
+program
+  .command('generate')
+  .description('Generate new template package structure')
+  .argument('<id>', 'Template ID (alphanumeric, hyphens, underscores)')
+  .argument('<version>', 'Template version (e.g., v1, v2.0)')
+  .option('-d, --dir <path>', 'Base templates directory', './templates')
+  .option('-p, --pages <types>', 'Page types (first,repeat)', 'first,repeat')
+  .action(async (templateId, version, options) => {
+    try {
+      const pageTypes = options.pages.split(',') as ('first' | 'repeat')[];
+      
+      console.log(`Generating template: ${templateId} v${version}`);
+      console.log(`Location: ${options.dir}`);
+      console.log(`Pages: ${pageTypes.join(', ')}`);
+
+      const result = await generateTemplate({
+        templateId,
+        version,
+        baseDir: options.dir,
+        pageTypes,
+      });
+
+      console.log('\n=== Template Generated ===');
+      console.log(`Directory: ${result.templateDir}`);
+      console.log('\nFiles created:');
+      for (const file of result.files) {
+        console.log(`  ✓ ${path.basename(file)}`);
+      }
+      console.log('\nNext steps:');
+      console.log(`  1. Edit SVG files: ${path.join(result.templateDir, '*.svg')}`);
+      console.log(`  2. Add field bindings to: ${path.join(result.templateDir, 'template.json')}`);
+      console.log(`  3. Validate: svgpaper validate ${result.templateDir}`);
+      console.log(`  4. Preview: svgpaper preview ${result.templateDir}`);
+      console.log('=========================\n');
     } catch (error) {
       handleError(error);
     }
