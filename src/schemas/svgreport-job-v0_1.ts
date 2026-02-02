@@ -1,0 +1,77 @@
+// schemas/svgreport-job-v0_1.ts
+// SVG Report Job Manifest Schema v0.1 as inline TypeScript constant
+
+export const SVGREPORT_JOB_V0_1_SCHEMA = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  $id: 'svgreport-job/v0.1.schema.json',
+  title: 'SVG Report Job Manifest v0.1',
+  type: 'object',
+  required: ['schema', 'job_id', 'template', 'encoding', 'inputs'],
+  properties: {
+    schema: {
+      const: 'svgreport-job/v0.1',
+    },
+    job_id: {
+      type: 'string',
+      minLength: 1,
+      description: 'Job identifier (unique per issuance).',
+    },
+    template: {
+      type: 'object',
+      required: ['id', 'version'],
+      properties: {
+        id: { type: 'string', minLength: 1 },
+        version: { type: 'string', minLength: 1 },
+      },
+      additionalProperties: false,
+    },
+    encoding: {
+      type: 'string',
+      enum: ['utf-8'],
+      description: 'CSV encoding. v0.1 fixed to utf-8.',
+    },
+    locale: {
+      type: 'string',
+      default: 'ja-JP',
+      description: 'Locale hint for formatting.',
+    },
+    inputs: {
+      type: 'object',
+      minProperties: 1,
+      additionalProperties: {
+        $ref: '#/$defs/input',
+      },
+      description: 'Data sources. Keys become source names (e.g., meta, items, payments).',
+    },
+  },
+  additionalProperties: false,
+  $defs: {
+    input: {
+      type: 'object',
+      required: ['type', 'path', 'kind'],
+      properties: {
+        type: { const: 'csv' },
+        path: {
+          type: 'string',
+          minLength: 1,
+          description: 'Path inside the zip (e.g., meta.csv, items.csv).',
+        },
+        kind: {
+          type: 'string',
+          enum: ['kv', 'table'],
+          description: 'kv: key,value CSV. table: header row + records CSV.',
+        },
+        options: {
+          type: 'object',
+          properties: {
+            has_header: { type: 'boolean', default: true },
+            delimiter: { type: 'string', default: ',' },
+            quote: { type: 'string', default: '"' },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+} as const;
