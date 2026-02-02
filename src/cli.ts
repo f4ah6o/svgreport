@@ -11,6 +11,9 @@ import { parseSvg } from './core/svg-engine.js';
 import { createRenderer } from './core/renderer.js';
 import { generateHtml, generateDebugJson } from './core/html-writer.js';
 import { SVGReportError } from './types/index.js';
+import { convertPdfToSvg, printQualityReport } from './core/pdf-converter.js';
+import { normalizeSvg, normalizeSvgBatch } from './core/svg-normalizer.js';
+import { validateTemplateFull, printValidationReport } from './core/template-validator.js';
 
 const program = new Command();
 
@@ -116,18 +119,132 @@ program
       console.log(`  ${htmlPath}`);
       
     } catch (error) {
-      if (error instanceof SVGReportError) {
-        console.error(`\nError: ${error.message}`);
-        if (error.path) console.error(`  Path: ${error.path}`);
-        if (error.reason) console.error(`  Reason: ${error.reason}`);
-      } else if (error instanceof Error) {
-        console.error(`\nError: ${error.message}`);
-        console.error(error.stack);
-      } else {
-        console.error('\nUnknown error:', error);
-      }
-      process.exit(1);
+      handleError(error);
     }
   });
+
+// convert command: PDF to SVG
+program
+  .command('convert')
+  .description('Convert PDF to SVG (pdf2svg/inkscape)')
+  .argument('<pdf>', 'Input PDF file')
+  .argument('<output>', 'Output directory')
+  .option('-e, --engine <engine>', 'Conversion engine (pdf2svg, inkscape, auto)', 'auto')
+  .option('-p, --prefix <prefix>', 'Output file prefix', 'page')
+  .action(async (pdfPath, outputDir, options) => {
+    try {
+      console.log(`Converting PDF: ${pdfPath}`);
+      console.log(`Output directory: ${outputDir}`);
+      console.log(`Engine: ${options.engine}`);
+
+      const result = await convertPdfToSvg(pdfPath, outputDir, {
+        engine: options.engine,
+        prefix: options.prefix,
+      });
+
+      printQualityReport(result);
+
+      if (result.quality.status === 'fail') {
+        process.exit(1);
+      }
+
+      console.log(`\n✓ Generated ${result.outputFiles.length} SVG files`);
+      for (const file of result.outputFiles) {
+        console.log(`  - ${file}`);
+      }
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+// normalize command: SVG normalization
+program
+  .command('normalize')
+  .description('Normalize SVG files (page size, transforms, cleanup)')
+  .argument('<input>', 'Input SVG file or directory')
+  .argument('<output>', 'Output file or directory')
+  .option('-s, --size <size>', 'Target page size (a4, a3)')
+  .option('--no-flatten', 'Skip transform flattening')
+  .option('--no-cleanup', 'Skip empty group/def removal')
+  .action(async (inputPath, outputPath, options) => {
+    try {
+      console.log(`Normalizing: ${inputPath}`);
+      console.log(`Output: ${outputPath}`);
+
+      const stats = await fs.stat(inputPath);
+
+      if (stats.isDirectory()) {
+        // Batch normalization
+        const results = await normalizeSvgBatch(inputPath, outputPath, {
+          pageSize: options.size,
+          flattenTransforms: options.flatten,
+          removeEmptyGroups: options.cleanup,
+          removeUnusedDefs: options.cleanup,
+        });
+
+        console.log(`\n✓ Normalized ${results.length} files`);
+        for (const result of results) {
+          console.log(`\n${path.basename(result.inputFile)}:`);
+          console.log(`  Changes: ${result.changes.length > 0 ? result.changes.join(', ') : 'None'}`);
+          if (result.warnings.length > 0) {
+            console.log(`  Warnings: ${result.warnings.join(', ')}`);
+          }
+          console.log(`  Metrics: ${result.metrics.widthMm.toFixed(1)}x${result.metrics.heightMm.toFixed(1)}mm, ${result.metrics.textElementCount} text elements`);
+        }
+      } else {
+        // Single file normalization
+        const result = await normalizeSvg(inputPath, outputPath, {
+          pageSize: options.size,
+          flattenTransforms: options.flatten,
+          removeEmptyGroups: options.cleanup,
+          removeUnusedDefs: options.cleanup,
+        });
+
+        console.log(`\n✓ Normalized: ${path.basename(result.inputFile)}`);
+        console.log(`  Changes: ${result.changes.length > 0 ? result.changes.join(', ') : 'None'}`);
+        if (result.warnings.length > 0) {
+          console.log(`  Warnings: ${result.warnings.join(', ')}`);
+        }
+        console.log(`  Output: ${result.outputFile}`);
+        console.log(`  Metrics: ${result.metrics.widthMm.toFixed(1)}x${result.metrics.heightMm.toFixed(1)}mm, ${result.metrics.textElementCount} text elements`);
+      }
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+// validate command: Template validation
+program
+  .command('validate')
+  .description('Validate template.json against schema and SVG references')
+  .argument('<template>', 'Template directory (contains template.json)')
+  .action(async (templateDir) => {
+    try {
+      const templateJsonPath = path.join(templateDir, 'template.json');
+      
+      console.log(`Validating template: ${templateJsonPath}`);
+
+      const result = await validateTemplateFull(templateJsonPath, templateDir);
+      printValidationReport(result);
+
+      process.exit(result.valid ? 0 : 1);
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+function handleError(error: unknown): void {
+  if (error instanceof SVGReportError) {
+    console.error(`\nError: ${error.message}`);
+    if (error.path) console.error(`  Path: ${error.path}`);
+    if (error.reason) console.error(`  Reason: ${error.reason}`);
+  } else if (error instanceof Error) {
+    console.error(`\nError: ${error.message}`);
+    console.error(error.stack);
+  } else {
+    console.error('\nUnknown error:', error);
+  }
+  process.exit(1);
+}
 
 program.parse();

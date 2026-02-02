@@ -11,3 +11,6 @@ export * from './core/svg-engine.js';
 export * from './core/renderer.js';
 export * from './core/html-writer.js';
 export * from './core/zip-handler.js';
+export * from './core/pdf-converter.js';
+export * from './core/svg-normalizer.js';
+export * from './core/template-validator.js';
