@@ -59,18 +59,10 @@ lint:
 
 # リント自動修正
 lint-fix:
-    pnpm lint:fix
-
-# フォーマット（oxc format）
-format:
-    pnpm format
-
-# フォーマットチェック
-format-check:
-    pnpm format:check
+    pnpm run lint:fix
 
 # 品質チェック（全て）
-check: typecheck lint format-check
+check: typecheck lint
 
 # テスト（未実装）
 test:

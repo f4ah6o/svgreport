@@ -36,9 +36,6 @@ importers:
       '@types/xmldom':
         specifier: ^0.1.34
         version: 0.1.34
-      oxc:
-        specifier: ^1.0.1
-        version: 1.0.1
       oxlint:
         specifier: ^1.42.0
         version: 1.42.0
@@ -142,10 +139,6 @@ packages:
 
   lie@3.3.0:
     resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
-
-  oxc@1.0.1:
-    resolution: {integrity: sha512-MJ18y2Ekl329i3zdZpRVOqFdEUjoRKC1+uy1f4kuRp9ygindCVVUIhhKxwyAhTsWt3jIV8UczKtlTwWWahcaWQ==}
-    hasBin: true
 
   oxlint@1.42.0:
     resolution: {integrity: sha512-qnspC/lrp8FgKNaONLLn14dm+W5t0SSlus6V5NJpgI2YNT1tkFYZt4fBf14ESxf9AAh98WBASnW5f0gtw462Lg==}
@@ -267,8 +260,6 @@ snapshots:
   lie@3.3.0:
     dependencies:
       immediate: 3.0.6
-
-  oxc@1.0.1: {}
 
   oxlint@1.42.0:
     optionalDependencies:
