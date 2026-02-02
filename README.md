@@ -1,9 +1,9 @@
-# SVG Paper
+# SVG Report
 <!-- bdg:begin -->
-[![npm](https://img.shields.io/npm/v/svgpaper.svg)](https://www.npmjs.com/package/svgpaper)
+[![npm](https://img.shields.io/npm/v/svgreport.svg)](https://www.npmjs.com/package/svgreport)
 <!-- bdg:end -->
 
-SVG report generator - Flow CSV data into PDF-based SVG templates for printing
+svgreport is a CLI and library for generating printable reports using SVG templates.
 
 ## Overview
 
@@ -36,35 +36,35 @@ pnpm build
 
 ```bash
 # 1. Convert PDF to SVG (auto-selects pdf2svg/inkscape)
-svgpaper convert agreed.pdf ./raw/
+svgreport convert agreed.pdf ./raw/
 
 # 2. Normalize SVG (unify mm units, expand transforms, cleanup)
-svgpaper normalize ./raw/ ./normalized/ -s a4
+svgreport normalize ./raw/ ./normalized/ -s a4
 
 # 3. Generate new template (create boilerplate)
-svgpaper generate invoice v3 -d ./templates
+svgreport generate invoice v3 -d ./templates
 
 # 4. Inspect text elements and identify ID candidates
-svgpaper inspect-text ./templates/invoice/v3/page-1.svg
+svgreport inspect-text ./templates/invoice/v3/page-1.svg
 
 # 5. Define fields in template.json, then validate
-svgpaper validate ./templates/invoice/v3/
+svgreport validate ./templates/invoice/v3/
 
 # 6. Generate preview (check with dummy data)
-svgpaper preview ./templates/invoice/v3/ -o ./preview -s realistic
+svgreport preview ./templates/invoice/v3/ -o ./preview -s realistic
 ```
 
 ### Rendering (Production Data)
 
 ```bash
 # Render single job
-svgpaper render job.zip
+svgreport render job.zip
 
 # Specify output directory
-svgpaper render job.zip -o ./reports
+svgreport render job.zip -o ./reports
 
 # Specify template directory
-svgpaper render job.zip -t ./templates
+svgreport render job.zip -t ./templates
 ```
 
 ### Creating Test Data
@@ -148,13 +148,13 @@ src/
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `render` | Render job ZIP | `svgpaper render job.zip` |
-| `convert` | PDF→SVG conversion (auto fallback) | `svgpaper convert input.pdf ./output/` |
-| `normalize` | SVG normalization | `svgpaper normalize ./raw/ ./norm/ -s a4` |
-| `validate` | Template validation | `svgpaper validate ./templates/inv/v1/` |
-| `preview` | Preview generation | `svgpaper preview ./templates/inv/v1/` |
-| `inspect-text` | Text element analysis | `svgpaper inspect-text page-1.svg -j out.json` |
-| `generate` | New template generation | `svgpaper generate invoice v1 -d ./templates` |
+| `render` | Render job ZIP | `svgreport render job.zip` |
+| `convert` | PDF→SVG conversion (auto fallback) | `svgreport convert input.pdf ./output/` |
+| `normalize` | SVG normalization | `svgreport normalize ./raw/ ./norm/ -s a4` |
+| `validate` | Template validation | `svgreport validate ./templates/inv/v1/` |
+| `preview` | Preview generation | `svgreport preview ./templates/inv/v1/` |
+| `inspect-text` | Text element analysis | `svgreport inspect-text page-1.svg -j out.json` |
+| `generate` | New template generation | `svgreport generate invoice v1 -d ./templates` |
 
 ## Output Structure
 

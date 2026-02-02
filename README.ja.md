@@ -1,4 +1,4 @@
-# SVG Paper
+# SVG Report
 
 SVG帳票生成ツール - PDFベースのSVGテンプレートにCSVデータを流し込み印刷
 
@@ -33,35 +33,35 @@ pnpm build
 
 ```bash
 # 1. PDFからSVGを変換（pdf2svg/inkscape自動選択）
-svgpaper convert agreed.pdf ./raw/
+svgreport convert agreed.pdf ./raw/
 
 # 2. SVGを正規化（mm統一、transform展開、クリーンアップ）
-svgpaper normalize ./raw/ ./normalized/ -s a4
+svgreport normalize ./raw/ ./normalized/ -s a4
 
 # 3. 新規テンプレートを生成（雛形作成）
-svgpaper generate invoice v3 -d ./templates
+svgreport generate invoice v3 -d ./templates
 
 # 4. テキスト要素を確認・ID付与の候補を確認
-svgpaper inspect-text ./templates/invoice/v3/page-1.svg
+svgreport inspect-text ./templates/invoice/v3/page-1.svg
 
 # 5. template.jsonにフィールドを定義後、検証
-svgpaper validate ./templates/invoice/v3/
+svgreport validate ./templates/invoice/v3/
 
 # 6. プレビュー生成（ダミーデータで確認）
-svgpaper preview ./templates/invoice/v3/ -o ./preview -s realistic
+svgreport preview ./templates/invoice/v3/ -o ./preview -s realistic
 ```
 
 ### レンダリング（本番データ）
 
 ```bash
 # 単一ジョブのレンダリング
-svgpaper render job.zip
+svgreport render job.zip
 
 # 出力先を指定
-svgpaper render job.zip -o ./reports
+svgreport render job.zip -o ./reports
 
 # テンプレートディレクトリを指定
-svgpaper render job.zip -t ./templates
+svgreport render job.zip -t ./templates
 ```
 
 ### テストデータの作成
@@ -145,13 +145,13 @@ src/
 
 | コマンド | 説明 | 使用例 |
 |---------|------|--------|
-| `render` | ジョブZIPをレンダリング | `svgpaper render job.zip` |
-| `convert` | PDF→SVG変換（auto fallback） | `svgpaper convert input.pdf ./output/` |
-| `normalize` | SVG正規化 | `svgpaper normalize ./raw/ ./norm/ -s a4` |
-| `validate` | テンプレート検証 | `svgpaper validate ./templates/inv/v1/` |
-| `preview` | プレビュー生成 | `svgpaper preview ./templates/inv/v1/` |
-| `inspect-text` | テキスト要素分析 | `svgpaper inspect-text page-1.svg -j out.json` |
-| `generate` | 新規テンプレート生成 | `svgpaper generate invoice v1 -d ./templates` |
+| `render` | ジョブZIPをレンダリング | `svgreport render job.zip` |
+| `convert` | PDF→SVG変換（auto fallback） | `svgreport convert input.pdf ./output/` |
+| `normalize` | SVG正規化 | `svgreport normalize ./raw/ ./norm/ -s a4` |
+| `validate` | テンプレート検証 | `svgreport validate ./templates/inv/v1/` |
+| `preview` | プレビュー生成 | `svgreport preview ./templates/inv/v1/` |
+| `inspect-text` | テキスト要素分析 | `svgreport inspect-text page-1.svg -j out.json` |
+| `generate` | 新規テンプレート生成 | `svgreport generate invoice v1 -d ./templates` |
 
 ## 出力構造
 

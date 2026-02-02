@@ -1,11 +1,11 @@
 {
-  "name": "svgpaper",
+  "name": "svgreport",
   "version": "2026.2.0",
   "description": "SVG report generator - Flow CSV data into PDF-based SVG templates for printing",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "svgpaper": "dist/cli.js"
+    "svgreport": "dist/cli.js"
   },
   "scripts": {
     "build": "rolldown -c rolldown.config.js",

@@ -231,8 +231,8 @@ ${pageTypes.map(pt => `- ${pt === 'first' ? 'page-1.svg' : 'page-follow.svg'}: $
 1. SVGファイルを編集（Inkscapeなど）
 2. 差し込み対象のテキスト要素にIDを付与
 3. template.jsonにフィールドバインディングを定義
-4. \`svgpaper validate\` で検証
-5. \`svgpaper preview\` でプレビュー確認
+4. \`svgreport validate\` で検証
+5. \`svgreport preview\` でプレビュー確認
 
 ## 仕様
 

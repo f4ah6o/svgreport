@@ -1,5 +1,5 @@
 // index.ts
-// Main exports for svgpaper
+// Main exports for svgreport
 
 export * from './types/index.js';
 export * from './core/datasource.js';

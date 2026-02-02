@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // cli.ts
-// CLI entry point for svgpaper
+// CLI entry point for svgreport
 
 import { Command } from 'commander';
 import * as fs from 'fs/promises';
@@ -21,9 +21,9 @@ import { generateTemplate } from './core/template-generator.js';
 const program = new Command();
 
 program
-  .name('svgpaper')
-  .description('SVG帳票生成ツール - PDFベースのSVGテンプレートにCSVデータを流し込み印刷')
-  .version('0.1.0');
+  .name('svgreport')
+  .description('SVG report generator - Generate printable reports using SVG templates')
+  .version('2026.2.0');
 
 program
   .command('render')
@@ -341,8 +341,8 @@ program
       console.log('\nNext steps:');
       console.log(`  1. Edit SVG files: ${path.join(result.templateDir, '*.svg')}`);
       console.log(`  2. Add field bindings to: ${path.join(result.templateDir, 'template.json')}`);
-      console.log(`  3. Validate: svgpaper validate ${result.templateDir}`);
-      console.log(`  4. Preview: svgpaper preview ${result.templateDir}`);
+      console.log(`  3. Validate: svgreport validate ${result.templateDir}`);
+      console.log(`  4. Preview: svgreport preview ${result.templateDir}`);
       console.log('=========================\n');
     } catch (error) {
       handleError(error);
