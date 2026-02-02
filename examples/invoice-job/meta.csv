@@ -1,0 +1,9 @@
+key,value
+customer.name,株式会社サンプル商事
+customer.address,〒160-0022 東京都新宿区新宿1-1-1 サンプルビル10F
+invoice_no,INV-2026-0001
+issue_date,2026-02-02
+due_date,2026-03-02
+subtotal,450000
+tax,45000
+total,495000

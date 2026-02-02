@@ -1,0 +1,38 @@
+{
+  "name": "svgpaper",
+  "version": "0.1.0",
+  "description": "SVG帳票生成ツール - PDFベースのSVGテンプレートにCSVデータを流し込み印刷",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "svgpaper": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --test dist/**/*.test.js",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": ["svg", "report", "pdf", "printing", "template"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "xpath": "^0.0.34",
+    "jszip": "^3.10.1",
+    "csv-parse": "^5.6.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/xmldom": "^0.1.34",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
