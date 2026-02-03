@@ -9,12 +9,14 @@
   },
   "scripts": {
     "build": "rolldown -c rolldown.config.js",
+    "build:ui": "cd ui && pnpm build",
     "dev": "tsc --watch",
+    "dev:ui": "cd ui && pnpm dev",
     "test": "node --test dist/**/*.test.js",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist ui/dist"
   },
   "keywords": [
     "svg",

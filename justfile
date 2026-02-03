@@ -76,3 +76,46 @@ test:
 # ビルドとサンプル実行（開発用ワンライナー）
 quickstart: install build run-simple
     @echo "Quickstart complete! Check the out/ directory."
+
+# RPCサーバーを開発モードで起動（自動リロードなし）
+# 使用例: just dev-server
+# 使用例: just dev-server 8888 ./templates
+serve:
+    node dist/cli.js server -p 8788 -r .
+
+# RPCサーバー（カスタム設定）
+# 使用例: just server 8888 /workspace/templates
+server port="8788" root=".":
+    node dist/cli.js server -p {{port}} -r {{root}}
+
+# devモードでサーバー起動（ビルド+サーバー起動）
+dev-server: build
+    node dist/cli.js server -p 8788 -r .
+
+# UIをビルド
+build-ui:
+    cd ui && pnpm install && pnpm build
+
+# UI開発モード（Vite dev server）
+dev-ui:
+    cd ui && pnpm dev
+
+# フルビルド（API + UI）
+build-all: build build-ui
+    @echo "Full build complete"
+
+# UI付きで開発（RPCサーバー + UIビルド）
+dev-with-ui: build build-ui
+    @echo "Starting RPC server with UI..."
+    @echo "Open ui/dist/index.html in a browser after server starts"
+    node dist/cli.js server -p 8788 -r .
+
+# UIリバースプロキシ付きでサーバー起動
+# 使用例: just server-with-ui
+# 使用例: just server-with-ui http://localhost:3000 8888 ./templates
+server-with-ui url="http://localhost:3000" port="8788" root=".":
+    node dist/cli.js server -p {{port}} -r {{root}} --ui-remote-url {{url}}
+
+# UIリバースプロキシ付きで開発モード（ビルド + サーバー起動）
+dev-server-with-ui: build
+    node dist/cli.js server -p 8788 -r . --ui-remote-url http://localhost:3000
