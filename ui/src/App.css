@@ -538,6 +538,14 @@
   pointer-events: none;
 }
 
+.svg-overlay-table-cell {
+  fill: rgba(241, 196, 15, 0.16);
+  stroke: rgba(214, 172, 13, 0.8);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .svg-overlay-table-label {
   fill: #8a6d00;
   font-size: 6px;

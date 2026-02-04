@@ -136,10 +136,13 @@ export function SvgViewer({
     })
   }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet])
 
-  const elementById = useMemo(() => {
-    const map = new Map<string, TextElement>()
+  const elementsById = useMemo(() => {
+    const map = new Map<string, TextElement[]>()
     for (const element of elements) {
-      if (element.id) map.set(element.id, element)
+      if (!element.id) continue
+      const list = map.get(element.id) || []
+      list.push(element)
+      map.set(element.id, list)
     }
     return map
   }, [elements])
@@ -149,37 +152,75 @@ export function SvgViewer({
     return resolvedBBoxByIndex.get(selectedElement.index) || selectedElement.bbox
   }, [selectedElement, resolvedBBoxByIndex])
 
-  const tableRects = useMemo(() => {
-    const rects: Array<{ id: string; x: number; y: number; w: number; h: number }> = []
+  const tableOverlays = useMemo(() => {
+    const overlays: Array<{
+      id: string
+      x: number
+      y: number
+      w: number
+      h: number
+      cells: Array<{ x: number; y: number; w: number; h: number }>
+    }> = []
     for (const group of tableBindingGroups) {
-      const points = group.cellSvgIds
-        .map((id) => elementById.get(id))
-        .filter((v): v is TextElement => Boolean(v))
+      const candidates: TextElement[] = []
+      for (const id of group.cellSvgIds) {
+        const matches = elementsById.get(id) || []
+        candidates.push(...matches)
+      }
+      if (candidates.length === 0) continue
+
+      // Keep a cohesive row cluster to avoid far-out duplicate IDs.
+      const sorted = [...candidates].sort((a, b) => {
+        const ay = (resolvedBBoxByIndex.get(a.index) || a.bbox).y
+        const by = (resolvedBBoxByIndex.get(b.index) || b.bbox).y
+        return ay - by
+      })
+      const clusters: TextElement[][] = []
+      for (const el of sorted) {
+        const bbox = resolvedBBoxByIndex.get(el.index) || el.bbox
+        const y = bbox.y
+        const current = clusters[clusters.length - 1]
+        if (!current) {
+          clusters.push([el])
+          continue
+        }
+        const last = current[current.length - 1]
+        const lastY = (resolvedBBoxByIndex.get(last.index) || last.bbox).y
+        if (Math.abs(y - lastY) <= 36) {
+          current.push(el)
+        } else {
+          clusters.push([el])
+        }
+      }
+      const points = clusters.sort((a, b) => b.length - a.length)[0] || []
       if (points.length === 0) continue
 
       let minX = Infinity
       let minY = Infinity
       let maxX = -Infinity
       let maxY = -Infinity
+      const cells: Array<{ x: number; y: number; w: number; h: number }> = []
 
       for (const el of points) {
         const bbox = resolvedBBoxByIndex.get(el.index) || el.bbox
+        cells.push(bbox)
         minX = Math.min(minX, bbox.x)
         minY = Math.min(minY, bbox.y)
         maxX = Math.max(maxX, bbox.x + bbox.w)
         maxY = Math.max(maxY, bbox.y + bbox.h)
       }
 
-      rects.push({
+      overlays.push({
         id: group.id,
-        x: minX - 4,
-        y: minY - 4,
-        w: Math.max(8, maxX - minX + 8),
-        h: Math.max(8, maxY - minY + 8),
+        x: minX - 8,
+        y: minY - 8,
+        w: Math.max(8, maxX - minX + 16),
+        h: Math.max(8, maxY - minY + 16),
+        cells,
       })
     }
-    return rects
-  }, [tableBindingGroups, elementById, resolvedBBoxByIndex])
+    return overlays
+  }, [tableBindingGroups, elementsById, resolvedBBoxByIndex])
 
   useEffect(() => {
     if (!svgContent || elements.length === 0) {
@@ -320,8 +361,18 @@ export function SvgViewer({
                     </text>
                   </g>
                 ))}
-                {showElementMap && showBindingElements && tableRects.map((rect) => (
+                {showElementMap && showBindingElements && tableOverlays.map((rect) => (
                   <g key={rect.id}>
+                    {rect.cells.map((cell, i) => (
+                      <rect
+                        key={`${rect.id}-cell-${i}`}
+                        className="svg-overlay-table-cell"
+                        x={cell.x - 2}
+                        y={cell.y - 2}
+                        width={Math.max(6, cell.w + 4)}
+                        height={Math.max(6, cell.h + 4)}
+                      />
+                    ))}
                     <rect
                       className="svg-overlay-table"
                       x={rect.x}
