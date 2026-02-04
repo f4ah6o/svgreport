@@ -11,6 +11,7 @@ export interface TextElementInfo {
   content: string;
   x: number;
   y: number;
+  domIndex: number;
   textAnchor: string | null;
   fontSize: number | null;
   fontFamily: string | null;
@@ -89,11 +90,12 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
   let fontSizeSum = 0;
   let fontSizeCount = 0;
 
-  for (const text of textNodes) {
+  for (let i = 0; i < textNodes.length; i += 1) {
+    const text = textNodes[i];
     const id = text.getAttribute('id');
     const textContent = text.textContent?.trim() || '';
-    const x = parseFloat(text.getAttribute('x') || '0');
-    const y = parseFloat(text.getAttribute('y') || '0');
+    const localX = parseFloat(text.getAttribute('x') || '0');
+    const localY = parseFloat(text.getAttribute('y') || '0');
     const textAnchor = text.getAttribute('text-anchor');
     const fontSize = text.getAttribute('font-size');
     const fontFamily = text.getAttribute('font-family');
@@ -121,13 +123,16 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
     }
 
     // Generate suggested ID
-    const suggestedId = generateSuggestedId(textContent, x, y);
+    const matrix = getCumulativeTransformMatrix(text);
+    const point = applyMatrixToPoint(matrix, localX, localY);
+    const suggestedId = generateSuggestedId(textContent, point.x, point.y);
 
     textElements.push({
       id,
       content: textContent,
-      x,
-      y,
+      x: point.x,
+      y: point.y,
+      domIndex: i + 1,
       textAnchor,
       fontSize: fontSizeNum,
       fontFamily,
@@ -227,6 +232,79 @@ function extractClassFontSizes(svg: Element): Map<string, number> {
   }
 
   return map;
+}
+
+type Matrix2D = [number, number, number, number, number, number];
+
+function getCumulativeTransformMatrix(element: Element): Matrix2D {
+  const chain: Element[] = [];
+  let current: Element | null = element;
+  while (current) {
+    chain.push(current);
+    const parent = current.parentNode;
+    current = parent && parent.nodeType === 1 ? parent as Element : null;
+  }
+
+  // root -> leaf
+  chain.reverse();
+  let matrix: Matrix2D = [1, 0, 0, 1, 0, 0];
+  for (const node of chain) {
+    const transform = node.getAttribute('transform');
+    if (!transform) continue;
+    const local = parseTransform(transform);
+    matrix = multiplyMatrix(matrix, local);
+  }
+  return matrix;
+}
+
+function parseTransform(input: string): Matrix2D {
+  let matrix: Matrix2D = [1, 0, 0, 1, 0, 0];
+  const fnRegex = /([a-zA-Z]+)\(([^)]*)\)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = fnRegex.exec(input)) !== null) {
+    const fn = match[1].toLowerCase();
+    const values = match[2]
+      .split(/[,\s]+/)
+      .map(v => v.trim())
+      .filter(Boolean)
+      .map(v => parseFloat(v))
+      .filter(v => !Number.isNaN(v));
+
+    let local: Matrix2D = [1, 0, 0, 1, 0, 0];
+
+    if (fn === 'matrix' && values.length >= 6) {
+      local = [values[0], values[1], values[2], values[3], values[4], values[5]];
+    } else if (fn === 'translate' && values.length >= 1) {
+      local = [1, 0, 0, 1, values[0], values[1] || 0];
+    } else if (fn === 'scale' && values.length >= 1) {
+      local = [values[0], 0, 0, values[1] ?? values[0], 0, 0];
+    } else {
+      continue;
+    }
+
+    matrix = multiplyMatrix(matrix, local);
+  }
+
+  return matrix;
+}
+
+function multiplyMatrix(a: Matrix2D, b: Matrix2D): Matrix2D {
+  return [
+    a[0] * b[0] + a[2] * b[1],
+    a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3],
+    a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4],
+    a[1] * b[4] + a[3] * b[5] + a[5],
+  ];
+}
+
+function applyMatrixToPoint(m: Matrix2D, x: number, y: number): { x: number; y: number } {
+  return {
+    x: m[0] * x + m[2] * y + m[4],
+    y: m[1] * x + m[3] * y + m[5],
+  };
 }
 
 /**

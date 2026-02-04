@@ -195,29 +195,27 @@ export function SvgViewer({
       if (!svg) return
 
       const textNodes = Array.from(svg.querySelectorAll('text'))
-      const measured = textNodes.map((node) => {
+      const byDomIndex = new Map<number, { x: number; y: number; w: number; h: number }>()
+      textNodes.forEach((node, idx) => {
         try {
           const bbox = node.getBBox()
-          return {
+          byDomIndex.set(idx + 1, {
             x: bbox.x,
             y: bbox.y,
             w: Math.max(6, bbox.width),
             h: Math.max(6, bbox.height),
-          }
+          })
         } catch {
-          return null
+          // ignore
         }
-      }).filter((v): v is { x: number; y: number; w: number; h: number } => Boolean(v))
-
-      measured.sort((a, b) => {
-        if (Math.abs(a.y - b.y) < 5) return a.x - b.x
-        return a.y - b.y
       })
 
       const map = new Map<number, { x: number; y: number; w: number; h: number }>()
-      const count = Math.min(elements.length, measured.length)
-      for (let i = 0; i < count; i += 1) {
-        map.set(elements[i].index, measured[i])
+      for (const element of elements) {
+        if (element.domIndex && byDomIndex.has(element.domIndex)) {
+          const measured = byDomIndex.get(element.domIndex)
+          if (measured) map.set(element.index, measured)
+        }
       }
       setMeasuredBBoxes(map)
     }

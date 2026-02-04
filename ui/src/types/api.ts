@@ -106,6 +106,7 @@ export interface FormatterDef {
 
 export interface TextElement {
   index: number;
+  domIndex?: number;
   id: string | null;
   suggestedId?: string;
   text: string;

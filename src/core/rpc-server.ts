@@ -647,6 +647,7 @@ export class RpcServer {
         const bbox = estimateTextBBox(el.content, el.x, el.y, el.fontSize, el.textAnchor);
         return {
           index: index + 1,
+          domIndex: el.domIndex,
           id: el.id,
           suggestedId: options.suggestIds !== false ? el.suggestedId : undefined,
           text: el.content,
