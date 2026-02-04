@@ -497,12 +497,16 @@
   stroke: #3498db;
   stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: pointer;
 }
 
 .svg-overlay-label {
   fill: #1f4f8f;
-  font-size: 4px;
   font-weight: 700;
+  pointer-events: all;
+  cursor: pointer;
+  user-select: none;
 }
 
 .elements-list {

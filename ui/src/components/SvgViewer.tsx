@@ -158,13 +158,16 @@ export function SvgViewer({
                       className="svg-overlay-rect-dim"
                       x={element.bbox.x}
                       y={element.bbox.y}
-                      width={Math.max(element.bbox.w, 8)}
-                      height={Math.max(element.bbox.h, 8)}
+                      width={Math.max(element.bbox.w, 6)}
+                      height={Math.max(element.bbox.h, 6)}
+                      onClick={() => onSelectElement(index)}
                     />
                     <text
                       className="svg-overlay-label"
                       x={element.bbox.x + 1}
                       y={element.bbox.y - 1}
+                      style={{ fontSize: `${getOverlayLabelSize(element)}px` }}
+                      onClick={() => onSelectElement(index)}
                     >
                       {element.index}
                     </text>
@@ -288,4 +291,9 @@ export function SvgViewer({
       </div>
     </div>
   )
+}
+
+function getOverlayLabelSize(element: TextElement): number {
+  const base = element.font.size ?? element.bbox.h ?? 12
+  return Math.max(6, Math.min(18, base))
 }
