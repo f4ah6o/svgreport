@@ -315,6 +315,29 @@ export function App() {
     return Array.from(candidates).sort()
   }, [template, svgElements, selectedPageId, selectedSvg])
 
+  const bindingSvgIds = useMemo(() => {
+    if (!template) return []
+    const ids = new Set<string>()
+
+    // Global fields
+    for (const field of template.fields) {
+      if (field.svg_id) ids.add(field.svg_id)
+    }
+
+    // Current page bindings (tables/cells/page_number)
+    const page = selectedPageId ? template.pages.find(p => p.id === selectedPageId) : undefined
+    if (page?.page_number?.svg_id) ids.add(page.page_number.svg_id)
+    if (page) {
+      for (const table of page.tables) {
+        for (const cell of table.cells) {
+          if (cell.svg_id) ids.add(cell.svg_id)
+        }
+      }
+    }
+
+    return Array.from(ids)
+  }, [template, selectedPageId])
+
   const focusFromValidationPath = useCallback((path: string) => {
     if (!path) {
       setNotification('This validation error does not include a jump path. Please read the message.')
@@ -568,6 +591,7 @@ export function App() {
                 svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
                 elements={svgElements}
                 templateDir={templateDir}
+                bindingSvgIds={bindingSvgIds}
                 selectedElementIndex={selectedTextIndex}
                 onSelectElement={handleSelectTextElement}
                 pendingId={pendingId}

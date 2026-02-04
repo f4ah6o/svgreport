@@ -6,6 +6,7 @@ interface SvgViewerProps {
   svgPath: string | null
   elements: TextElement[]
   templateDir: string
+  bindingSvgIds: string[]
   selectedElementIndex: number | null
   onSelectElement: (index: number) => void
   pendingId: string
@@ -19,6 +20,7 @@ export function SvgViewer({
   svgPath,
   elements,
   templateDir,
+  bindingSvgIds,
   selectedElementIndex,
   onSelectElement,
   pendingId,
@@ -96,14 +98,16 @@ export function SvgViewer({
     return elements[selectedElementIndex] || null
   }, [elements, selectedElementIndex])
 
+  const bindingSet = useMemo(() => new Set(bindingSvgIds), [bindingSvgIds])
+
   const overlayElements = useMemo(() => {
     return elements.filter((element) => {
-      const hasBinding = Boolean(element.id)
-      if (hasBinding && !showBindingElements) return false
-      if (!hasBinding && !showNoBindingElements) return false
+      const isBound = Boolean(element.id && bindingSet.has(element.id))
+      if (isBound && !showBindingElements) return false
+      if (!isBound && !showNoBindingElements) return false
       return true
     })
-  }, [elements, showBindingElements, showNoBindingElements])
+  }, [elements, showBindingElements, showNoBindingElements, bindingSet])
 
   const indexByElementIndex = useMemo(() => {
     const map = new Map<number, number>()
@@ -178,7 +182,7 @@ export function SvgViewer({
                 {showElementMap && overlayElements.map((element) => (
                   <g key={`${element.index}-${element.id || 'noid'}`}>
                     <rect
-                      className="svg-overlay-rect-dim"
+                      className={element.id && bindingSet.has(element.id) ? 'svg-overlay-rect-bound' : 'svg-overlay-rect-dim'}
                       x={element.bbox.x}
                       y={element.bbox.y}
                       width={Math.max(element.bbox.w, 6)}
@@ -189,7 +193,7 @@ export function SvgViewer({
                       }}
                     />
                     <text
-                      className="svg-overlay-label"
+                      className={element.id && bindingSet.has(element.id) ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
                       x={element.bbox.x + 1}
                       y={element.bbox.y - 1}
                       style={{ fontSize: `${getOverlayLabelSize(element)}` }}

@@ -504,8 +504,25 @@
   cursor: pointer;
 }
 
+.svg-overlay-rect-bound {
+  fill: rgba(46, 204, 113, 0.15);
+  stroke: #27ae60;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: pointer;
+}
+
 .svg-overlay-label {
   fill: #1f4f8f;
+  font-weight: 700;
+  pointer-events: all;
+  cursor: pointer;
+  user-select: none;
+}
+
+.svg-overlay-label-bound {
+  fill: #1f7a42;
   font-weight: 700;
   pointer-events: all;
   cursor: pointer;
