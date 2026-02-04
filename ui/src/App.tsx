@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'preact/hooks'
-import type { TemplateConfig, TextElement, ValidationResponse, PreviewResponse } from './types/api'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'preact/hooks'
+import type { TemplateConfig, TextElement, ValidationResponse, PreviewResponse, TemplateListItem } from './types/api'
 import { rpc } from './lib/rpc'
 import { Toolbar } from './components/Toolbar'
 import { TemplateEditor } from './components/TemplateEditor'
@@ -11,44 +11,101 @@ export function App() {
   const [templateDir, setTemplateDir] = useState('test-templates/delivery-slip/v1')
   const [template, setTemplate] = useState<TemplateConfig | null>(null)
   const [selectedSvg, setSelectedSvg] = useState<string | null>(null)
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null)
   const [svgElements, setSvgElements] = useState<TextElement[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [status, setStatus] = useState<string>('Ready')
   const [error, setError] = useState<string | null>(null)
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null)
   const [previewResult, setPreviewResult] = useState<PreviewResponse | null>(null)
+  const [selectedTextIndex, setSelectedTextIndex] = useState<number | null>(null)
+  const [selectedText, setSelectedText] = useState<TextElement | null>(null)
+  const [pendingId, setPendingId] = useState<string>('')
+  const [templatesBaseDir, setTemplatesBaseDir] = useState('templates')
+  const [templatesList, setTemplatesList] = useState<TemplateListItem[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [focusTarget, setFocusTarget] = useState<{ tab: 'pages' | 'fields' | 'formatters'; path: string } | null>(null)
+  const [notification, setNotification] = useState<string | null>(null)
+  const [validationGroupsOpen, setValidationGroupsOpen] = useState<Record<'pages' | 'fields' | 'formatters' | 'other', boolean>>({
+    pages: true,
+    fields: true,
+    formatters: true,
+    other: true,
+  })
+  const [editorPaneWidth, setEditorPaneWidth] = useState(44)
+  const mainSplitRef = useRef<HTMLDivElement | null>(null)
 
   // Check connection on mount
   useEffect(() => {
     rpc.getVersion()
-      .then(() => setStatus('Connected to RPC server'))
+      .then(async () => {
+        setStatus('Connected to RPC server')
+        try {
+          const workspace = await rpc.getWorkspace()
+          if (workspace.templatesDirDefault) {
+            setTemplatesBaseDir(workspace.templatesDirDefault)
+          }
+        } catch {
+          // Ignore workspace errors, allow manual base dir input
+        }
+      })
       .catch(() => setStatus('Error: Cannot connect to RPC server'))
   }, [])
 
-  const handleLoad = useCallback(async () => {
+  useEffect(() => {
+    const saved = loadSession()
+    if (saved.templateDir) setTemplateDir(saved.templateDir)
+    if (saved.templatesBaseDir) setTemplatesBaseDir(saved.templatesBaseDir)
+    if (saved.selectedPageId) setSelectedPageId(saved.selectedPageId)
+  }, [])
+
+  const loadTemplateByPath = useCallback(async (path: string) => {
     setIsLoading(true)
     setError(null)
     setStatus('Loading template...')
     
     try {
-      const templateJson = await rpc.loadTemplate(templateDir)
+      const templateJson = await rpc.loadTemplate(path)
       setTemplate(templateJson)
-      setSelectedSvg(templateJson.pages[0]?.svg || null)
+      const firstPage = templateJson.pages[0]
+      setSelectedPageId(firstPage?.id ?? null)
+      setSelectedSvg(firstPage?.svg || null)
+      setSelectedTextIndex(null)
+      setSelectedText(null)
+      setPendingId('')
       setStatus(`Loaded template: ${templateJson.template.id} v${templateJson.template.version}`)
-      
-      // Load SVG elements
-      if (templateJson.pages[0]) {
-        const svgPath = `${templateDir}/${templateJson.pages[0].svg}`
-        const inspectResult = await rpc.inspectText(svgPath)
-        setSvgElements(inspectResult.texts)
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load template')
       setStatus('Error loading template')
     } finally {
       setIsLoading(false)
     }
-  }, [templateDir])
+  }, [])
+
+  const handleLoad = useCallback(async () => {
+    await loadTemplateByPath(templateDir)
+  }, [loadTemplateByPath, templateDir])
+
+  const refreshTemplatesList = useCallback(async (baseDir: string) => {
+    setTemplatesLoading(true)
+    setTemplatesError(null)
+
+    try {
+      const result = await rpc.listTemplates(baseDir)
+      setTemplatesList(result.templates)
+    } catch (err) {
+      setTemplatesError(err instanceof Error ? err.message : 'Failed to load templates list')
+      setTemplatesList([])
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!templatesBaseDir) return
+    refreshTemplatesList(templatesBaseDir)
+  }, [templatesBaseDir, refreshTemplatesList])
 
   const handleSave = useCallback(async () => {
     if (!template) return
@@ -82,6 +139,7 @@ export function App() {
     try {
       const result = await rpc.validate(templateDir)
       setValidationResult(result)
+      setFocusTarget(null)
       setStatus(result.ok ? 'Validation passed' : `Validation failed: ${result.errors.length} errors`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Validation failed')
@@ -120,16 +178,296 @@ export function App() {
     
     const page = template.pages.find(p => p.id === pageId)
     if (page) {
+      setSelectedPageId(pageId)
       setSelectedSvg(page.svg)
-      try {
-        const svgPath = `${templateDir}/${page.svg}`
-        const inspectResult = await rpc.inspectText(svgPath)
-        setSvgElements(inspectResult.texts)
-      } catch (err) {
-        setSvgElements([])
+    }
+  }, [template])
+
+  const handleSelectedPageIdChange = useCallback((pageId: string) => {
+    setSelectedPageId(pageId)
+  }, [])
+
+  const loadInspectText = useCallback(async (svgPath: string) => {
+    try {
+      const inspectResult = await rpc.inspectText(svgPath)
+      setSvgElements(inspectResult.texts)
+    } catch {
+      setSvgElements([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedSvg) {
+      setSvgElements([])
+      return
+    }
+
+    setSelectedTextIndex(null)
+    setSelectedText(null)
+    setPendingId('')
+
+    const svgPath = `${templateDir}/${selectedSvg}`
+    const timer = setTimeout(() => {
+      void loadInspectText(svgPath)
+    }, 200)
+
+    return () => clearTimeout(timer)
+  }, [selectedSvg, templateDir, loadInspectText])
+
+  useEffect(() => {
+    if (!template) return
+    if (selectedPageId && template.pages.some(p => p.id === selectedPageId)) {
+      return
+    }
+    if (selectedSvg) {
+      const match = template.pages.find(p => p.svg === selectedSvg)
+      if (match) {
+        setSelectedPageId(match.id)
+        return
       }
     }
-  }, [template, templateDir])
+    setSelectedPageId(template.pages[0]?.id ?? null)
+  }, [template, selectedPageId, selectedSvg])
+
+  useEffect(() => {
+    if (!template || !selectedPageId) return
+    const page = template.pages.find(p => p.id === selectedPageId)
+    if (!page) return
+    if (page.svg !== selectedSvg) {
+      setSelectedSvg(page.svg)
+    }
+  }, [template, selectedPageId, selectedSvg])
+
+  useEffect(() => {
+    saveSession({ templateDir, templatesBaseDir, selectedPageId: selectedPageId || undefined })
+  }, [templateDir, templatesBaseDir, selectedPageId])
+
+  const handleSelectTextElement = useCallback((index: number) => {
+    const element = svgElements[index]
+    if (!element) return
+    setSelectedTextIndex(index)
+    setSelectedText(element)
+    setPendingId(element.suggestedId || element.id || '')
+  }, [svgElements])
+
+  const handleUseSuggestedId = useCallback(() => {
+    if (!selectedText) return
+    setPendingId(selectedText.suggestedId || '')
+  }, [selectedText])
+
+  const handleApplyId = useCallback(async () => {
+    if (!selectedText || !selectedSvg || !pendingId.trim()) return
+
+    setIsLoading(true)
+    setError(null)
+    setStatus('Applying ID...')
+
+    const svgPath = `${templateDir}/${selectedSvg}`
+
+    try {
+      await rpc.setSvgIds(svgPath, [
+        { selector: { byIndex: selectedText.index }, id: pendingId.trim() },
+      ])
+
+      const inspectResult = await rpc.inspectText(svgPath)
+      setSvgElements(inspectResult.texts)
+
+      const nextIndex = inspectResult.texts.findIndex(t => t.index === selectedText.index)
+      if (nextIndex >= 0) {
+        setSelectedTextIndex(nextIndex)
+        setSelectedText(inspectResult.texts[nextIndex])
+      } else {
+        setSelectedTextIndex(null)
+        setSelectedText(null)
+      }
+
+      setStatus('ID applied successfully')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to apply ID'
+      setError(message)
+      setStatus('Error applying ID')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [pendingId, selectedText, selectedSvg, templateDir])
+
+  const suggestedSvgIds = useMemo(() => {
+    if (!template || !selectedPageId || !selectedSvg) return []
+    const used = new Set<string>()
+    for (const field of template.fields) {
+      if (field.svg_id) used.add(field.svg_id)
+    }
+    for (const page of template.pages) {
+      for (const table of page.tables) {
+        for (const cell of table.cells) {
+          if (cell.svg_id) used.add(cell.svg_id)
+        }
+      }
+    }
+
+    const candidates = new Set<string>()
+    for (const element of svgElements) {
+      const candidate = element.suggestedId || element.id
+      if (candidate && !used.has(candidate)) {
+        candidates.add(candidate)
+      }
+    }
+    return Array.from(candidates).sort()
+  }, [template, svgElements, selectedPageId, selectedSvg])
+
+  const focusFromValidationPath = useCallback((path: string) => {
+    if (!path) {
+      setNotification('This validation error does not include a jump path. Please read the message.')
+      return
+    }
+
+    const normalized = normalizeValidationPath(path)
+    if (!normalized) {
+      const suffix = path ? ` (path: ${path})` : ''
+      setNotification(`This validation error is not auto-jumpable. Please read the message.${suffix}`)
+      return
+    }
+    const tab = normalized.startsWith('fields')
+      ? 'fields'
+      : normalized.startsWith('formatters')
+        ? 'formatters'
+        : 'pages'
+
+    setFocusTarget({ tab, path: normalized })
+  }, [])
+
+  const handleCopyValidation = useCallback(async (payload: { code: string; path: string; file: string; message: string }) => {
+    const lines = [
+      `code: ${payload.code}`,
+      `path: ${payload.path || '(none)'}`,
+      `file: ${payload.file || '(none)'}`,
+      `message: ${payload.message}`,
+    ]
+    const text = lines.join('\n')
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const area = document.createElement('textarea')
+        area.value = text
+        area.style.position = 'fixed'
+        area.style.left = '-9999px'
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand('copy')
+        document.body.removeChild(area)
+      }
+      setNotification('Copied validation error to clipboard.')
+    } catch {
+      setNotification('Failed to copy validation error.')
+    }
+  }, [])
+
+  const handleResetSession = useCallback(() => {
+    if (!confirm('Reset saved session?')) return
+    clearSession()
+    setNotification('Session reset.')
+  }, [])
+
+  const handleCopyPreviewPath = useCallback(async (path: string | undefined) => {
+    if (!path) return
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(path)
+      } else {
+        const area = document.createElement('textarea')
+        area.value = path
+        area.style.position = 'fixed'
+        area.style.left = '-9999px'
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand('copy')
+        document.body.removeChild(area)
+      }
+      setNotification('Copied preview path to clipboard.')
+    } catch {
+      setNotification('Failed to copy preview path.')
+    }
+  }, [])
+
+  const startResizeMain = useCallback((event: MouseEvent) => {
+    event.preventDefault()
+    const container = mainSplitRef.current
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+    const startX = event.clientX
+    const startWidth = editorPaneWidth
+
+    const onMove = (moveEvent: MouseEvent) => {
+      const dx = moveEvent.clientX - startX
+      const ratio = (dx / rect.width) * 100
+      const next = Math.min(65, Math.max(28, startWidth + ratio))
+      setEditorPaneWidth(next)
+    }
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [editorPaneWidth])
+
+  const clearFocusTarget = useCallback(() => {
+    setFocusTarget(null)
+  }, [])
+
+  useEffect(() => {
+    if (!notification) return
+    const timer = setTimeout(() => setNotification(null), 4000)
+    return () => clearTimeout(timer)
+  }, [notification])
+
+  const groupedValidationErrors = useMemo(() => {
+    if (!validationResult) {
+      return {
+        pages: [],
+        fields: [],
+        formatters: [],
+        other: [],
+      }
+    }
+
+    const groups: Record<'pages' | 'fields' | 'formatters' | 'other', typeof validationResult.errors> = {
+      pages: [],
+      fields: [],
+      formatters: [],
+      other: [],
+    }
+
+    for (const err of validationResult.errors) {
+      const normalized = normalizeValidationPath(err.path || '')
+      if (normalized.startsWith('pages')) {
+        groups.pages.push(err)
+      } else if (normalized.startsWith('fields')) {
+        groups.fields.push(err)
+      } else if (normalized.startsWith('formatters')) {
+        groups.formatters.push(err)
+      } else {
+        groups.other.push(err)
+      }
+    }
+
+    return groups
+  }, [validationResult])
+
+  useEffect(() => {
+    if (!validationResult) return
+    setValidationGroupsOpen({
+      pages: groupedValidationErrors.pages.length > 0,
+      fields: groupedValidationErrors.fields.length > 0,
+      formatters: groupedValidationErrors.formatters.length > 0,
+      other: groupedValidationErrors.other.length > 0,
+    })
+  }, [validationResult, groupedValidationErrors])
 
   return (
     <div className="app">
@@ -146,6 +484,25 @@ export function App() {
         </div>
       </header>
 
+      <div className="templates-bar">
+        <div className="templates-bar-left">
+          <label>Templates Base Dir</label>
+          <input
+            type="text"
+            value={templatesBaseDir}
+            onChange={(e) => setTemplatesBaseDir((e.target as HTMLInputElement).value)}
+            placeholder="templates"
+          />
+          <button onClick={() => refreshTemplatesList(templatesBaseDir)} disabled={templatesLoading}>
+            {templatesLoading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+        <div className="templates-bar-right">
+          <button className="btn-reset" onClick={handleResetSession}>Reset session</button>
+          {templatesError ? <span className="templates-error">{templatesError}</span> : null}
+        </div>
+      </div>
+
       <Toolbar
         onSave={handleSave}
         onValidate={handleValidate}
@@ -154,7 +511,7 @@ export function App() {
         isLoading={isLoading}
       />
 
-      <main className="app-main">
+      <main className="app-main" ref={mainSplitRef}>
         {error && (
           <div className="error-banner">
             {error}
@@ -164,20 +521,60 @@ export function App() {
 
         {template ? (
           <>
-            <div className="editor-pane">
+            <div className="editor-pane" style={{ width: `${editorPaneWidth}%` }}>
+              <div className="templates-panel">
+                <h3>Templates</h3>
+                {templatesList.length === 0 ? (
+                  <p className="empty">No templates found under {templatesBaseDir}</p>
+                ) : (
+                  <ul className="templates-list">
+                    {templatesList.map((item) => (
+                      <li key={`${item.id}-${item.version}`}>
+                        <button
+                          className="templates-item"
+                          onClick={() => {
+                            setTemplateDir(item.path)
+                            void loadTemplateByPath(item.path)
+                          }}
+                        >
+                          <span className="templates-item-id">{item.id}</span>
+                          <span className="templates-item-version">v{item.version}</span>
+                          <span className="templates-item-path">{item.path}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               <TemplateEditor
                 template={template}
                 onChange={handleTemplateChange}
                 onPageSelect={handlePageSelect}
-                selectedPageId={selectedSvg ? template.pages.find(p => p.svg === selectedSvg)?.id ?? null : null}
+                selectedPageId={selectedPageId}
+                onSelectedPageIdChange={handleSelectedPageIdChange}
+                focusTarget={focusTarget}
+                onFocusTargetConsumed={clearFocusTarget}
+                suggestedSvgIds={suggestedSvgIds}
               />
             </div>
-
-            <div className="preview-pane">
+            <div
+              className="main-divider"
+              onMouseDown={(e) => startResizeMain(e as unknown as MouseEvent)}
+              role="separator"
+              aria-orientation="vertical"
+            />
+            <div className="preview-pane" style={{ width: `${100 - editorPaneWidth}%` }}>
               <SvgViewer
                 svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
                 elements={svgElements}
                 templateDir={templateDir}
+                selectedElementIndex={selectedTextIndex}
+                onSelectElement={handleSelectTextElement}
+                pendingId={pendingId}
+                onPendingIdChange={setPendingId}
+                onUseSuggestedId={handleUseSuggestedId}
+                onApplyId={handleApplyId}
+                isLoading={isLoading}
               />
             </div>
           </>
@@ -186,6 +583,30 @@ export function App() {
             <h2>Welcome to SVG Paper Template Editor</h2>
             <p>Enter a template directory path and click Load to start editing.</p>
             <p>Example: <code>test-templates/delivery-slip/v1</code></p>
+            <div className="templates-panel">
+              <h3>Templates</h3>
+              {templatesList.length === 0 ? (
+                <p className="empty">No templates found under {templatesBaseDir}</p>
+              ) : (
+                <ul className="templates-list">
+                  {templatesList.map((item) => (
+                    <li key={`${item.id}-${item.version}`}>
+                      <button
+                        className="templates-item"
+                        onClick={() => {
+                          setTemplateDir(item.path)
+                          void loadTemplateByPath(item.path)
+                        }}
+                      >
+                        <span className="templates-item-id">{item.id}</span>
+                        <span className="templates-item-version">v{item.version}</span>
+                        <span className="templates-item-path">{item.path}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -198,11 +619,44 @@ export function App() {
           ) : (
             <>
               <p className="error">✗ {validationResult.errors.length} errors found</p>
-              <ul>
-                {validationResult.errors.map((err, i) => (
-                  <li key={i}>[{err.code}] {err.file}: {err.message}</li>
-                ))}
-              </ul>
+              <div className="validation-groups">
+                {renderValidationGroup({
+                  key: 'pages',
+                  title: 'Pages',
+                  errors: groupedValidationErrors.pages,
+                  isOpen: validationGroupsOpen.pages,
+                  onToggle: () => setValidationGroupsOpen(prev => ({ ...prev, pages: !prev.pages })),
+                  onJump: focusFromValidationPath,
+                  onCopy: handleCopyValidation,
+                })}
+                {renderValidationGroup({
+                  key: 'fields',
+                  title: 'Fields',
+                  errors: groupedValidationErrors.fields,
+                  isOpen: validationGroupsOpen.fields,
+                  onToggle: () => setValidationGroupsOpen(prev => ({ ...prev, fields: !prev.fields })),
+                  onJump: focusFromValidationPath,
+                  onCopy: handleCopyValidation,
+                })}
+                {renderValidationGroup({
+                  key: 'formatters',
+                  title: 'Formatters',
+                  errors: groupedValidationErrors.formatters,
+                  isOpen: validationGroupsOpen.formatters,
+                  onToggle: () => setValidationGroupsOpen(prev => ({ ...prev, formatters: !prev.formatters })),
+                  onJump: focusFromValidationPath,
+                  onCopy: handleCopyValidation,
+                })}
+                {renderValidationGroup({
+                  key: 'other',
+                  title: 'Other',
+                  errors: groupedValidationErrors.other,
+                  isOpen: validationGroupsOpen.other,
+                  onToggle: () => setValidationGroupsOpen(prev => ({ ...prev, other: !prev.other })),
+                  onJump: focusFromValidationPath,
+                  onCopy: handleCopyValidation,
+                })}
+              </div>
             </>
           )}
           {validationResult.warnings.length > 0 && (
@@ -224,6 +678,9 @@ export function App() {
           <h3>Preview Generated</h3>
           <p>Pages: {previewResult.output.pages.length}</p>
           <p>HTML: {previewResult.output.html}</p>
+          <button onClick={() => handleCopyPreviewPath(previewResult.output?.html)}>
+            Copy path
+          </button>
           <button onClick={() => window.open(previewResult.output?.html, '_blank')}>
             Open Preview
           </button>
@@ -231,7 +688,200 @@ export function App() {
         </div>
       )}
 
-      <StatusBar status={status} />
+      <StatusBar status={notification || status} />
     </div>
   )
+}
+
+function renderValidationGroup(args: {
+  key: string
+  title: string
+  errors: Array<{ code: string; file: string; message: string; path: string }>
+  isOpen: boolean
+  onToggle: () => void
+  onJump: (path: string) => void
+  onCopy: (payload: { code: string; path: string; file: string; message: string }) => void
+}) {
+  const { key, title, errors, isOpen, onToggle, onJump, onCopy } = args
+  return (
+    <div className="validation-group" key={key}>
+      <button className="validation-group-header" onClick={onToggle}>
+        <span>{title}</span>
+        <span className="validation-count">{errors.length}</span>
+        <span className="validation-toggle">{isOpen ? '▾' : '▸'}</span>
+      </button>
+      {isOpen && errors.length > 0 && (
+        <ul className="validation-list">
+          {errors.map((err, i) => (
+            <li key={`${key}-${i}`} className="validation-item">
+              <button className="validation-link" onClick={() => onJump(err.path)}>
+                [{err.code}] {err.file}: {err.message}
+              </button>
+              <button
+                className="validation-copy"
+                onClick={() => onCopy({
+                  code: err.code,
+                  path: err.path,
+                  file: err.file,
+                  message: err.message,
+                })}
+              >
+                Copy
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function normalizeValidationPath(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed) return ''
+
+  const withoutPrefix = trimmed
+    .replace(/^templateJson\./, '')
+    .replace(/^template\./, '')
+    .replace(/^\$\./, '')
+
+  const tokens = parsePathTokens(withoutPrefix)
+  if (!tokens || tokens.length === 0) return ''
+
+  const root = tokens[0]
+  if (root.type !== 'key') return ''
+  if (root.value !== 'pages' && root.value !== 'fields' && root.value !== 'formatters') return ''
+
+  if (root.value === 'formatters') {
+    const next = tokens[1]
+    if (!next || next.type !== 'key') return ''
+    let out = `formatters["${next.value}"]`
+    for (let i = 2; i < tokens.length; i += 1) {
+      const token = tokens[i]
+      if (token.type === 'index') {
+        out += `[${token.value}]`
+      } else {
+        out += `.${token.value}`
+      }
+    }
+    return out
+  }
+
+  let out = root.value
+  for (let i = 1; i < tokens.length; i += 1) {
+    const token = tokens[i]
+    if (token.type === 'index') {
+      out += `[${token.value}]`
+    } else {
+      out += `.${token.value}`
+    }
+  }
+  return out
+}
+
+type PathToken = { type: 'key'; value: string } | { type: 'index'; value: number }
+
+function parsePathTokens(input: string): PathToken[] | null {
+  const tokens: PathToken[] = []
+  let i = 0
+
+  const eatWhitespace = () => {
+    while (i < input.length && /\s/.test(input[i])) i += 1
+  }
+
+  const readIdentifier = () => {
+    const start = i
+    while (i < input.length && /[A-Za-z0-9_$]/.test(input[i])) i += 1
+    if (start === i) return null
+    return input.slice(start, i)
+  }
+
+  const readNumber = () => {
+    const start = i
+    while (i < input.length && /[0-9]/.test(input[i])) i += 1
+    if (start === i) return null
+    return Number(input.slice(start, i))
+  }
+
+  while (i < input.length) {
+    eatWhitespace()
+
+    if (input[i] === '.') {
+      i += 1
+      eatWhitespace()
+    }
+
+    if (input[i] === '[') {
+      i += 1
+      eatWhitespace()
+      const quote = input[i] === '"' || input[i] === '\'' ? input[i] : null
+      if (quote) {
+        i += 1
+        const start = i
+        while (i < input.length && input[i] !== quote) i += 1
+        if (i >= input.length) return null
+        const key = input.slice(start, i)
+        i += 1
+        eatWhitespace()
+        if (input[i] !== ']') return null
+        i += 1
+        tokens.push({ type: 'key', value: key })
+        continue
+      }
+
+      const num = readNumber()
+      if (num === null || Number.isNaN(num)) return null
+      eatWhitespace()
+      if (input[i] !== ']') return null
+      i += 1
+      tokens.push({ type: 'index', value: num })
+      continue
+    }
+
+    const ident = readIdentifier()
+    if (ident) {
+      tokens.push({ type: 'key', value: ident })
+      continue
+    }
+
+    const num = readNumber()
+    if (num !== null) {
+      tokens.push({ type: 'index', value: num })
+      continue
+    }
+
+    return null
+  }
+
+  return tokens
+}
+
+function loadSession(): { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string } {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem('svgpaper.session')
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string }
+    return parsed || {}
+  } catch {
+    return {}
+  }
+}
+
+function saveSession(data: { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string }) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem('svgpaper.session', JSON.stringify(data))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clearSession() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem('svgpaper.session')
+  } catch {
+    // ignore storage errors
+  }
 }

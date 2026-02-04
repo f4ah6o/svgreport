@@ -23,6 +23,7 @@ export interface ServerOptions {
   outputDir?: string;
   uiRemoteUrl?: string;
   uiAllowHosts?: string[];
+  uiStaticDir?: string;
 }
 
 interface RpcError {
@@ -198,33 +199,159 @@ export class RpcServer {
     });
   }
 
-  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const requestId = this.generateRequestId();
-    const url = new URL(req.url || '/', `http://${req.headers.host}`);
-    const pathname = url.pathname;
+  private getContentType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentTypes: Record<string, string> = {
+      '.html': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.json': 'application/json',
+      '.svg': 'image/svg+xml',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf',
+      '.otf': 'font/otf',
+      '.eot': 'application/vnd.ms-fontobject',
+    };
+    return contentTypes[ext] || 'application/octet-stream';
+  }
 
-    // Check if this is an RPC endpoint
-    if (!pathname.startsWith('/rpc')) {
-      // Not an RPC request - try to proxy to UI
-      const validation = this.validateUiRemoteUrl();
+  private async serveStaticFile(
+    res: http.ServerResponse,
+    pathname: string
+  ): Promise<void> {
+    if (!this.options.uiStaticDir) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Static directory not configured',
+        },
+      }));
+      return;
+    }
 
-      if (!validation.valid) {
+    const staticDir = path.resolve(this.options.uiStaticDir);
+
+    // Map URL path to file path
+    let filePath = pathname === '/' ? '/index.html' : pathname;
+    const fullPath = path.join(staticDir, filePath);
+
+    // Security: Check for path traversal - ensure resolved path is within staticDir
+    const resolvedPath = path.resolve(fullPath);
+    if (!resolvedPath.startsWith(staticDir)) {
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Access denied',
+        },
+      }));
+      return;
+    }
+
+    try {
+      const stats = await fs.stat(resolvedPath);
+
+      if (!stats.isFile()) {
         res.statusCode = 404;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({
-          request_id: requestId,
           error: {
             code: 'NOT_FOUND',
-            message: validation.error || 'Proxy not configured',
+            message: 'File not found',
           },
         }));
         return;
       }
 
-      // Proxy to UI remote
-      await this.proxyRequest(req, res, validation.targetUrl!, pathname);
+      // Read and serve the file
+      const content = await fs.readFile(resolvedPath);
+      const contentType = this.getContentType(resolvedPath);
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', contentType);
+      res.end(content);
+    } catch (error) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'File not found',
+        },
+      }));
+    }
+  }
+
+  private async serveOutputFile(
+    res: http.ServerResponse,
+    pathname: string
+  ): Promise<void> {
+    // Remove '/out' prefix to get the relative path
+    const relativePath = pathname.slice(4); // Remove '/out'
+    const fullPath = path.join(this.root, 'out', relativePath);
+
+    // Security: Check for path traversal
+    const outDir = path.join(this.root, 'out');
+    const resolvedPath = path.resolve(fullPath);
+    if (!resolvedPath.startsWith(outDir)) {
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Access denied',
+        },
+      }));
       return;
     }
+
+    try {
+      const stats = await fs.stat(resolvedPath);
+
+      if (!stats.isFile()) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          error: {
+            code: 'NOT_FOUND',
+            message: 'File not found',
+          },
+        }));
+        return;
+      }
+
+      // Read and serve the file
+      const content = await fs.readFile(resolvedPath);
+      const contentType = this.getContentType(resolvedPath);
+
+      res.statusCode = 200;
+      res.setHeader('Content-Type', contentType);
+      res.end(content);
+    } catch (error) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'File not found',
+        },
+      }));
+    }
+  }
+
+  private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const requestId = this.generateRequestId();
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    const pathname = url.pathname;
 
     // Set CORS headers for same-origin (no CORS needed per spec, but helpful for development)
     res.setHeader('Content-Type', 'application/json');
@@ -245,6 +372,9 @@ export class RpcServer {
       } else if (pathname === '/rpc/inspect-text' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleInspectText(body);
+      } else if (pathname === '/rpc/svg/read' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleSvgRead(body);
       } else if (pathname === '/rpc/svg/set-ids' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgSetIds(body);
@@ -263,9 +393,38 @@ export class RpcServer {
       } else if (pathname === '/rpc/generate' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleGenerate(body);
-      } else {
+      } else if (pathname.startsWith('/rpc/')) {
+        // Unknown RPC endpoint
         res.statusCode = 404;
-        response = { error: { code: 'NOT_FOUND', message: `Endpoint not found: ${pathname}` } };
+        response = { error: { code: 'NOT_FOUND', message: `RPC endpoint not found: ${pathname}` } };
+      } else if (pathname.startsWith('/out/')) {
+        // Serve preview/output files
+        await this.serveOutputFile(res, pathname);
+        return;
+      } else {
+        // Not an RPC request - try to serve static files from uiStaticDir
+        if (this.options.uiStaticDir) {
+          await this.serveStaticFile(res, pathname);
+          return;
+        }
+        
+        // Try to proxy to remote UI
+        const validation = this.validateUiRemoteUrl();
+        if (validation.valid && validation.targetUrl) {
+          await this.proxyRequest(req, res, validation.targetUrl, pathname);
+          return;
+        }
+        
+        // Neither static dir nor proxy configured
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          error: {
+            code: 'NOT_FOUND',
+            message: 'No UI configured. Use --ui-static-dir or --ui-remote-url.',
+          },
+        }));
+        return;
       }
 
       // Add request_id to all responses
@@ -447,6 +606,26 @@ export class RpcServer {
     }
   }
 
+  private async handleSvgRead(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { path: inputPath } = body as { path: string };
+
+    if (!inputPath) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required field: path' } };
+    }
+
+    try {
+      const resolvedPath = this.resolvePath(inputPath);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+
+      return {
+        contentType: 'image/svg+xml',
+        svg: content,
+      };
+    } catch (error) {
+      return { error: { code: 'NOT_FOUND', message: `Cannot read SVG: ${error}` } };
+    }
+  }
+
   private formatInspectTextResponse(analysis: Awaited<ReturnType<typeof extractTextElements>>, options: { includePathTextWarnings?: boolean; suggestIds?: boolean }): RpcResponse {
     const warnings: Array<{ code: string; message: string }> = [];
 
@@ -531,8 +710,7 @@ export class RpcServer {
 
       // Get text elements sorted by position (same as inspect-text)
       const textNodes = Array.from(svg.getElementsByTagName('text'));
-      const textElements = textNodes.map((text, index) => ({
-        index: index + 1,
+      const textElements = textNodes.map((text) => ({
         element: text,
         x: parseFloat(text.getAttribute('x') || '0'),
         y: parseFloat(text.getAttribute('y') || '0'),
@@ -544,11 +722,17 @@ export class RpcServer {
         return a.y - b.y;
       });
 
+      // Assign sorted index (1-based) to match inspect-text ordering
+      const indexedTextElements = textElements.map((item, idx) => ({
+        ...item,
+        index: idx + 1,
+      }));
+
       // Assign IDs
       let updated = false;
       for (const assignment of assignments) {
         if (assignment.selector.byIndex) {
-          const target = textElements.find(t => t.index === assignment.selector.byIndex);
+          const target = indexedTextElements.find(t => t.index === assignment.selector.byIndex);
           if (target) {
             target.element.setAttribute('id', assignment.id);
             updated = true;

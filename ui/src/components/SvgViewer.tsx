@@ -1,36 +1,54 @@
-import { useState, useEffect } from 'preact/hooks'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
 import type { TextElement } from '../types/api'
+import { rpc } from '../lib/rpc'
 
 interface SvgViewerProps {
   svgPath: string | null
   elements: TextElement[]
   templateDir: string
+  selectedElementIndex: number | null
+  onSelectElement: (index: number) => void
+  pendingId: string
+  onPendingIdChange: (value: string) => void
+  onUseSuggestedId: () => void
+  onApplyId: () => void
+  isLoading: boolean
 }
 
-export function SvgViewer({ svgPath, elements, templateDir }: SvgViewerProps) {
+export function SvgViewer({
+  svgPath,
+  elements,
+  templateDir,
+  selectedElementIndex,
+  onSelectElement,
+  pendingId,
+  onPendingIdChange,
+  onUseSuggestedId,
+  onApplyId,
+  isLoading,
+}: SvgViewerProps) {
+  const viewerRef = useRef<HTMLDivElement | null>(null)
   const [svgContent, setSvgContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedElement, setSelectedElement] = useState<number | null>(null)
+  const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
+  const [svgPaneWidth, setSvgPaneWidth] = useState(62)
+  const [showElementMap, setShowElementMap] = useState(true)
 
   useEffect(() => {
     if (!svgPath) {
       setSvgContent(null)
+      setOverlayViewBox(null)
       return
     }
 
     const loadSvg = async () => {
       setLoading(true)
       setError(null)
-      // templateDir is used to construct the full path context
-      void templateDir
       try {
-        const response = await fetch(`/api/svg?path=${encodeURIComponent(svgPath)}`)
-        if (!response.ok) {
-          throw new Error(`Failed to load SVG: ${response.status}`)
-        }
-        const content = await response.text()
-        setSvgContent(content)
+        void templateDir
+        const result = await rpc.readSvg(svgPath)
+        setSvgContent(result.svg)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load SVG')
       } finally {
@@ -41,6 +59,65 @@ export function SvgViewer({ svgPath, elements, templateDir }: SvgViewerProps) {
     loadSvg()
   }, [svgPath])
 
+  useEffect(() => {
+    if (!svgContent) {
+      setOverlayViewBox(null)
+      return
+    }
+
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgContent, 'image/svg+xml')
+      const svg = doc.documentElement
+      const viewBox = svg.getAttribute('viewBox')
+      if (viewBox) {
+        setOverlayViewBox(viewBox)
+        return
+      }
+
+      const widthAttr = svg.getAttribute('width') || ''
+      const heightAttr = svg.getAttribute('height') || ''
+      const width = parseFloat(widthAttr)
+      const height = parseFloat(heightAttr)
+      if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+        setOverlayViewBox(`0 0 ${width} ${height}`)
+      } else {
+        setOverlayViewBox(null)
+      }
+    } catch {
+      setOverlayViewBox(null)
+    }
+  }, [svgContent])
+
+  const selectedElement = useMemo(() => {
+    if (selectedElementIndex === null) return null
+    return elements[selectedElementIndex] || null
+  }, [elements, selectedElementIndex])
+
+  const startResize = useCallback((event: MouseEvent) => {
+    event.preventDefault()
+    const container = viewerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    const startX = event.clientX
+    const startWidth = svgPaneWidth
+
+    const onMove = (moveEvent: MouseEvent) => {
+      const dx = moveEvent.clientX - startX
+      const ratio = (dx / rect.width) * 100
+      const next = Math.min(80, Math.max(35, startWidth + ratio))
+      setSvgPaneWidth(next)
+    }
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [svgPaneWidth])
+
   if (!svgPath) {
     return (
       <div className="svg-viewer empty">
@@ -50,23 +127,72 @@ export function SvgViewer({ svgPath, elements, templateDir }: SvgViewerProps) {
   }
 
   return (
-    <div className="svg-viewer">
-      <div className="svg-preview">
+    <div className="svg-viewer" ref={viewerRef}>
+      <div className="svg-preview" style={{ width: `${svgPaneWidth}%` }}>
         <h3>SVG Preview</h3>
         <div className="svg-path">{svgPath}</div>
+        <div className="svg-preview-actions">
+          <button className="btn-secondary" onClick={() => setShowElementMap(v => !v)}>
+            {showElementMap ? 'Hide Element Map' : 'Show Element Map'}
+          </button>
+        </div>
         
         {loading && <div className="loading">Loading SVG...</div>}
         {error && <div className="error">{error}</div>}
         
         {svgContent && (
-          <div 
-            className="svg-container"
-            dangerouslySetInnerHTML={{ __html: svgContent }}
-          />
+          <div className="svg-container">
+            <div
+              className="svg-content"
+              dangerouslySetInnerHTML={{ __html: svgContent }}
+            />
+            {overlayViewBox && (showElementMap || selectedElement) && (
+              <svg
+                className="svg-overlay"
+                viewBox={overlayViewBox}
+                preserveAspectRatio="xMinYMin meet"
+              >
+                {showElementMap && elements.map((element, index) => (
+                  <g key={`${element.index}-${index}`}>
+                    <rect
+                      className="svg-overlay-rect-dim"
+                      x={element.bbox.x}
+                      y={element.bbox.y}
+                      width={Math.max(element.bbox.w, 8)}
+                      height={Math.max(element.bbox.h, 8)}
+                    />
+                    <text
+                      className="svg-overlay-label"
+                      x={element.bbox.x + 1}
+                      y={element.bbox.y - 1}
+                    >
+                      {element.index}
+                    </text>
+                  </g>
+                ))}
+                {selectedElement && (
+                  <rect
+                    className="svg-overlay-rect"
+                    x={selectedElement.bbox.x}
+                    y={selectedElement.bbox.y}
+                    width={Math.max(selectedElement.bbox.w, 8)}
+                    height={Math.max(selectedElement.bbox.h, 8)}
+                  />
+                )}
+              </svg>
+            )}
+          </div>
         )}
       </div>
 
-      <div className="elements-list">
+      <div
+        className="svg-inner-divider"
+        onMouseDown={(e) => startResize(e as unknown as MouseEvent)}
+        role="separator"
+        aria-orientation="vertical"
+      />
+
+      <div className="elements-list" style={{ width: `${100 - svgPaneWidth}%` }}>
         <h3>Text Elements ({elements.length})</h3>
         
         {elements.length === 0 ? (
@@ -76,8 +202,8 @@ export function SvgViewer({ svgPath, elements, templateDir }: SvgViewerProps) {
             {elements.map((element, index) => (
               <li 
                 key={index}
-                className={`element-item ${selectedElement === index ? 'selected' : ''}`}
-                onClick={() => setSelectedElement(index)}
+                className={`element-item ${selectedElementIndex === index ? 'selected' : ''}`}
+                onClick={() => onSelectElement(index)}
               >
                 <div className="element-header">
                   <span className="element-index">#{element.index}</span>
@@ -94,41 +220,71 @@ export function SvgViewer({ svgPath, elements, templateDir }: SvgViewerProps) {
           </ul>
         )}
 
-        {selectedElement !== null && elements[selectedElement] && (
+        {selectedElement && (
           <div className="element-details">
             <h4>Element Details</h4>
             <dl>
               <dt>Index</dt>
-              <dd>{elements[selectedElement].index}</dd>
+              <dd>{selectedElement.index}</dd>
               
               <dt>ID</dt>
-              <dd>{elements[selectedElement].id || '(none)'}</dd>
+              <dd>{selectedElement.id || '(none)'}</dd>
               
               <dt>Suggested ID</dt>
-              <dd>{elements[selectedElement].suggestedId || '(none)'}</dd>
+              <dd>{selectedElement.suggestedId || '(none)'}</dd>
               
               <dt>Text</dt>
-              <dd>{elements[selectedElement].text}</dd>
+              <dd>{selectedElement.text}</dd>
               
               <dt>Position</dt>
               <dd>
-                x: {elements[selectedElement].position.x.toFixed(2)}<br />
-                y: {elements[selectedElement].position.y.toFixed(2)}
+                x: {selectedElement.position.x.toFixed(2)}<br />
+                y: {selectedElement.position.y.toFixed(2)}
               </dd>
               
               <dt>Bounding Box</dt>
               <dd>
-                x: {elements[selectedElement].bbox.x.toFixed(2)}<br />
-                y: {elements[selectedElement].bbox.y.toFixed(2)}<br />
-                w: {elements[selectedElement].bbox.w.toFixed(2)}<br />
-                h: {elements[selectedElement].bbox.h.toFixed(2)}
+                x: {selectedElement.bbox.x.toFixed(2)}<br />
+                y: {selectedElement.bbox.y.toFixed(2)}<br />
+                w: {selectedElement.bbox.w.toFixed(2)}<br />
+                h: {selectedElement.bbox.h.toFixed(2)}
               </dd>
               
               <dt>Font Size</dt>
-              <dd>{elements[selectedElement].font.size?.toFixed(2) || 'unknown'}</dd>
+              <dd>{selectedElement.font.size?.toFixed(2) || 'unknown'}</dd>
             </dl>
           </div>
         )}
+
+        <div className="id-assign">
+          <h4>ID Assignment</h4>
+          <div className="form-row">
+            <label>Pending ID</label>
+            <input
+              type="text"
+              value={pendingId}
+              onChange={(e) => onPendingIdChange((e.target as HTMLInputElement).value)}
+              placeholder="e.g. customer_name"
+              disabled={!selectedElement || isLoading}
+            />
+          </div>
+          <div className="id-assign-actions">
+            <button
+              className="btn-secondary"
+              onClick={onUseSuggestedId}
+              disabled={!selectedElement?.suggestedId || isLoading}
+            >
+              Use Suggested
+            </button>
+            <button
+              className="btn-primary"
+              onClick={onApplyId}
+              disabled={!selectedElement || !pendingId.trim() || isLoading}
+            >
+              {isLoading ? 'Applying...' : 'Apply ID'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

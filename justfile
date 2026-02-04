@@ -119,3 +119,59 @@ server-with-ui url="http://localhost:3000" port="8788" root=".":
 # UIリバースプロキシ付きで開発モード（ビルド + サーバー起動）
 dev-server-with-ui: build
     node dist/cli.js server -p 8788 -r . --ui-remote-url http://localhost:3000
+
+# デモ：UI込みでサンプルを試す（ビルド + 統合サーバー + ブラウザ起動）
+# 使用例: just demo
+# 使用例: just demo test-templates/delivery-slip/v1
+demo template="test-templates/delivery-slip/v1": build build-ui
+    @echo "================================================"
+    @echo "  SVG Paper Demo"
+    @echo "================================================"
+    @echo ""
+    @echo "Starting integrated server..."
+    @echo "  - RPC API: http://127.0.0.1:8788/rpc/"
+    @echo "  - UI:      http://127.0.0.1:8788/"
+    @echo "  - Sample:  {{template}}"
+    @echo ""
+    @echo "Press Ctrl+C to stop"
+    @echo ""
+    node dist/cli.js server -p 8788 -r . --ui-static-dir ./ui/dist
+
+# デモ（開発モード: Vite dev + RPC reverse proxy）
+# 使用例: just demo-dev
+demo-dev port="8788" root=".":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "================================================"
+    echo "  SVG Paper Demo (Dev Mode)"
+    echo "================================================"
+    echo ""
+    echo "Starting Vite dev server (http://localhost:3000) ..."
+    (cd ui && pnpm install && pnpm dev) &
+    UI_PID=$!
+    cleanup() {
+      kill "${UI_PID}" 2>/dev/null || true
+    }
+    trap cleanup EXIT INT TERM
+    sleep 1
+    echo ""
+    echo "Starting RPC server with UI reverse proxy..."
+    echo "  - RPC API: http://127.0.0.1:{{port}}/rpc/"
+    echo "  - UI:      http://127.0.0.1:{{port}}/"
+    echo ""
+    echo "Press Ctrl+C to stop"
+    echo ""
+    pnpm build
+    node dist/cli.js server -p {{port}} -r {{root}} --ui-remote-url http://localhost:3000
+
+# デモ（ブラウザ自動起動付き - Linux）
+demo-linux template="test-templates/delivery-slip/v1": build build-ui
+    @echo "Starting demo server..."
+    @xdg-open http://127.0.0.1:8788/ &
+    node dist/cli.js server -p 8788 -r . --ui-static-dir ./ui/dist
+
+# デモ（ブラウザ自動起動付き - macOS）  
+demo-mac template="test-templates/delivery-slip/v1": build build-ui
+    @echo "Starting demo server..."
+    @open http://127.0.0.1:8788/
+    node dist/cli.js server -p 8788 -r . --ui-static-dir ./ui/dist

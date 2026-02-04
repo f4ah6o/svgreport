@@ -1,15 +1,35 @@
-import { useState, useCallback } from 'preact/hooks'
-import type { TemplateConfig, FieldBinding } from '../types/api'
+import { useState, useCallback, useEffect } from 'preact/hooks'
+import type { TemplateConfig, FieldBinding, PageConfig, TableBinding, TableCell, FormatterDef } from '../types/api'
 
 interface TemplateEditorProps {
   template: TemplateConfig
   onChange: (template: TemplateConfig) => void
   onPageSelect: (pageId: string) => void
   selectedPageId: string | null
+  onSelectedPageIdChange: (pageId: string) => void
+  focusTarget: { tab: 'pages' | 'fields' | 'formatters'; path: string } | null
+  onFocusTargetConsumed: () => void
+  suggestedSvgIds: string[]
 }
 
-export function TemplateEditor({ template, onChange, onPageSelect, selectedPageId }: TemplateEditorProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'pages' | 'fields'>('info')
+export function TemplateEditor({
+  template,
+  onChange,
+  onPageSelect,
+  selectedPageId,
+  onSelectedPageIdChange,
+  focusTarget,
+  onFocusTargetConsumed,
+  suggestedSvgIds,
+}: TemplateEditorProps) {
+  const [activeTab, setActiveTab] = useState<'info' | 'pages' | 'fields' | 'formatters'>('info')
+  const [lastFocusPath, setLastFocusPath] = useState<string | null>(null)
+  const pageIdCounts = template.pages.reduce<Record<string, number>>((acc, page) => {
+    const key = page.id.trim()
+    if (!key) return acc
+    acc[key] = (acc[key] || 0) + 1
+    return acc
+  }, {})
 
   const handleTemplateIdChange = useCallback((value: string) => {
     onChange({
@@ -47,6 +67,172 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
     onChange({ ...template, fields: newFields })
   }, [template, onChange])
 
+  const handleAddPage = useCallback(() => {
+    const nextIndex = template.pages.length + 1
+    const newPage: PageConfig = {
+      id: `page-${nextIndex}`,
+      svg: `page-${nextIndex}.svg`,
+      kind: template.pages.length === 0 ? 'first' : 'repeat',
+      tables: [],
+    }
+    onChange({ ...template, pages: [...template.pages, newPage] })
+  }, [template, onChange])
+
+  const handleRemovePage = useCallback((pageId: string) => {
+    const newPages = template.pages.filter(p => p.id !== pageId)
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handlePageChange = useCallback((pageId: string, patch: Partial<PageConfig>) => {
+    const newPages = template.pages.map(p => p.id === pageId ? { ...p, ...patch } : p)
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handlePageNumberChange = useCallback((pageId: string, patch: { svg_id?: string; format?: string }) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const nextPageNumber = { ...(p.page_number || { svg_id: '' }), ...patch }
+      if (!nextPageNumber.svg_id) {
+        const { page_number: _removed, ...rest } = p
+        return rest as PageConfig
+      }
+      return { ...p, page_number: nextPageNumber }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handleAddTable = useCallback((pageId: string) => {
+    const newTable: TableBinding = {
+      source: 'items',
+      row_group_id: 'rows',
+      row_height_mm: 6,
+      rows_per_page: 10,
+      cells: [],
+    }
+    const newPages = template.pages.map(p => p.id === pageId ? { ...p, tables: [...p.tables, newTable] } : p)
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handleRemoveTable = useCallback((pageId: string, tableIndex: number) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const tables = p.tables.filter((_, i) => i !== tableIndex)
+      return { ...p, tables }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handleTableChange = useCallback((pageId: string, tableIndex: number, patch: Partial<TableBinding>) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const tables = p.tables.map((t, i) => i === tableIndex ? { ...t, ...patch } : t)
+      return { ...p, tables }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handleAddCell = useCallback((pageId: string, tableIndex: number) => {
+    const newCell: TableCell = {
+      svg_id: '',
+      column: '',
+      fit: 'none',
+      align: 'left',
+    }
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const tables = p.tables.map((t, i) => i === tableIndex ? { ...t, cells: [...t.cells, newCell] } : t)
+      return { ...p, tables }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handleRemoveCell = useCallback((pageId: string, tableIndex: number, cellIndex: number) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const tables = p.tables.map((t, i) => {
+        if (i !== tableIndex) return t
+        const cells = t.cells.filter((_, ci) => ci !== cellIndex)
+        return { ...t, cells }
+      })
+      return { ...p, tables }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const handleCellChange = useCallback((pageId: string, tableIndex: number, cellIndex: number, patch: Partial<TableCell>) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const tables = p.tables.map((t, i) => {
+        if (i !== tableIndex) return t
+        const cells = t.cells.map((c, ci) => ci === cellIndex ? { ...c, ...patch } : c)
+        return { ...t, cells }
+      })
+      return { ...p, tables }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
+  const formatters = template.formatters || {}
+  const formatterEntries = Object.entries(formatters)
+
+  const handleAddFormatter = useCallback(() => {
+    const nextKey = `formatter_${formatterEntries.length + 1}`
+    const newFormatters = { ...formatters, [nextKey]: { kind: 'date' as FormatterDef['kind'] } }
+    onChange({ ...template, formatters: newFormatters })
+  }, [template, onChange, formatters, formatterEntries.length])
+
+  const handleRemoveFormatter = useCallback((key: string) => {
+    const { [key]: _removed, ...rest } = formatters
+    onChange({ ...template, formatters: rest })
+  }, [template, onChange, formatters])
+
+  const handleFormatterChange = useCallback((key: string, patch: FormatterDef) => {
+    const newFormatters = { ...formatters, [key]: { ...formatters[key], ...patch } }
+    onChange({ ...template, formatters: newFormatters })
+  }, [template, onChange, formatters])
+
+  const handleFormatterKeyChange = useCallback((oldKey: string, newKey: string) => {
+    if (!newKey || newKey === oldKey) return
+    if (formatters[newKey]) return
+    const { [oldKey]: value, ...rest } = formatters
+    onChange({ ...template, formatters: { ...rest, [newKey]: value } })
+  }, [template, onChange, formatters])
+
+  useEffect(() => {
+    if (!focusTarget) return
+    if (focusTarget.path === lastFocusPath) return
+
+    setActiveTab(focusTarget.tab)
+    setLastFocusPath(focusTarget.path)
+
+    if (focusTarget.tab === 'pages') {
+      const match = focusTarget.path.match(/^pages\[(\d+)\]/)
+      if (match) {
+        const pageIndex = Number(match[1])
+        const page = template.pages[pageIndex]
+        if (page && page.id !== selectedPageId) {
+          onPageSelect(page.id)
+        }
+      }
+    }
+
+    const timer = setTimeout(() => {
+      const selector = `[data-focus-key="${cssEscape(focusTarget.path)}"]`
+      const target = document.querySelector<HTMLElement>(selector)
+      if (target) {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
+          target.focus()
+        }
+        target.classList.add('focus-highlight')
+        setTimeout(() => target.classList.remove('focus-highlight'), 1200)
+      }
+      onFocusTargetConsumed()
+    }, 50)
+
+    return () => clearTimeout(timer)
+  }, [focusTarget, lastFocusPath, onFocusTargetConsumed])
+
   return (
     <div className="template-editor">
       <div className="tabs">
@@ -67,6 +253,12 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
           onClick={() => setActiveTab('fields')}
         >
           Fields ({template.fields.length})
+        </button>
+        <button
+          className={activeTab === 'formatters' ? 'active' : ''}
+          onClick={() => setActiveTab('formatters')}
+        >
+          Formatters ({formatterEntries.length})
         </button>
       </div>
 
@@ -99,6 +291,7 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
       {activeTab === 'pages' && (
         <div className="tab-content">
           <h3>Pages</h3>
+          <button className="btn-add" onClick={handleAddPage}>+ Add Page</button>
           {template.pages.map((page) => (
             <div 
               key={page.id} 
@@ -115,6 +308,277 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
               </div>
             </div>
           ))}
+          {selectedPageId && template.pages.find(p => p.id === selectedPageId) && (
+            <div className="page-editor">
+              {(() => {
+                const page = template.pages.find(p => p.id === selectedPageId)!
+                const pageIndex = template.pages.findIndex(p => p.id === page.id)
+                const pageIdError = !page.id.trim()
+                  ? 'Page ID is required.'
+                  : pageIdCounts[page.id.trim()] > 1
+                    ? 'Page ID must be unique.'
+                    : null
+                const pageSvgError = !page.svg.trim()
+                  ? 'SVG path is required.'
+                  : page.svg.endsWith('.svg')
+                    ? null
+                    : 'SVG path should end with .svg'
+                const pageNumberSvgIdError = page.page_number?.svg_id === ''
+                  ? 'Page number SVG ID cannot be empty.'
+                  : null
+                return (
+                  <div className="page-form">
+                    <h4>Selected Page: {page.id}</h4>
+                    <div className="form-row">
+                      <label>Page ID:</label>
+                      <input
+                        type="text"
+                        value={page.id}
+                        onChange={(e) => {
+                          const nextId = (e.target as HTMLInputElement).value
+                          handlePageChange(page.id, { id: nextId })
+                          if (page.id === selectedPageId) {
+                            onSelectedPageIdChange(nextId)
+                          }
+                        }}
+                        className={pageIdError ? 'input-error' : ''}
+                        data-focus-key={`pages[${pageIndex}].id`}
+                      />
+                      {pageIdError && <span className="error-text">{pageIdError}</span>}
+                    </div>
+                    <div className="form-row">
+                      <label>SVG:</label>
+                      <input
+                        type="text"
+                        value={page.svg}
+                        onChange={(e) => handlePageChange(page.id, { svg: (e.target as HTMLInputElement).value })}
+                        className={pageSvgError ? 'input-error' : ''}
+                        data-focus-key={`pages[${pageIndex}].svg`}
+                      />
+                      {pageSvgError && <span className="error-text">{pageSvgError}</span>}
+                    </div>
+                    <div className="form-row">
+                      <label>Kind:</label>
+                      <select
+                        value={page.kind}
+                        onChange={(e) => handlePageChange(page.id, { kind: (e.target as HTMLSelectElement).value as PageConfig['kind'] })}
+                      >
+                        <option value="first">first</option>
+                        <option value="repeat">repeat</option>
+                      </select>
+                    </div>
+                    <div className="form-row">
+                      <label>Page Number SVG ID:</label>
+                      <input
+                        type="text"
+                        value={page.page_number?.svg_id || ''}
+                        onChange={(e) => handlePageNumberChange(page.id, { svg_id: (e.target as HTMLInputElement).value })}
+                        placeholder="(optional)"
+                        className={pageNumberSvgIdError ? 'input-error' : ''}
+                        data-focus-key={`pages[${pageIndex}].page_number.svg_id`}
+                      />
+                      {pageNumberSvgIdError && <span className="error-text">{pageNumberSvgIdError}</span>}
+                      {!page.page_number?.svg_id && (
+                        <span className="warning-text">
+                          Set svg_id first. Otherwise format will not be saved.
+                        </span>
+                      )}
+                    </div>
+                    <div className="form-row">
+                      <label>Page Number Format:</label>
+                      <input
+                        type="text"
+                        value={page.page_number?.format || ''}
+                        onChange={(e) => handlePageNumberChange(page.id, { format: (e.target as HTMLInputElement).value })}
+                        placeholder={page.page_number?.svg_id ? 'e.g. Page {page} / {pages}' : 'Set svg_id first'}
+                        disabled={!page.page_number?.svg_id}
+                        data-focus-key={`pages[${pageIndex}].page_number.format`}
+                      />
+                    </div>
+                    <button className="btn-remove" onClick={() => handleRemovePage(page.id)}>
+                      Remove Page
+                    </button>
+
+                    <div className="tables-section">
+                      <h4>Tables ({page.tables.length})</h4>
+                      <button className="btn-add" onClick={() => handleAddTable(page.id)}>+ Add Table</button>
+                      {page.tables.length === 0 ? (
+                        <p className="empty">No tables defined for this page.</p>
+                      ) : (
+                        <div className="tables-list">
+                          {page.tables.map((table, tableIndex) => (
+                            <div key={tableIndex} className="table-item">
+                              <div className="field-header">
+                                <span>Table #{tableIndex + 1}</span>
+                                <button className="btn-remove" onClick={() => handleRemoveTable(page.id, tableIndex)}>
+                                  Remove
+                                </button>
+                              </div>
+                              <div className="field-form">
+                                <div className="form-row">
+                                  <label>Source:</label>
+                                  <input
+                                    type="text"
+                                    value={table.source}
+                                    onChange={(e) => handleTableChange(page.id, tableIndex, { source: (e.target as HTMLInputElement).value })}
+                                  />
+                                </div>
+                                <div className="form-row">
+                                  <label>Row Group ID:</label>
+                                  <input
+                                    type="text"
+                                    value={table.row_group_id}
+                                    onChange={(e) => handleTableChange(page.id, tableIndex, { row_group_id: (e.target as HTMLInputElement).value })}
+                                    className={!table.row_group_id.trim() ? 'input-error' : ''}
+                                    data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].row_group_id`}
+                                  />
+                                  {!table.row_group_id.trim() && <span className="error-text">Row group ID is required.</span>}
+                                </div>
+                                <div className="form-row">
+                                  <label>Row Height (mm):</label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={table.row_height_mm}
+                                    onChange={(e) => handleTableChange(page.id, tableIndex, { row_height_mm: parseFloat((e.target as HTMLInputElement).value || '0') })}
+                                    className={table.row_height_mm <= 0 ? 'input-error' : ''}
+                                    data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].row_height_mm`}
+                                  />
+                                  {table.row_height_mm <= 0 && <span className="error-text">Row height must be &gt; 0.</span>}
+                                </div>
+                                <div className="form-row">
+                                  <label>Rows Per Page:</label>
+                                  <input
+                                    type="number"
+                                    value={table.rows_per_page}
+                                    onChange={(e) => handleTableChange(page.id, tableIndex, { rows_per_page: parseInt((e.target as HTMLInputElement).value || '0', 10) })}
+                                    className={table.rows_per_page <= 0 ? 'input-error' : ''}
+                                    data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].rows_per_page`}
+                                  />
+                                  {table.rows_per_page <= 0 && <span className="error-text">Rows per page must be &gt; 0.</span>}
+                                </div>
+                                <div className="form-row">
+                                  <label>Start Y (mm):</label>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={table.start_y_mm ?? ''}
+                                    onChange={(e) => handleTableChange(page.id, tableIndex, {
+                                      start_y_mm: (e.target as HTMLInputElement).value === '' ? undefined : parseFloat((e.target as HTMLInputElement).value),
+                                    })}
+                                    placeholder="optional"
+                                    data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].start_y_mm`}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="cells-section">
+                                <h5>Cells ({table.cells.length})</h5>
+                                <button className="btn-add" onClick={() => handleAddCell(page.id, tableIndex)}>+ Add Cell</button>
+                                {table.cells.length === 0 ? (
+                                  <p className="empty">No cells defined.</p>
+                                ) : (
+                                  <div className="cells-list">
+                                    {table.cells.map((cell, cellIndex) => (
+                                      <div key={cellIndex} className="cell-item">
+                                        <div className="field-header">
+                                          <span>Cell #{cellIndex + 1}</span>
+                                          <button className="btn-remove" onClick={() => handleRemoveCell(page.id, tableIndex, cellIndex)}>
+                                            Remove
+                                          </button>
+                                        </div>
+                                        <div className="field-form">
+                                          <div className="form-row">
+                                            <label>SVG ID:</label>
+                                            <input
+                                              type="text"
+                                              value={cell.svg_id}
+                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { svg_id: (e.target as HTMLInputElement).value })}
+                                              className={!cell.svg_id.trim() ? 'input-error' : ''}
+                                              data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].svg_id`}
+                                            />
+                                            {!cell.svg_id.trim() && <span className="error-text">SVG ID is required.</span>}
+                                            {!cell.svg_id && (
+                                              <div className="suggested-row">
+                                                <select
+                                                  className="suggested-select"
+                                                  defaultValue=""
+                                                  disabled={suggestedSvgIds.length === 0}
+                                                  onChange={(e) => {
+                                                    const value = (e.target as HTMLSelectElement).value
+                                                    if (value) {
+                                                      handleCellChange(page.id, tableIndex, cellIndex, { svg_id: value })
+                                                      ;(e.target as HTMLSelectElement).value = ''
+                                                    }
+                                                  }}
+                                                >
+                                                  <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
+                                                  {suggestedSvgIds.map((id) => (
+                                                    <option key={id} value={id}>{id}</option>
+                                                  ))}
+                                                </select>
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="form-row">
+                                            <label>Column:</label>
+                                            <input
+                                              type="text"
+                                              value={cell.column}
+                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { column: (e.target as HTMLInputElement).value })}
+                                              className={!cell.column.trim() ? 'input-error' : ''}
+                                              data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].column`}
+                                            />
+                                            {!cell.column.trim() && <span className="error-text">Column is required.</span>}
+                                          </div>
+                                          <div className="form-row">
+                                            <label>Fit:</label>
+                                            <select
+                                              value={cell.fit || 'none'}
+                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { fit: (e.target as HTMLSelectElement).value as TableCell['fit'] })}
+                                            >
+                                              <option value="none">none</option>
+                                              <option value="shrink">shrink</option>
+                                              <option value="wrap">wrap</option>
+                                              <option value="clip">clip</option>
+                                            </select>
+                                          </div>
+                                          <div className="form-row">
+                                            <label>Align:</label>
+                                            <select
+                                              value={cell.align || 'left'}
+                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { align: (e.target as HTMLSelectElement).value as TableCell['align'] })}
+                                            >
+                                              <option value="left">left</option>
+                                              <option value="center">center</option>
+                                              <option value="right">right</option>
+                                            </select>
+                                          </div>
+                                          <div className="form-row">
+                                            <label>Format:</label>
+                                            <input
+                                              type="text"
+                                              value={cell.format || ''}
+                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { format: (e.target as HTMLInputElement).value })}
+                                              placeholder="optional"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
         </div>
       )}
 
@@ -147,7 +611,29 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
                         ...field, 
                         svg_id: (e.target as HTMLInputElement).value 
                       })}
+                      data-focus-key={`fields[${index}].svg_id`}
                     />
+                    {!field.svg_id && (
+                      <div className="suggested-row">
+                        <select
+                          className="suggested-select"
+                          defaultValue=""
+                          disabled={suggestedSvgIds.length === 0}
+                          onChange={(e) => {
+                            const value = (e.target as HTMLSelectElement).value
+                            if (value) {
+                              handleFieldChange(index, { ...field, svg_id: value })
+                              ;(e.target as HTMLSelectElement).value = ''
+                            }
+                          }}
+                        >
+                          <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
+                          {suggestedSvgIds.map((id) => (
+                            <option key={id} value={id}>{id}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div className="form-row">
                     <label>Source:</label>
@@ -157,6 +643,7 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
                         ...field, 
                         source: (e.target as HTMLSelectElement).value 
                       })}
+                      data-focus-key={`fields[${index}].source`}
                     >
                       <option value="meta">meta</option>
                       <option value="items">items</option>
@@ -171,6 +658,7 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
                         ...field, 
                         key: (e.target as HTMLInputElement).value 
                       })}
+                      data-focus-key={`fields[${index}].key`}
                     />
                   </div>
                   <div className="form-row">
@@ -181,6 +669,7 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
                         ...field, 
                         align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
                       })}
+                      data-focus-key={`fields[${index}].align`}
                     >
                       <option value="left">Left</option>
                       <option value="center">Center</option>
@@ -193,6 +682,84 @@ export function TemplateEditor({ template, onChange, onPageSelect, selectedPageI
           )}
         </div>
       )}
+
+      {activeTab === 'formatters' && (
+        <div className="tab-content">
+          <h3>Formatters</h3>
+          <button className="btn-add" onClick={handleAddFormatter}>+ Add Formatter</button>
+          {formatterEntries.length === 0 ? (
+            <p className="empty">No formatters defined.</p>
+          ) : (
+            formatterEntries.map(([key, formatter]) => (
+              <div key={key} className="field-item">
+                <div className="field-header">
+                  <span>{key}</span>
+                  <button className="btn-remove" onClick={() => handleRemoveFormatter(key)}>
+                    Remove
+                  </button>
+                </div>
+                <div className="field-form">
+                  <div className="form-row">
+                    <label>Key:</label>
+                    <input
+                      type="text"
+                      defaultValue={key}
+                      onBlur={(e) => handleFormatterKeyChange(key, (e.target as HTMLInputElement).value)}
+                      data-focus-key={`formatters["${key}"].key`}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <label>Kind:</label>
+                    <select
+                      value={formatter.kind || ''}
+                      onChange={(e) => handleFormatterChange(key, { kind: (e.target as HTMLSelectElement).value as FormatterDef['kind'] })}
+                      data-focus-key={`formatters["${key}"].kind`}
+                    >
+                      <option value="">(none)</option>
+                      <option value="date">date</option>
+                      <option value="number">number</option>
+                      <option value="currency">currency</option>
+                    </select>
+                  </div>
+                  <div className="form-row">
+                    <label>Pattern:</label>
+                    <input
+                      type="text"
+                      value={formatter.pattern || ''}
+                      onChange={(e) => handleFormatterChange(key, { pattern: (e.target as HTMLInputElement).value })}
+                      className={(formatter.kind === 'date' || formatter.kind === 'number') && !formatter.pattern ? 'input-error' : ''}
+                      data-focus-key={`formatters["${key}"].pattern`}
+                    />
+                    {(formatter.kind === 'date' || formatter.kind === 'number') && !formatter.pattern && (
+                      <span className="error-text">Pattern is required for {formatter.kind}.</span>
+                    )}
+                  </div>
+                  <div className="form-row">
+                    <label>Currency:</label>
+                    <input
+                      type="text"
+                      value={formatter.currency || ''}
+                      onChange={(e) => handleFormatterChange(key, { currency: (e.target as HTMLInputElement).value })}
+                      className={formatter.kind === 'currency' && !formatter.currency ? 'input-error' : ''}
+                      data-focus-key={`formatters["${key}"].currency`}
+                    />
+                    {formatter.kind === 'currency' && !formatter.currency && (
+                      <span className="error-text">Currency is required for currency formatter.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
+}
+
+function cssEscape(value: string): string {
+  if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
+    return window.CSS.escape(value)
+  }
+  return value.replace(/"/g, '\\"')
 }

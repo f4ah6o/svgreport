@@ -37,6 +37,17 @@ export interface WorkspaceResponse {
   outputDirDefault: string;
 }
 
+export interface TemplateListItem {
+  id: string;
+  version: string;
+  path: string;
+}
+
+export interface TemplatesListResponse {
+  request_id: string;
+  templates: TemplateListItem[];
+}
+
 export interface TemplateConfig {
   schema: string;
   template: {
@@ -127,6 +138,12 @@ export interface InspectTextResponse {
   }>;
   texts: TextElement[];
   files?: InspectTextResponse[];
+}
+
+export interface SvgReadResponse {
+  request_id: string;
+  contentType: string;
+  svg: string;
 }
 
 export interface ValidationError {

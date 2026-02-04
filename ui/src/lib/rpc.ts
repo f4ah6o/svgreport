@@ -1,8 +1,10 @@
 import type {
   VersionResponse,
   WorkspaceResponse,
+  TemplatesListResponse,
   TemplateConfig,
   InspectTextResponse,
+  SvgReadResponse,
   ValidationResponse,
   PreviewResponse,
   SaveResponse,
@@ -36,6 +38,11 @@ class RpcClient {
     return this.request<WorkspaceResponse>('/workspace')
   }
 
+  async listTemplates(baseDir?: string): Promise<TemplatesListResponse> {
+    const query = baseDir ? `?baseDir=${encodeURIComponent(baseDir)}` : ''
+    return this.request<TemplatesListResponse>(`/templates/list${query}`)
+  }
+
   async loadTemplate(templateDir: string): Promise<TemplateConfig> {
     const response = await this.request<{ request_id: string; templateJson: TemplateConfig }>('/template/load', {
       method: 'POST',
@@ -53,6 +60,13 @@ class RpcClient {
 
   async inspectText(path: string): Promise<InspectTextResponse> {
     return this.request<InspectTextResponse>('/inspect-text', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    })
+  }
+
+  async readSvg(path: string): Promise<SvgReadResponse> {
+    return this.request<SvgReadResponse>('/svg/read', {
       method: 'POST',
       body: JSON.stringify({ path }),
     })
