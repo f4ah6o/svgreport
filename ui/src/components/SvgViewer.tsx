@@ -34,6 +34,8 @@ export function SvgViewer({
   const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
   const [svgPaneWidth, setSvgPaneWidth] = useState(62)
   const [showElementMap, setShowElementMap] = useState(true)
+  const [showBindingElements, setShowBindingElements] = useState(true)
+  const [showNoBindingElements, setShowNoBindingElements] = useState(true)
 
   useEffect(() => {
     if (!svgPath) {
@@ -94,6 +96,21 @@ export function SvgViewer({
     return elements[selectedElementIndex] || null
   }, [elements, selectedElementIndex])
 
+  const overlayElements = useMemo(() => {
+    return elements.filter((element) => {
+      const hasBinding = Boolean(element.id)
+      if (hasBinding && !showBindingElements) return false
+      if (!hasBinding && !showNoBindingElements) return false
+      return true
+    })
+  }, [elements, showBindingElements, showNoBindingElements])
+
+  const indexByElementIndex = useMemo(() => {
+    const map = new Map<number, number>()
+    elements.forEach((element, idx) => map.set(element.index, idx))
+    return map
+  }, [elements])
+
   const startResize = useCallback((event: MouseEvent) => {
     event.preventDefault()
     const container = viewerRef.current
@@ -133,7 +150,13 @@ export function SvgViewer({
         <div className="svg-path">{svgPath}</div>
         <div className="svg-preview-actions">
           <button className="btn-secondary" onClick={() => setShowElementMap(v => !v)}>
-            {showElementMap ? 'Hide Element Map' : 'Show Element Map'}
+            Show/Hide Element Map
+          </button>
+          <button className="btn-secondary" onClick={() => setShowBindingElements(v => !v)}>
+            Show/Hide Binding elements only
+          </button>
+          <button className="btn-secondary" onClick={() => setShowNoBindingElements(v => !v)}>
+            Show/Hide no-Bindding elements only
           </button>
         </div>
         
@@ -152,22 +175,28 @@ export function SvgViewer({
                 viewBox={overlayViewBox}
                 preserveAspectRatio="xMinYMin meet"
               >
-                {showElementMap && elements.map((element, index) => (
-                  <g key={`${element.index}-${index}`}>
+                {showElementMap && overlayElements.map((element) => (
+                  <g key={`${element.index}-${element.id || 'noid'}`}>
                     <rect
                       className="svg-overlay-rect-dim"
                       x={element.bbox.x}
                       y={element.bbox.y}
                       width={Math.max(element.bbox.w, 6)}
                       height={Math.max(element.bbox.h, 6)}
-                      onClick={() => onSelectElement(index)}
+                      onClick={() => {
+                        const idx = indexByElementIndex.get(element.index)
+                        if (idx !== undefined) onSelectElement(idx)
+                      }}
                     />
                     <text
                       className="svg-overlay-label"
                       x={element.bbox.x + 1}
                       y={element.bbox.y - 1}
-                      style={{ fontSize: `${getOverlayLabelSize(element)}px` }}
-                      onClick={() => onSelectElement(index)}
+                      style={{ fontSize: `${getOverlayLabelSize(element)}` }}
+                      onClick={() => {
+                        const idx = indexByElementIndex.get(element.index)
+                        if (idx !== undefined) onSelectElement(idx)
+                      }}
                     >
                       {element.index}
                     </text>

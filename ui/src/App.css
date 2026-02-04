@@ -453,6 +453,9 @@
 
 .svg-preview-actions {
   margin-bottom: 0.5rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .svg-preview-actions .btn-secondary {

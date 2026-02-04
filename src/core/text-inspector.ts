@@ -83,6 +83,7 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
   // Extract text elements
   const textElements: TextElementInfo[] = [];
   const textNodes = Array.from(svg.getElementsByTagName('text'));
+  const classFontSizes = extractClassFontSizes(svg);
   const warnings: string[] = [];
   let fontSizeSum = 0;
   let fontSizeCount = 0;
@@ -111,7 +112,7 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
     }
 
     // Calculate font size
-    const fontSizeNum = fontSize ? parseFloat(fontSize) : null;
+    const fontSizeNum = resolveFontSize(text, fontSize, classFontSizes);
     if (fontSizeNum) {
       fontSizeSum += fontSizeNum;
       fontSizeCount++;
@@ -179,6 +180,50 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
     },
     warnings,
   };
+}
+
+function resolveFontSize(text: Element, inlineFontSize: string | null, classFontSizes: Map<string, number>): number | null {
+  const inline = inlineFontSize ? parseFloat(inlineFontSize) : NaN;
+  if (!Number.isNaN(inline)) return inline;
+
+  const styleAttr = text.getAttribute('style') || '';
+  const styleMatch = styleAttr.match(/font-size\s*:\s*([0-9.]+)(px|pt|mm|cm)?/i);
+  if (styleMatch) {
+    const size = parseFloat(styleMatch[1]);
+    if (!Number.isNaN(size)) return size;
+  }
+
+  const classAttr = text.getAttribute('class') || '';
+  const classes = classAttr.split(/\s+/).filter(Boolean);
+  for (const cls of classes) {
+    const size = classFontSizes.get(cls);
+    if (size !== undefined) return size;
+  }
+
+  return null;
+}
+
+function extractClassFontSizes(svg: Element): Map<string, number> {
+  const map = new Map<string, number>();
+  const styleNodes = Array.from(svg.getElementsByTagName('style'));
+
+  for (const styleNode of styleNodes) {
+    const css = styleNode.textContent || '';
+    const ruleRegex = /\.([A-Za-z0-9_-]+)\s*\{([^}]*)\}/g;
+    let ruleMatch: RegExpExecArray | null;
+    while ((ruleMatch = ruleRegex.exec(css)) !== null) {
+      const className = ruleMatch[1];
+      const declarations = ruleMatch[2];
+      const sizeMatch = declarations.match(/font-size\s*:\s*([0-9.]+)(px|pt|mm|cm)?/i);
+      if (!sizeMatch) continue;
+      const size = parseFloat(sizeMatch[1]);
+      if (!Number.isNaN(size)) {
+        map.set(className, size);
+      }
+    }
+  }
+
+  return map;
 }
 
 /**
