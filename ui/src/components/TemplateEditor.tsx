@@ -27,6 +27,10 @@ export function TemplateEditor({
   onSelectBindingSvgId,
 }: TemplateEditorProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'pages' | 'fields' | 'formatters'>('info')
+  const [fieldGroupsOpen, setFieldGroupsOpen] = useState<{ meta: boolean; item: boolean }>({
+    meta: true,
+    item: true,
+  })
   const [lastFocusPath, setLastFocusPath] = useState<string | null>(null)
   const pageIdCounts = template.pages.reduce<Record<string, number>>((acc, page) => {
     const key = page.id.trim()
@@ -637,8 +641,14 @@ export function TemplateEditor({
               <div className="field-group">
                 <div className="field-group-header">
                   <h4>Meta Fields ({metaFields.length})</h4>
+                  <button
+                    className="field-group-toggle"
+                    onClick={() => setFieldGroupsOpen((prev) => ({ ...prev, meta: !prev.meta }))}
+                  >
+                    {fieldGroupsOpen.meta ? 'Collapse' : 'Expand'}
+                  </button>
                 </div>
-                {metaFields.length === 0 ? (
+                {fieldGroupsOpen.meta && (metaFields.length === 0 ? (
                   <p className="empty">No meta fields.</p>
                 ) : metaFields.map(({ field, index }) => (
                   <div
@@ -738,14 +748,20 @@ export function TemplateEditor({
                       </div>
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
 
               <div className="field-group">
                 <div className="field-group-header">
                   <h4>Item Fields ({itemFields.length})</h4>
+                  <button
+                    className="field-group-toggle"
+                    onClick={() => setFieldGroupsOpen((prev) => ({ ...prev, item: !prev.item }))}
+                  >
+                    {fieldGroupsOpen.item ? 'Collapse' : 'Expand'}
+                  </button>
                 </div>
-                {itemFields.length === 0 ? (
+                {fieldGroupsOpen.item && (itemFields.length === 0 ? (
                   <p className="empty">No item fields.</p>
                 ) : itemFields.map(({ field, index }) => (
                   <div
@@ -845,7 +861,7 @@ export function TemplateEditor({
                       </div>
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
             </>
           )}
