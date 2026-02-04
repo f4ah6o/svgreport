@@ -46,6 +46,16 @@
   background: #2980b9;
 }
 
+.template-path .btn-reset {
+  background: #fff;
+  color: #2c3e50;
+  border: 1px solid #d5dce3;
+}
+
+.template-path .btn-reset:hover {
+  background: #f2f5f8;
+}
+
 .app-main {
   flex: 1;
   display: flex;
@@ -53,16 +63,8 @@
   position: relative;
 }
 
-.toolbar {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid #ddd;
-  background: #fff;
-}
-
-.toolbar .btn-primary,
-.toolbar .btn-secondary {
+.btn-primary,
+.btn-secondary {
   padding: 0.45rem 0.9rem;
   border: none;
   border-radius: 4px;
@@ -70,26 +72,26 @@
   font-weight: 500;
 }
 
-.toolbar .btn-primary {
+.btn-primary {
   background: #3498db;
   color: #fff;
 }
 
-.toolbar .btn-primary:hover {
+.btn-primary:hover {
   background: #2f88c2;
 }
 
-.toolbar .btn-secondary {
+.btn-secondary {
   background: #95a5a6;
   color: #fff;
 }
 
-.toolbar .btn-secondary:hover {
+.btn-secondary:hover {
   background: #7f8c8d;
 }
 
-.toolbar .btn-primary:disabled,
-.toolbar .btn-secondary:disabled {
+.btn-primary:disabled,
+.btn-secondary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -356,6 +358,12 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.templates-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .btn-reset {

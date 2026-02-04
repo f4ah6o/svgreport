@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'preact/hooks'
 import type { TemplateConfig, TextElement, ValidationResponse, PreviewResponse, TemplateListItem } from './types/api'
 import { rpc } from './lib/rpc'
-import { Toolbar } from './components/Toolbar'
 import { TemplateEditor } from './components/TemplateEditor'
 import { SvgViewer } from './components/SvgViewer'
 import { StatusBar } from './components/StatusBar'
@@ -514,6 +513,7 @@ export function App() {
             placeholder="Template directory path"
           />
           <button onClick={handleLoad} disabled={isLoading}>Load</button>
+          <button className="btn-reset" onClick={handleResetSession}>Reset session</button>
         </div>
       </header>
 
@@ -531,18 +531,32 @@ export function App() {
           </button>
         </div>
         <div className="templates-bar-right">
-          <button className="btn-reset" onClick={handleResetSession}>Reset session</button>
+          <div className="templates-actions">
+            <button
+              onClick={handleSave}
+              disabled={!template || isLoading}
+              className="btn-primary"
+            >
+              {isLoading ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              onClick={handleValidate}
+              disabled={!template || isLoading}
+              className="btn-secondary"
+            >
+              Validate
+            </button>
+            <button
+              onClick={handlePreview}
+              disabled={!template || isLoading}
+              className="btn-secondary"
+            >
+              Preview
+            </button>
+          </div>
           {templatesError ? <span className="templates-error">{templatesError}</span> : null}
         </div>
       </div>
-
-      <Toolbar
-        onSave={handleSave}
-        onValidate={handleValidate}
-        onPreview={handlePreview}
-        hasTemplate={!!template}
-        isLoading={isLoading}
-      />
 
       <main className="app-main" ref={mainSplitRef}>
         {error && (
