@@ -7,6 +7,7 @@ interface SvgViewerProps {
   elements: TextElement[]
   templateDir: string
   bindingSvgIds: string[]
+  tableBindingGroups: Array<{ id: string; cellSvgIds: string[] }>
   selectedElementIndex: number | null
   onSelectElement: (index: number) => void
   pendingId: string
@@ -21,6 +22,7 @@ export function SvgViewer({
   elements,
   templateDir,
   bindingSvgIds,
+  tableBindingGroups,
   selectedElementIndex,
   onSelectElement,
   pendingId,
@@ -115,6 +117,45 @@ export function SvgViewer({
     return map
   }, [elements])
 
+  const elementById = useMemo(() => {
+    const map = new Map<string, TextElement>()
+    for (const element of elements) {
+      if (element.id) map.set(element.id, element)
+    }
+    return map
+  }, [elements])
+
+  const tableRects = useMemo(() => {
+    const rects: Array<{ id: string; x: number; y: number; w: number; h: number }> = []
+    for (const group of tableBindingGroups) {
+      const points = group.cellSvgIds
+        .map((id) => elementById.get(id))
+        .filter((v): v is TextElement => Boolean(v))
+      if (points.length === 0) continue
+
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+
+      for (const el of points) {
+        minX = Math.min(minX, el.bbox.x)
+        minY = Math.min(minY, el.bbox.y)
+        maxX = Math.max(maxX, el.bbox.x + el.bbox.w)
+        maxY = Math.max(maxY, el.bbox.y + el.bbox.h)
+      }
+
+      rects.push({
+        id: group.id,
+        x: minX - 4,
+        y: minY - 4,
+        w: Math.max(8, maxX - minX + 8),
+        h: Math.max(8, maxY - minY + 8),
+      })
+    }
+    return rects
+  }, [tableBindingGroups, elementById])
+
   const startResize = useCallback((event: MouseEvent) => {
     event.preventDefault()
     const container = viewerRef.current
@@ -196,13 +237,31 @@ export function SvgViewer({
                       className={element.id && bindingSet.has(element.id) ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
                       x={element.bbox.x + 1}
                       y={element.bbox.y - 1}
-                      style={{ fontSize: `${getOverlayLabelSize(element)}` }}
+                      style={{ fontSize: `${getOverlayLabelSize(element)}px` }}
                       onClick={() => {
                         const idx = indexByElementIndex.get(element.index)
                         if (idx !== undefined) onSelectElement(idx)
                       }}
                     >
                       {element.index}
+                    </text>
+                  </g>
+                ))}
+                {showElementMap && showBindingElements && tableRects.map((rect) => (
+                  <g key={rect.id}>
+                    <rect
+                      className="svg-overlay-table"
+                      x={rect.x}
+                      y={rect.y}
+                      width={rect.w}
+                      height={rect.h}
+                    />
+                    <text
+                      className="svg-overlay-table-label"
+                      x={rect.x + 2}
+                      y={rect.y - 2}
+                    >
+                      {rect.id}
                     </text>
                   </g>
                 ))}

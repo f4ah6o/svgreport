@@ -338,6 +338,16 @@ export function App() {
     return Array.from(ids)
   }, [template, selectedPageId])
 
+  const tableBindingGroups = useMemo(() => {
+    if (!template || !selectedPageId) return []
+    const page = template.pages.find(p => p.id === selectedPageId)
+    if (!page) return []
+    return page.tables.map((table, index) => ({
+      id: `table-${index + 1}`,
+      cellSvgIds: table.cells.map(cell => cell.svg_id).filter(Boolean),
+    }))
+  }, [template, selectedPageId])
+
   const focusFromValidationPath = useCallback((path: string) => {
     if (!path) {
       setNotification('This validation error does not include a jump path. Please read the message.')
@@ -592,6 +602,7 @@ export function App() {
                 elements={svgElements}
                 templateDir={templateDir}
                 bindingSvgIds={bindingSvgIds}
+                tableBindingGroups={tableBindingGroups}
                 selectedElementIndex={selectedTextIndex}
                 onSelectElement={handleSelectTextElement}
                 pendingId={pendingId}

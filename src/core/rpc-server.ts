@@ -643,20 +643,18 @@ export class RpcServer {
         heightMm: analysis.pageSize.unit === 'mm' ? analysis.pageSize.height : analysis.pageSize.height * 0.264583,
       },
       warnings,
-      texts: analysis.textElements.map((el, index) => ({
-        index: index + 1,
-        id: el.id,
-        suggestedId: options.suggestIds !== false ? el.suggestedId : undefined,
-        text: el.content,
-        bbox: {
-          x: el.x,
-          y: el.y,
-          w: el.fontSize || 12,
-          h: el.fontSize || 12,
-        },
-        position: { x: el.x, y: el.y },
-        font: { size: el.fontSize },
-      })),
+      texts: analysis.textElements.map((el, index) => {
+        const bbox = estimateTextBBox(el.content, el.x, el.y, el.fontSize, el.textAnchor);
+        return {
+          index: index + 1,
+          id: el.id,
+          suggestedId: options.suggestIds !== false ? el.suggestedId : undefined,
+          text: el.content,
+          bbox,
+          position: { x: el.x, y: el.y },
+          font: { size: el.fontSize },
+        };
+      }),
     };
   }
 
@@ -948,6 +946,47 @@ export class RpcServer {
       return { error: { code: 'INTERNAL_ERROR', message: `Template generation failed: ${error}` } };
     }
   }
+}
+
+function estimateTextBBox(
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number | null,
+  textAnchor: string | null
+): { x: number; y: number; w: number; h: number } {
+  const size = fontSize || 12;
+  const width = Math.max(6, estimateTextWidth(text, size));
+  const height = Math.max(6, size * 1.2);
+  const anchor = (textAnchor || 'start').toLowerCase();
+
+  let left = x;
+  if (anchor === 'middle' || anchor === 'center') {
+    left -= width / 2;
+  } else if (anchor === 'end' || anchor === 'right') {
+    left -= width;
+  }
+
+  return {
+    x: left,
+    y: y - size,
+    w: width,
+    h: height,
+  };
+}
+
+function estimateTextWidth(text: string, fontSize: number): number {
+  if (!text) return fontSize;
+  let units = 0;
+  for (const ch of Array.from(text)) {
+    // CJK and full-width forms tend to be close to 1em, ASCII is narrower.
+    if (/[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)) {
+      units += 1.0;
+    } else {
+      units += 0.56;
+    }
+  }
+  return units * fontSize;
 }
 
 export async function startRpcServer(options: ServerOptions = {}): Promise<RpcServer> {

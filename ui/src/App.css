@@ -529,6 +529,23 @@
   user-select: none;
 }
 
+.svg-overlay-table {
+  fill: rgba(241, 196, 15, 0.08);
+  stroke: #d4ac0d;
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.svg-overlay-table-label {
+  fill: #8a6d00;
+  font-size: 6px;
+  font-weight: 700;
+  user-select: none;
+  pointer-events: none;
+}
+
 .elements-list {
   flex: 0 0 auto;
   min-width: 0;

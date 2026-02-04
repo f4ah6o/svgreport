@@ -11,6 +11,7 @@ export interface TextElementInfo {
   content: string;
   x: number;
   y: number;
+  textAnchor: string | null;
   fontSize: number | null;
   fontFamily: string | null;
   suggestedId: string;
@@ -93,6 +94,7 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
     const textContent = text.textContent?.trim() || '';
     const x = parseFloat(text.getAttribute('x') || '0');
     const y = parseFloat(text.getAttribute('y') || '0');
+    const textAnchor = text.getAttribute('text-anchor');
     const fontSize = text.getAttribute('font-size');
     const fontFamily = text.getAttribute('font-family');
 
@@ -126,6 +128,7 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
       content: textContent,
       x,
       y,
+      textAnchor,
       fontSize: fontSizeNum,
       fontFamily,
       suggestedId,
