@@ -32,10 +32,12 @@ export function SvgViewer({
   isLoading,
 }: SvgViewerProps) {
   const viewerRef = useRef<HTMLDivElement | null>(null)
+  const svgContentRef = useRef<HTMLDivElement | null>(null)
   const [svgContent, setSvgContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
+  const [measuredBBoxes, setMeasuredBBoxes] = useState<Map<number, { x: number; y: number; w: number; h: number }>>(new Map())
   const [svgPaneWidth, setSvgPaneWidth] = useState(62)
   const [showElementMap, setShowElementMap] = useState(true)
   const [showBindingElements, setShowBindingElements] = useState(true)
@@ -117,6 +119,23 @@ export function SvgViewer({
     return map
   }, [elements])
 
+  const resolvedBBoxByIndex = useMemo(() => {
+    const map = new Map<number, { x: number; y: number; w: number; h: number }>()
+    for (const element of elements) {
+      map.set(element.index, measuredBBoxes.get(element.index) || element.bbox)
+    }
+    return map
+  }, [elements, measuredBBoxes])
+
+  const overlayItems = useMemo(() => {
+    return overlayElements.map((element) => {
+      const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+      const listIndex = indexByElementIndex.get(element.index)
+      const isBound = Boolean(element.id && bindingSet.has(element.id))
+      return { element, bbox, listIndex, isBound }
+    })
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet])
+
   const elementById = useMemo(() => {
     const map = new Map<string, TextElement>()
     for (const element of elements) {
@@ -124,6 +143,11 @@ export function SvgViewer({
     }
     return map
   }, [elements])
+
+  const selectedElementBBox = useMemo(() => {
+    if (!selectedElement) return null
+    return resolvedBBoxByIndex.get(selectedElement.index) || selectedElement.bbox
+  }, [selectedElement, resolvedBBoxByIndex])
 
   const tableRects = useMemo(() => {
     const rects: Array<{ id: string; x: number; y: number; w: number; h: number }> = []
@@ -139,10 +163,11 @@ export function SvgViewer({
       let maxY = -Infinity
 
       for (const el of points) {
-        minX = Math.min(minX, el.bbox.x)
-        minY = Math.min(minY, el.bbox.y)
-        maxX = Math.max(maxX, el.bbox.x + el.bbox.w)
-        maxY = Math.max(maxY, el.bbox.y + el.bbox.h)
+        const bbox = resolvedBBoxByIndex.get(el.index) || el.bbox
+        minX = Math.min(minX, bbox.x)
+        minY = Math.min(minY, bbox.y)
+        maxX = Math.max(maxX, bbox.x + bbox.w)
+        maxY = Math.max(maxY, bbox.y + bbox.h)
       }
 
       rects.push({
@@ -154,7 +179,58 @@ export function SvgViewer({
       })
     }
     return rects
-  }, [tableBindingGroups, elementById])
+  }, [tableBindingGroups, elementById, resolvedBBoxByIndex])
+
+  useEffect(() => {
+    if (!svgContent || elements.length === 0) {
+      setMeasuredBBoxes(new Map())
+      return
+    }
+
+    let cancelled = false
+    const run = () => {
+      if (cancelled) return
+      const root = svgContentRef.current
+      const svg = root?.querySelector('svg')
+      if (!svg) return
+
+      const textNodes = Array.from(svg.querySelectorAll('text'))
+      const measured = textNodes.map((node) => {
+        try {
+          const bbox = node.getBBox()
+          return {
+            x: bbox.x,
+            y: bbox.y,
+            w: Math.max(6, bbox.width),
+            h: Math.max(6, bbox.height),
+          }
+        } catch {
+          return null
+        }
+      }).filter((v): v is { x: number; y: number; w: number; h: number } => Boolean(v))
+
+      measured.sort((a, b) => {
+        if (Math.abs(a.y - b.y) < 5) return a.x - b.x
+        return a.y - b.y
+      })
+
+      const map = new Map<number, { x: number; y: number; w: number; h: number }>()
+      const count = Math.min(elements.length, measured.length)
+      for (let i = 0; i < count; i += 1) {
+        map.set(elements[i].index, measured[i])
+      }
+      setMeasuredBBoxes(map)
+    }
+
+    const raf = requestAnimationFrame(run)
+    const timer = setTimeout(run, 200)
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
+  }, [svgContent, elements])
 
   const startResize = useCallback((event: MouseEvent) => {
     event.preventDefault()
@@ -212,6 +288,7 @@ export function SvgViewer({
           <div className="svg-container">
             <div
               className="svg-content"
+              ref={svgContentRef}
               dangerouslySetInnerHTML={{ __html: svgContent }}
             />
             {overlayViewBox && (showElementMap || selectedElement) && (
@@ -220,27 +297,25 @@ export function SvgViewer({
                 viewBox={overlayViewBox}
                 preserveAspectRatio="xMinYMin meet"
               >
-                {showElementMap && overlayElements.map((element) => (
+                {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound }) => (
                   <g key={`${element.index}-${element.id || 'noid'}`}>
                     <rect
-                      className={element.id && bindingSet.has(element.id) ? 'svg-overlay-rect-bound' : 'svg-overlay-rect-dim'}
-                      x={element.bbox.x}
-                      y={element.bbox.y}
-                      width={Math.max(element.bbox.w, 6)}
-                      height={Math.max(element.bbox.h, 6)}
+                      className={isBound ? 'svg-overlay-rect-bound' : 'svg-overlay-rect-dim'}
+                      x={bbox.x}
+                      y={bbox.y}
+                      width={Math.max(bbox.w, 6)}
+                      height={Math.max(bbox.h, 6)}
                       onClick={() => {
-                        const idx = indexByElementIndex.get(element.index)
-                        if (idx !== undefined) onSelectElement(idx)
+                        if (listIndex !== undefined) onSelectElement(listIndex)
                       }}
                     />
                     <text
-                      className={element.id && bindingSet.has(element.id) ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
-                      x={element.bbox.x + 1}
-                      y={element.bbox.y - 1}
-                      style={{ fontSize: `${getOverlayLabelSize(element)}px` }}
+                      className={isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
+                      x={bbox.x + 1}
+                      y={bbox.y - 1}
+                      style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
                       onClick={() => {
-                        const idx = indexByElementIndex.get(element.index)
-                        if (idx !== undefined) onSelectElement(idx)
+                        if (listIndex !== undefined) onSelectElement(listIndex)
                       }}
                     >
                       {element.index}
@@ -268,10 +343,10 @@ export function SvgViewer({
                 {selectedElement && (
                   <rect
                     className="svg-overlay-rect"
-                    x={selectedElement.bbox.x}
-                    y={selectedElement.bbox.y}
-                    width={Math.max(selectedElement.bbox.w, 8)}
-                    height={Math.max(selectedElement.bbox.h, 8)}
+                    x={selectedElementBBox?.x || selectedElement.bbox.x}
+                    y={selectedElementBBox?.y || selectedElement.bbox.y}
+                    width={Math.max(selectedElementBBox?.w || selectedElement.bbox.w, 8)}
+                    height={Math.max(selectedElementBBox?.h || selectedElement.bbox.h, 8)}
                   />
                 )}
               </svg>
@@ -385,7 +460,10 @@ export function SvgViewer({
   )
 }
 
-function getOverlayLabelSize(element: TextElement): number {
-  const base = element.font.size ?? element.bbox.h ?? 12
+function getOverlayLabelSize(
+  element: TextElement,
+  bbox?: { x: number; y: number; w: number; h: number }
+): number {
+  const base = element.font.size ?? bbox?.h ?? element.bbox.h ?? 12
   return Math.max(6, Math.min(18, base))
 }
