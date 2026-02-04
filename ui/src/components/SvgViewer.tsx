@@ -9,6 +9,7 @@ interface SvgViewerProps {
   bindingSvgIds: string[]
   tableBindingGroups: Array<{ id: string; cellSvgIds: string[] }>
   selectedElementIndex: number | null
+  highlightedBindingSvgId: string | null
   onSelectElement: (index: number) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
@@ -24,6 +25,7 @@ export function SvgViewer({
   bindingSvgIds,
   tableBindingGroups,
   selectedElementIndex,
+  highlightedBindingSvgId,
   onSelectElement,
   pendingId,
   onPendingIdChange,
@@ -137,9 +139,15 @@ export function SvgViewer({
       const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
       const listIndex = indexByElementIndex.get(element.index)
       const isBound = Boolean(element.id && bindingSet.has(element.id))
-      return { element, bbox, listIndex, isBound }
+      const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
+      return { element, bbox, listIndex, isBound, isHighlighted }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet])
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId])
+
+  const highlightedOverlayItems = useMemo(() => {
+    if (!highlightedBindingSvgId) return []
+    return overlayItems.filter((item) => item.element.id === highlightedBindingSvgId)
+  }, [overlayItems, highlightedBindingSvgId])
 
   const elementsById = useMemo(() => {
     const map = new Map<string, TextElement[]>()
@@ -341,16 +349,22 @@ export function SvgViewer({
                 ref={svgContentRef}
                 dangerouslySetInnerHTML={{ __html: svgContent }}
               />
-              {overlayViewBox && (showElementMap || selectedElement) && (
-                <svg
-                  className="svg-overlay"
-                  viewBox={overlayViewBox}
-                  preserveAspectRatio={overlayPreserveAspectRatio}
-                >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound }) => (
+            {overlayViewBox && (showElementMap || selectedElement || highlightedOverlayItems.length > 0) && (
+              <svg
+                className="svg-overlay"
+                viewBox={overlayViewBox}
+                preserveAspectRatio={overlayPreserveAspectRatio}
+              >
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
-                        className={isBound ? 'svg-overlay-rect-bound' : 'svg-overlay-rect-dim'}
+                        className={
+                          isHighlighted
+                            ? 'svg-overlay-rect-linked'
+                            : isBound
+                              ? 'svg-overlay-rect-bound'
+                              : 'svg-overlay-rect-dim'
+                        }
                         x={bbox.x}
                         y={bbox.y}
                         width={Math.max(bbox.w, 6)}
@@ -400,17 +414,42 @@ export function SvgViewer({
                       </text>
                     </g>
                   ))}
-                  {selectedElement && (
-                    <rect
-                      className="svg-overlay-rect"
+                {selectedElement && (
+                  <rect
+                    className="svg-overlay-rect"
                       x={selectedElementBBox?.x || selectedElement.bbox.x}
                       y={selectedElementBBox?.y || selectedElement.bbox.y}
                       width={Math.max(selectedElementBBox?.w || selectedElement.bbox.w, 8)}
                       height={Math.max(selectedElementBBox?.h || selectedElement.bbox.h, 8)}
+                  />
+                )}
+                {!showElementMap && highlightedOverlayItems.map(({ element, bbox, listIndex }) => (
+                  <g key={`linked-${element.index}`}>
+                    <rect
+                      className="svg-overlay-rect-linked"
+                      x={bbox.x}
+                      y={bbox.y}
+                      width={Math.max(bbox.w, 6)}
+                      height={Math.max(bbox.h, 6)}
+                      onClick={() => {
+                        if (listIndex !== undefined) onSelectElement(listIndex)
+                      }}
                     />
-                  )}
-                </svg>
-              )}
+                    <text
+                      className="svg-overlay-label-bound"
+                      x={bbox.x + 1}
+                      y={bbox.y - 1}
+                      style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
+                      onClick={() => {
+                        if (listIndex !== undefined) onSelectElement(listIndex)
+                      }}
+                    >
+                      {element.index}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+            )}
             </div>
           </div>
         )}

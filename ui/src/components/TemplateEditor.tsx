@@ -11,6 +11,7 @@ interface TemplateEditorProps {
   onFocusTargetConsumed: () => void
   suggestedSvgIds: string[]
   selectedPreviewSvgId: string | null
+  onSelectBindingSvgId: (svgId: string | null) => void
 }
 
 export function TemplateEditor({
@@ -23,6 +24,7 @@ export function TemplateEditor({
   onFocusTargetConsumed,
   suggestedSvgIds,
   selectedPreviewSvgId,
+  onSelectBindingSvgId,
 }: TemplateEditorProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'pages' | 'fields' | 'formatters'>('info')
   const [lastFocusPath, setLastFocusPath] = useState<string | null>(null)
@@ -53,10 +55,10 @@ export function TemplateEditor({
     onChange({ ...template, fields: newFields })
   }, [template, onChange])
 
-  const handleAddField = useCallback(() => {
+  const handleAddField = useCallback((source: FieldBinding['source'] = 'meta') => {
     const newField: FieldBinding = {
       svg_id: '',
-      source: 'meta',
+      source,
       key: '',
       fit: 'none',
       align: 'left'
@@ -176,6 +178,12 @@ export function TemplateEditor({
 
   const formatters = template.formatters || {}
   const formatterEntries = Object.entries(formatters)
+  const metaFields = template.fields
+    .map((field, index) => ({ field, index }))
+    .filter(({ field }) => field.source === 'meta')
+  const itemFields = template.fields
+    .map((field, index) => ({ field, index }))
+    .filter(({ field }) => field.source !== 'meta')
 
   const handleAddFormatter = useCallback(() => {
     const nextKey = `formatter_${formatterEntries.length + 1}`
@@ -389,7 +397,12 @@ export function TemplateEditor({
                       <input
                         type="text"
                         value={page.page_number?.svg_id || ''}
-                        onChange={(e) => handlePageNumberChange(page.id, { svg_id: (e.target as HTMLInputElement).value })}
+                        onChange={(e) => {
+                          const nextSvgId = (e.target as HTMLInputElement).value
+                          handlePageNumberChange(page.id, { svg_id: nextSvgId })
+                          onSelectBindingSvgId(nextSvgId || null)
+                        }}
+                        onFocus={() => onSelectBindingSvgId(page.page_number?.svg_id || null)}
                         placeholder="(optional)"
                         className={pageNumberSvgIdError ? 'input-error' : ''}
                         data-focus-key={`pages[${pageIndex}].page_number.svg_id`}
@@ -501,6 +514,7 @@ export function TemplateEditor({
                                     key={cellIndex}
                                     className={`cell-item ${selectedPreviewSvgId && cell.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
                                     data-binding-svg-id={cell.svg_id || undefined}
+                                    onClick={() => onSelectBindingSvgId(cell.svg_id || null)}
                                   >
                                         <div className="field-header">
                                           <span>Cell #{cellIndex + 1}</span>
@@ -514,7 +528,12 @@ export function TemplateEditor({
                                             <input
                                               type="text"
                                               value={cell.svg_id}
-                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { svg_id: (e.target as HTMLInputElement).value })}
+                                              onChange={(e) => {
+                                                const nextSvgId = (e.target as HTMLInputElement).value
+                                                handleCellChange(page.id, tableIndex, cellIndex, { svg_id: nextSvgId })
+                                                onSelectBindingSvgId(nextSvgId || null)
+                                              }}
+                                              onFocus={() => onSelectBindingSvgId(cell.svg_id || null)}
                                               className={!cell.svg_id.trim() ? 'input-error' : ''}
                                               data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].svg_id`}
                                             />
@@ -606,104 +625,229 @@ export function TemplateEditor({
       {activeTab === 'fields' && (
         <div className="tab-content">
           <h3>Field Bindings</h3>
-          <button className="btn-add" onClick={handleAddField}>+ Add Field</button>
-          
+          <div className="field-toolbar">
+            <button className="btn-add" onClick={() => handleAddField('meta')}>+ Add Meta Field</button>
+            <button className="btn-add btn-add-item" onClick={() => handleAddField('items')}>+ Add Item Field</button>
+          </div>
+
           {template.fields.length === 0 ? (
             <p className="empty">No fields defined. Click "Add Field" to create one.</p>
           ) : (
-            template.fields.map((field, index) => (
-              <div
-                key={index}
-                className={`field-item ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                data-binding-svg-id={field.svg_id || undefined}
-              >
-                <div className="field-header">
-                  <span>Field #{index + 1}</span>
-                  <button 
-                    className="btn-remove"
-                    onClick={() => handleRemoveField(index)}
-                  >
-                    Remove
-                  </button>
+            <>
+              <div className="field-group">
+                <div className="field-group-header">
+                  <h4>Meta Fields ({metaFields.length})</h4>
                 </div>
-                <div className="field-form">
-                  <div className="form-row">
-                    <label>SVG ID:</label>
-                    <input 
-                      type="text"
-                      value={field.svg_id}
-                      onChange={(e) => handleFieldChange(index, { 
-                        ...field, 
-                        svg_id: (e.target as HTMLInputElement).value 
-                      })}
-                      data-focus-key={`fields[${index}].svg_id`}
-                    />
-                    {!field.svg_id && (
-                      <div className="suggested-row">
-                        <select
-                          className="suggested-select"
-                          defaultValue=""
-                          disabled={suggestedSvgIds.length === 0}
+                {metaFields.length === 0 ? (
+                  <p className="empty">No meta fields.</p>
+                ) : metaFields.map(({ field, index }) => (
+                  <div
+                    key={index}
+                    className={`field-item field-item-meta ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                    data-binding-svg-id={field.svg_id || undefined}
+                    onClick={() => onSelectBindingSvgId(field.svg_id || null)}
+                  >
+                    <div className="field-header">
+                      <span>Field #{index + 1} <span className="field-source-badge field-source-meta">META</span></span>
+                      <button
+                        className="btn-remove"
+                        onClick={() => handleRemoveField(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="field-form">
+                      <div className="form-row">
+                        <label>SVG ID:</label>
+                        <input
+                          type="text"
+                          value={field.svg_id}
                           onChange={(e) => {
-                            const value = (e.target as HTMLSelectElement).value
-                            if (value) {
-                              handleFieldChange(index, { ...field, svg_id: value })
-                              ;(e.target as HTMLSelectElement).value = ''
-                            }
+                            const nextSvgId = (e.target as HTMLInputElement).value
+                            handleFieldChange(index, {
+                              ...field,
+                              svg_id: nextSvgId
+                            })
+                            onSelectBindingSvgId(nextSvgId || null)
                           }}
+                          onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
+                          data-focus-key={`fields[${index}].svg_id`}
+                        />
+                        {!field.svg_id && (
+                          <div className="suggested-row">
+                            <select
+                              className="suggested-select"
+                              defaultValue=""
+                              disabled={suggestedSvgIds.length === 0}
+                              onChange={(e) => {
+                                const value = (e.target as HTMLSelectElement).value
+                                if (value) {
+                                  handleFieldChange(index, { ...field, svg_id: value })
+                                  ;(e.target as HTMLSelectElement).value = ''
+                                }
+                              }}
+                            >
+                              <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
+                              {suggestedSvgIds.map((id) => (
+                                <option key={id} value={id}>{id}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      <div className="form-row">
+                        <label>Source:</label>
+                        <select
+                          value={field.source}
+                          onChange={(e) => handleFieldChange(index, {
+                            ...field,
+                            source: (e.target as HTMLSelectElement).value
+                          })}
+                          data-focus-key={`fields[${index}].source`}
                         >
-                          <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                          {suggestedSvgIds.map((id) => (
-                            <option key={id} value={id}>{id}</option>
-                          ))}
+                          <option value="meta">meta</option>
+                          <option value="items">items</option>
                         </select>
                       </div>
-                    )}
+                      <div className="form-row">
+                        <label>Key:</label>
+                        <input
+                          type="text"
+                          value={field.key}
+                          onChange={(e) => handleFieldChange(index, {
+                            ...field,
+                            key: (e.target as HTMLInputElement).value
+                          })}
+                          data-focus-key={`fields[${index}].key`}
+                        />
+                      </div>
+                      <div className="form-row">
+                        <label>Align:</label>
+                        <select
+                          value={field.align || 'left'}
+                          onChange={(e) => handleFieldChange(index, {
+                            ...field,
+                            align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
+                          })}
+                          data-focus-key={`fields[${index}].align`}
+                        >
+                          <option value="left">Left</option>
+                          <option value="center">Center</option>
+                          <option value="right">Right</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                  <div className="form-row">
-                    <label>Source:</label>
-                    <select 
-                      value={field.source}
-                      onChange={(e) => handleFieldChange(index, { 
-                        ...field, 
-                        source: (e.target as HTMLSelectElement).value 
-                      })}
-                      data-focus-key={`fields[${index}].source`}
-                    >
-                      <option value="meta">meta</option>
-                      <option value="items">items</option>
-                    </select>
-                  </div>
-                  <div className="form-row">
-                    <label>Key:</label>
-                    <input 
-                      type="text"
-                      value={field.key}
-                      onChange={(e) => handleFieldChange(index, { 
-                        ...field, 
-                        key: (e.target as HTMLInputElement).value 
-                      })}
-                      data-focus-key={`fields[${index}].key`}
-                    />
-                  </div>
-                  <div className="form-row">
-                    <label>Align:</label>
-                    <select 
-                      value={field.align || 'left'}
-                      onChange={(e) => handleFieldChange(index, { 
-                        ...field, 
-                        align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
-                      })}
-                      data-focus-key={`fields[${index}].align`}
-                    >
-                      <option value="left">Left</option>
-                      <option value="center">Center</option>
-                      <option value="right">Right</option>
-                    </select>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))
+
+              <div className="field-group">
+                <div className="field-group-header">
+                  <h4>Item Fields ({itemFields.length})</h4>
+                </div>
+                {itemFields.length === 0 ? (
+                  <p className="empty">No item fields.</p>
+                ) : itemFields.map(({ field, index }) => (
+                  <div
+                    key={index}
+                    className={`field-item field-item-item ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                    data-binding-svg-id={field.svg_id || undefined}
+                    onClick={() => onSelectBindingSvgId(field.svg_id || null)}
+                  >
+                    <div className="field-header">
+                      <span>Field #{index + 1} <span className="field-source-badge field-source-item">ITEM</span></span>
+                      <button
+                        className="btn-remove"
+                        onClick={() => handleRemoveField(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="field-form">
+                      <div className="form-row">
+                        <label>SVG ID:</label>
+                        <input
+                          type="text"
+                          value={field.svg_id}
+                          onChange={(e) => {
+                            const nextSvgId = (e.target as HTMLInputElement).value
+                            handleFieldChange(index, {
+                              ...field,
+                              svg_id: nextSvgId
+                            })
+                            onSelectBindingSvgId(nextSvgId || null)
+                          }}
+                          onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
+                          data-focus-key={`fields[${index}].svg_id`}
+                        />
+                        {!field.svg_id && (
+                          <div className="suggested-row">
+                            <select
+                              className="suggested-select"
+                              defaultValue=""
+                              disabled={suggestedSvgIds.length === 0}
+                              onChange={(e) => {
+                                const value = (e.target as HTMLSelectElement).value
+                                if (value) {
+                                  handleFieldChange(index, { ...field, svg_id: value })
+                                  ;(e.target as HTMLSelectElement).value = ''
+                                }
+                              }}
+                            >
+                              <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
+                              {suggestedSvgIds.map((id) => (
+                                <option key={id} value={id}>{id}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      <div className="form-row">
+                        <label>Source:</label>
+                        <select
+                          value={field.source}
+                          onChange={(e) => handleFieldChange(index, {
+                            ...field,
+                            source: (e.target as HTMLSelectElement).value
+                          })}
+                          data-focus-key={`fields[${index}].source`}
+                        >
+                          <option value="meta">meta</option>
+                          <option value="items">items</option>
+                        </select>
+                      </div>
+                      <div className="form-row">
+                        <label>Key:</label>
+                        <input
+                          type="text"
+                          value={field.key}
+                          onChange={(e) => handleFieldChange(index, {
+                            ...field,
+                            key: (e.target as HTMLInputElement).value
+                          })}
+                          data-focus-key={`fields[${index}].key`}
+                        />
+                      </div>
+                      <div className="form-row">
+                        <label>Align:</label>
+                        <select
+                          value={field.align || 'left'}
+                          onChange={(e) => handleFieldChange(index, {
+                            ...field,
+                            align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
+                          })}
+                          data-focus-key={`fields[${index}].align`}
+                        >
+                          <option value="left">Left</option>
+                          <option value="center">Center</option>
+                          <option value="right">Right</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

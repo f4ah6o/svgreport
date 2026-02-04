@@ -19,6 +19,7 @@ export function App() {
   const [previewResult, setPreviewResult] = useState<PreviewResponse | null>(null)
   const [selectedTextIndex, setSelectedTextIndex] = useState<number | null>(null)
   const [selectedText, setSelectedText] = useState<TextElement | null>(null)
+  const [selectedBindingSvgId, setSelectedBindingSvgId] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string>('')
   const [templatesBaseDir, setTemplatesBaseDir] = useState('templates')
   const [templatesList, setTemplatesList] = useState<TemplateListItem[]>([])
@@ -72,6 +73,7 @@ export function App() {
       setSelectedSvg(firstPage?.svg || null)
       setSelectedTextIndex(null)
       setSelectedText(null)
+      setSelectedBindingSvgId(null)
       setPendingId('')
       setStatus(`Loaded template: ${templateJson.template.id} v${templateJson.template.version}`)
     } catch (err) {
@@ -203,6 +205,7 @@ export function App() {
 
     setSelectedTextIndex(null)
     setSelectedText(null)
+    setSelectedBindingSvgId(null)
     setPendingId('')
 
     const svgPath = `${templateDir}/${selectedSvg}`
@@ -246,6 +249,7 @@ export function App() {
     if (!element) return
     setSelectedTextIndex(index)
     setSelectedText(element)
+    setSelectedBindingSvgId(element.id || element.suggestedId || null)
     setPendingId(element.suggestedId || element.id || '')
   }, [svgElements])
 
@@ -603,6 +607,7 @@ export function App() {
                 onFocusTargetConsumed={clearFocusTarget}
                 suggestedSvgIds={suggestedSvgIds}
                 selectedPreviewSvgId={selectedText?.id || null}
+                onSelectBindingSvgId={setSelectedBindingSvgId}
               />
             </div>
             <div
@@ -619,6 +624,7 @@ export function App() {
                 bindingSvgIds={bindingSvgIds}
                 tableBindingGroups={tableBindingGroups}
                 selectedElementIndex={selectedTextIndex}
+                highlightedBindingSvgId={selectedBindingSvgId}
                 onSelectElement={handleSelectTextElement}
                 pendingId={pendingId}
                 onPendingIdChange={setPendingId}
