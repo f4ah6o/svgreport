@@ -588,6 +588,7 @@ export function App() {
                 focusTarget={focusTarget}
                 onFocusTargetConsumed={clearFocusTarget}
                 suggestedSvgIds={suggestedSvgIds}
+                selectedPreviewSvgId={selectedText?.id || null}
               />
             </div>
             <div

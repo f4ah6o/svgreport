@@ -10,6 +10,7 @@ interface TemplateEditorProps {
   focusTarget: { tab: 'pages' | 'fields' | 'formatters'; path: string } | null
   onFocusTargetConsumed: () => void
   suggestedSvgIds: string[]
+  selectedPreviewSvgId: string | null
 }
 
 export function TemplateEditor({
@@ -21,6 +22,7 @@ export function TemplateEditor({
   focusTarget,
   onFocusTargetConsumed,
   suggestedSvgIds,
+  selectedPreviewSvgId,
 }: TemplateEditorProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'pages' | 'fields' | 'formatters'>('info')
   const [lastFocusPath, setLastFocusPath] = useState<string | null>(null)
@@ -233,6 +235,18 @@ export function TemplateEditor({
     return () => clearTimeout(timer)
   }, [focusTarget, lastFocusPath, onFocusTargetConsumed])
 
+  useEffect(() => {
+    if (!selectedPreviewSvgId) return
+
+    const selector = `[data-binding-svg-id="${cssEscape(selectedPreviewSvgId)}"]`
+    const target = document.querySelector<HTMLElement>(selector)
+    if (!target) return
+
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    target.classList.add('binding-match-flash')
+    setTimeout(() => target.classList.remove('binding-match-flash'), 1200)
+  }, [selectedPreviewSvgId])
+
   return (
     <div className="template-editor">
       <div className="tabs">
@@ -367,7 +381,10 @@ export function TemplateEditor({
                         <option value="repeat">repeat</option>
                       </select>
                     </div>
-                    <div className="form-row">
+                    <div
+                      className={`form-row ${selectedPreviewSvgId && page.page_number?.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                      data-binding-svg-id={page.page_number?.svg_id || undefined}
+                    >
                       <label>Page Number SVG ID:</label>
                       <input
                         type="text"
@@ -480,7 +497,11 @@ export function TemplateEditor({
                                 ) : (
                                   <div className="cells-list">
                                     {table.cells.map((cell, cellIndex) => (
-                                      <div key={cellIndex} className="cell-item">
+                                  <div
+                                    key={cellIndex}
+                                    className={`cell-item ${selectedPreviewSvgId && cell.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                                    data-binding-svg-id={cell.svg_id || undefined}
+                                  >
                                         <div className="field-header">
                                           <span>Cell #{cellIndex + 1}</span>
                                           <button className="btn-remove" onClick={() => handleRemoveCell(page.id, tableIndex, cellIndex)}>
@@ -591,7 +612,11 @@ export function TemplateEditor({
             <p className="empty">No fields defined. Click "Add Field" to create one.</p>
           ) : (
             template.fields.map((field, index) => (
-              <div key={index} className="field-item">
+              <div
+                key={index}
+                className={`field-item ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                data-binding-svg-id={field.svg_id || undefined}
+              >
                 <div className="field-header">
                   <span>Field #{index + 1}</span>
                   <button 
