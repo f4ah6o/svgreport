@@ -37,6 +37,7 @@ export function SvgViewer({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
+  const [overlayPreserveAspectRatio, setOverlayPreserveAspectRatio] = useState('xMidYMid meet')
   const [measuredBBoxes, setMeasuredBBoxes] = useState<Map<number, { x: number; y: number; w: number; h: number }>>(new Map())
   const [svgPaneWidth, setSvgPaneWidth] = useState(62)
   const [showElementMap, setShowElementMap] = useState(true)
@@ -70,6 +71,7 @@ export function SvgViewer({
   useEffect(() => {
     if (!svgContent) {
       setOverlayViewBox(null)
+      setOverlayPreserveAspectRatio('xMidYMid meet')
       return
     }
 
@@ -77,6 +79,8 @@ export function SvgViewer({
       const parser = new DOMParser()
       const doc = parser.parseFromString(svgContent, 'image/svg+xml')
       const svg = doc.documentElement
+      const preserveAspectRatio = svg.getAttribute('preserveAspectRatio')
+      setOverlayPreserveAspectRatio(preserveAspectRatio || 'xMidYMid meet')
       const viewBox = svg.getAttribute('viewBox')
       if (viewBox) {
         setOverlayViewBox(viewBox)
@@ -94,6 +98,7 @@ export function SvgViewer({
       }
     } catch {
       setOverlayViewBox(null)
+      setOverlayPreserveAspectRatio('xMidYMid meet')
     }
   }, [svgContent])
 
@@ -236,10 +241,15 @@ export function SvgViewer({
       if (!svg) return
 
       const textNodes = Array.from(svg.querySelectorAll('text'))
+      const svgToScreen = svg.getScreenCTM()
+      if (!svgToScreen) return
+      const screenToSvg = svgToScreen.inverse()
       const byDomIndex = new Map<number, { x: number; y: number; w: number; h: number }>()
       textNodes.forEach((node, idx) => {
         try {
-          const bbox = node.getBBox()
+          const rect = node.getBoundingClientRect()
+          if (rect.width <= 0 || rect.height <= 0) return
+          const bbox = rectToSvgBBox(rect, screenToSvg)
           byDomIndex.set(idx + 1, {
             x: bbox.x,
             y: bbox.y,
@@ -325,81 +335,83 @@ export function SvgViewer({
         
         {svgContent && (
           <div className="svg-container">
-            <div
-              className="svg-content"
-              ref={svgContentRef}
-              dangerouslySetInnerHTML={{ __html: svgContent }}
-            />
-            {overlayViewBox && (showElementMap || selectedElement) && (
-              <svg
-                className="svg-overlay"
-                viewBox={overlayViewBox}
-                preserveAspectRatio="xMinYMin meet"
-              >
-                {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound }) => (
-                  <g key={`${element.index}-${element.id || 'noid'}`}>
-                    <rect
-                      className={isBound ? 'svg-overlay-rect-bound' : 'svg-overlay-rect-dim'}
-                      x={bbox.x}
-                      y={bbox.y}
-                      width={Math.max(bbox.w, 6)}
-                      height={Math.max(bbox.h, 6)}
-                      onClick={() => {
-                        if (listIndex !== undefined) onSelectElement(listIndex)
-                      }}
-                    />
-                    <text
-                      className={isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
-                      x={bbox.x + 1}
-                      y={bbox.y - 1}
-                      style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
-                      onClick={() => {
-                        if (listIndex !== undefined) onSelectElement(listIndex)
-                      }}
-                    >
-                      {element.index}
-                    </text>
-                  </g>
-                ))}
-                {showElementMap && showBindingElements && tableOverlays.map((rect) => (
-                  <g key={rect.id}>
-                    {rect.cells.map((cell, i) => (
+            <div className="svg-stage">
+              <div
+                className="svg-content"
+                ref={svgContentRef}
+                dangerouslySetInnerHTML={{ __html: svgContent }}
+              />
+              {overlayViewBox && (showElementMap || selectedElement) && (
+                <svg
+                  className="svg-overlay"
+                  viewBox={overlayViewBox}
+                  preserveAspectRatio={overlayPreserveAspectRatio}
+                >
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound }) => (
+                    <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
-                        key={`${rect.id}-cell-${i}`}
-                        className="svg-overlay-table-cell"
-                        x={cell.x - 2}
-                        y={cell.y - 2}
-                        width={Math.max(6, cell.w + 4)}
-                        height={Math.max(6, cell.h + 4)}
+                        className={isBound ? 'svg-overlay-rect-bound' : 'svg-overlay-rect-dim'}
+                        x={bbox.x}
+                        y={bbox.y}
+                        width={Math.max(bbox.w, 6)}
+                        height={Math.max(bbox.h, 6)}
+                        onClick={() => {
+                          if (listIndex !== undefined) onSelectElement(listIndex)
+                        }}
                       />
-                    ))}
+                      <text
+                        className={isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
+                        x={bbox.x + 1}
+                        y={bbox.y - 1}
+                        style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
+                        onClick={() => {
+                          if (listIndex !== undefined) onSelectElement(listIndex)
+                        }}
+                      >
+                        {element.index}
+                      </text>
+                    </g>
+                  ))}
+                  {showElementMap && showBindingElements && tableOverlays.map((rect) => (
+                    <g key={rect.id}>
+                      {rect.cells.map((cell, i) => (
+                        <rect
+                          key={`${rect.id}-cell-${i}`}
+                          className="svg-overlay-table-cell"
+                          x={cell.x - 2}
+                          y={cell.y - 2}
+                          width={Math.max(6, cell.w + 4)}
+                          height={Math.max(6, cell.h + 4)}
+                        />
+                      ))}
+                      <rect
+                        className="svg-overlay-table"
+                        x={rect.x}
+                        y={rect.y}
+                        width={rect.w}
+                        height={rect.h}
+                      />
+                      <text
+                        className="svg-overlay-table-label"
+                        x={rect.x + 2}
+                        y={rect.y - 2}
+                      >
+                        {rect.id}
+                      </text>
+                    </g>
+                  ))}
+                  {selectedElement && (
                     <rect
-                      className="svg-overlay-table"
-                      x={rect.x}
-                      y={rect.y}
-                      width={rect.w}
-                      height={rect.h}
+                      className="svg-overlay-rect"
+                      x={selectedElementBBox?.x || selectedElement.bbox.x}
+                      y={selectedElementBBox?.y || selectedElement.bbox.y}
+                      width={Math.max(selectedElementBBox?.w || selectedElement.bbox.w, 8)}
+                      height={Math.max(selectedElementBBox?.h || selectedElement.bbox.h, 8)}
                     />
-                    <text
-                      className="svg-overlay-table-label"
-                      x={rect.x + 2}
-                      y={rect.y - 2}
-                    >
-                      {rect.id}
-                    </text>
-                  </g>
-                ))}
-                {selectedElement && (
-                  <rect
-                    className="svg-overlay-rect"
-                    x={selectedElementBBox?.x || selectedElement.bbox.x}
-                    y={selectedElementBBox?.y || selectedElement.bbox.y}
-                    width={Math.max(selectedElementBBox?.w || selectedElement.bbox.w, 8)}
-                    height={Math.max(selectedElementBBox?.h || selectedElement.bbox.h, 8)}
-                  />
-                )}
-              </svg>
-            )}
+                  )}
+                </svg>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -515,4 +527,18 @@ function getOverlayLabelSize(
 ): number {
   const base = element.font.size ?? bbox?.h ?? element.bbox.h ?? 12
   return Math.max(6, Math.min(18, base))
+}
+
+function rectToSvgBBox(rect: DOMRect, screenToSvg: DOMMatrix): DOMRect {
+  const p1 = new DOMPoint(rect.left, rect.top).matrixTransform(screenToSvg)
+  const p2 = new DOMPoint(rect.right, rect.top).matrixTransform(screenToSvg)
+  const p3 = new DOMPoint(rect.right, rect.bottom).matrixTransform(screenToSvg)
+  const p4 = new DOMPoint(rect.left, rect.bottom).matrixTransform(screenToSvg)
+
+  const minX = Math.min(p1.x, p2.x, p3.x, p4.x)
+  const minY = Math.min(p1.y, p2.y, p3.y, p4.y)
+  const maxX = Math.max(p1.x, p2.x, p3.x, p4.x)
+  const maxY = Math.max(p1.y, p2.y, p3.y, p4.y)
+
+  return new DOMRect(minX, minY, maxX - minX, maxY - minY)
 }

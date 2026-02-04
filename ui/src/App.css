@@ -476,10 +476,13 @@
 }
 
 .svg-container {
-  position: relative;
   border: 1px solid #ddd;
   background: white;
   padding: 0.5rem;
+}
+
+.svg-stage {
+  position: relative;
 }
 
 .svg-content svg {
