@@ -442,15 +442,12 @@
 }
 
 .svg-viewer {
-  display: flex;
-  gap: 0;
+  display: block;
   min-width: 0;
 }
 
 .svg-preview {
-  flex: 0 0 auto;
   min-width: 0;
-  padding-right: 0.75rem;
 }
 
 .svg-path {
@@ -578,6 +575,21 @@
   font-weight: 700;
   user-select: none;
   pointer-events: none;
+}
+
+.selected-element-panel {
+  margin-top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #f8fafc;
+}
+
+.selected-element-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .elements-list {
