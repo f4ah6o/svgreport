@@ -4,7 +4,7 @@
 
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import xpath from 'xpath';
-import type { FieldBinding, TableBinding } from '../types/index.js';
+import type { TableBinding, TableCell } from '../types/index.js';
 import { SVGReportError } from '../types/index.js';
 import { format } from './formatter.js';
 
@@ -72,8 +72,15 @@ export function getTextContent(element: Element): string {
   return element.textContent ?? '';
 }
 
-export function applyFieldBinding(doc: Document, binding: FieldBinding, value: string): void {
-  const element = requireElementById(doc, binding.svg_id, `field:${binding.key}`);
+export interface TextBinding {
+  svg_id: string;
+  fit?: 'none' | 'shrink' | 'wrap' | 'clip';
+  align?: 'left' | 'center' | 'right';
+  format?: string;
+}
+
+export function applyTextBinding(doc: Document, binding: TextBinding, value: string): void {
+  const element = requireElementById(doc, binding.svg_id, `binding:${binding.svg_id}`);
   const formattedValue = format(value, binding.format);
   setTextContent(element, formattedValue);
 
@@ -84,6 +91,10 @@ export function applyFieldBinding(doc: Document, binding: FieldBinding, value: s
   if (binding.fit === 'shrink') {
     applyTextShrink(element, formattedValue);
   }
+}
+
+export function applyFieldBinding(doc: Document, binding: TextBinding, value: string): void {
+  applyTextBinding(doc, binding, value);
 }
 
 export function applyTextAlignment(element: Element, align: string): void {
@@ -168,7 +179,8 @@ export function applyTableBinding(
   rows: Record<string, string>[],
   rowOffset: number,
   startY: number,
-  rowHeightMm: number
+  rowHeightMm: number,
+  resolveValue: (cell: TableCell, rowData: Record<string, string>) => string
 ): void {
   const container = findRowContainer(doc, binding.row_group_id);
   const template = findById(doc, binding.row_group_id);
@@ -208,14 +220,14 @@ export function applyTableBinding(
     for (const cell of binding.cells) {
       const cellElement = findById(doc, cell.svg_id);
       if (cellElement && clone.contains(cellElement)) {
-        const value = rowData[cell.column] ?? '';
+        const value = resolveValue(cell, rowData);
         const formattedValue = format(value, cell.format);
         setTextContent(cellElement, formattedValue);
-        
+
         if (cell.align) {
           applyTextAlignment(cellElement, cell.align);
         }
-        
+
         if (cell.fit === 'shrink') {
           applyTextShrink(cellElement, formattedValue);
         }

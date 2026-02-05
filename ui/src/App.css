@@ -921,12 +921,12 @@
   background: #f5f8fb;
 }
 
-.template-editor .field-item-meta {
+.template-editor .field-item-data {
   border-left: 4px solid #1f6fb2;
 }
 
-.template-editor .field-item-item {
-  border-left: 4px solid #1b8d66;
+.template-editor .field-item-static {
+  border-left: 4px solid #6c5ce7;
 }
 
 .template-editor .field-source-badge {
@@ -939,6 +939,16 @@
   letter-spacing: 0.02em;
 }
 
+.template-editor .field-source-data {
+  background: #e8f2fe;
+  color: #1f4f8f;
+}
+
+.template-editor .field-source-static {
+  background: #f1edff;
+  color: #4c36a8;
+}
+
 .template-editor .field-source-meta {
   background: #e8f2fe;
   color: #1f4f8f;
@@ -947,6 +957,17 @@
 .template-editor .field-source-item {
   background: #e8faf4;
   color: #17664c;
+}
+
+.template-editor .table-header-section {
+  margin-top: 0.75rem;
+  border-top: 1px dashed #ddd;
+  padding-top: 0.75rem;
+}
+
+.template-editor .header-cell-item {
+  background: #f9f7ff;
+  border-color: #e6dcff;
 }
 
 .template-editor .btn-remove {

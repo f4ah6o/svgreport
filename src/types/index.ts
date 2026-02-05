@@ -36,7 +36,7 @@ export interface CsvOptions {
 // ============================================
 
 export interface TemplateConfig {
-  schema: 'svgreport-template/v0.1';
+  schema: 'svgreport-template/v0.2';
   template: TemplateRef;
   pages: PageConfig[];
   fields: FieldBinding[];
@@ -62,12 +62,13 @@ export interface TableBinding {
   row_height_mm: number;
   rows_per_page: number;
   start_y_mm?: number;
+  header?: TableHeader;
   cells: TableCell[];
 }
 
 export interface TableCell {
   svg_id: string;
-  column: string;
+  value: ValueBinding;
   fit?: 'none' | 'shrink' | 'wrap' | 'clip';
   align?: 'left' | 'center' | 'right';
   format?: string;
@@ -75,11 +76,27 @@ export interface TableCell {
 
 export interface FieldBinding {
   svg_id: string;
-  source: string;
-  key: string;
+  value: ValueBinding;
   fit?: 'none' | 'shrink' | 'wrap' | 'clip';
   align?: 'left' | 'center' | 'right';
   format?: string;
+}
+
+export interface TableHeader {
+  cells: TableCell[];
+}
+
+export type ValueBinding = StaticValueBinding | DataValueBinding;
+
+export interface StaticValueBinding {
+  type: 'static';
+  text: string;
+}
+
+export interface DataValueBinding {
+  type: 'data';
+  source: string;
+  key: string;
 }
 
 export interface FormatterDef {

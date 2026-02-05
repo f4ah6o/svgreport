@@ -9,6 +9,8 @@ import type {
   RenderedPage,
   RenderResult,
   PageConfig,
+  ValueBinding,
+  TableCell,
 } from '../types/index.js';
 import { SVGReportError, isKvData, isTableData } from '../types/index.js';
 import * as paginator from './paginator.js';
@@ -134,20 +136,9 @@ export class Renderer {
 
   private applyFields(svgDoc: Document, _meta: KVData, _currentPage: number, _totalPages: number): void {
     for (const field of this.templateConfig.fields) {
-      const source = this.dataSources.get(field.source);
-      let value: string;
-
-      if (field.source === 'meta' && isKvData(source!)) {
-        value = source[field.key] ?? '';
-      } else if (source && isTableData(source)) {
-        // For table sources, use first row or empty
-        value = source.rows[0]?.[field.key] ?? '';
-      } else {
-        value = '';
-      }
-
+      const value = this.resolveValue(field.value);
       try {
-        svgEngine.applyFieldBinding(svgDoc, field, value);
+        svgEngine.applyTextBinding(svgDoc, field, value);
       } catch (error) {
         if (error instanceof SVGReportError) {
           console.warn(`Warning: ${error.message}`);
@@ -162,6 +153,19 @@ export class Renderer {
     pageInfo: paginator.PageInfo
   ): void {
     for (const tableBinding of pageConfig.tables) {
+      if (tableBinding.header?.cells?.length) {
+        for (const cell of tableBinding.header.cells) {
+          const value = this.resolveValue(cell.value);
+          try {
+            svgEngine.applyTextBinding(svgDoc, cell, value);
+          } catch (error) {
+            if (error instanceof SVGReportError) {
+              console.warn(`Warning: ${error.message}`);
+            }
+          }
+        }
+      }
+
       const chunk = pageInfo.tableChunks.get(tableBinding.source);
       if (!chunk || chunk.rows.length === 0) {
         continue;
@@ -174,7 +178,8 @@ export class Renderer {
           chunk.rows,
           chunk.startIndex,
           tableBinding.start_y_mm ?? 0,
-          tableBinding.row_height_mm
+          tableBinding.row_height_mm,
+          (cell: TableCell, rowData) => this.resolveValue(cell.value, rowData, tableBinding.source)
         );
       } catch (error) {
         if (error instanceof SVGReportError) {
@@ -182,6 +187,33 @@ export class Renderer {
         }
       }
     }
+  }
+
+  private resolveValue(
+    value: ValueBinding,
+    rowData?: Record<string, string>,
+    rowSource?: string
+  ): string {
+    if (value.type === 'static') {
+      return value.text ?? '';
+    }
+
+    const sourceName = value.source;
+    const source = this.dataSources.get(sourceName);
+
+    if (rowData && rowSource && sourceName === rowSource) {
+      return rowData[value.key] ?? '';
+    }
+
+    if (source && isKvData(source)) {
+      return source[value.key] ?? '';
+    }
+
+    if (source && isTableData(source)) {
+      return source.rows[0]?.[value.key] ?? '';
+    }
+
+    return '';
   }
 }
 

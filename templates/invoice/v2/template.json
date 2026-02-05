@@ -1,6 +1,9 @@
 {
-  "schema": "svgreport-template/v0.1",
-  "template": { "id": "invoice", "version": "v2" },
+  "schema": "svgreport-template/v0.2",
+  "template": {
+    "id": "invoice",
+    "version": "v2"
+  },
   "pages": [
     {
       "id": "first",
@@ -10,19 +13,85 @@
         {
           "source": "items",
           "row_group_id": "row-template",
-          "row_height_mm": 8.0,
+          "row_height_mm": 8,
           "rows_per_page": 8,
           "cells": [
-            { "svg_id": "item_no", "column": "no", "align": "center" },
-            { "svg_id": "item_name", "column": "name", "fit": "shrink" },
-            { "svg_id": "item_qty", "column": "qty", "align": "right" },
-            { "svg_id": "item_unit", "column": "unit", "align": "center" },
-            { "svg_id": "item_price", "column": "price", "align": "right", "format": "yen" },
-            { "svg_id": "item_amount", "column": "amount", "align": "right", "format": "yen" }
-          ]
+            {
+              "svg_id": "item_no",
+              "align": "center",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "no"
+              }
+            },
+            {
+              "svg_id": "item_name",
+              "fit": "shrink",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "name"
+              }
+            },
+            {
+              "svg_id": "item_qty",
+              "align": "right",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "qty"
+              }
+            },
+            {
+              "svg_id": "item_unit",
+              "align": "center",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "unit"
+              }
+            },
+            {
+              "svg_id": "item_price",
+              "align": "right",
+              "format": "yen",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "price"
+              }
+            },
+            {
+              "svg_id": "item_amount",
+              "align": "right",
+              "format": "yen",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "amount"
+              }
+            }
+          ],
+          "header": {
+            "cells": [
+              {
+                "svg_id": "text_75_214",
+                "value": {
+                  "type": "static",
+                  "text": "No"
+                },
+                "fit": "none",
+                "align": "left"
+              }
+            ]
+          }
         }
       ],
-      "page_number": { "svg_id": "page_no", "format": "{current}/{total}" }
+      "page_number": {
+        "svg_id": "page_no",
+        "format": "{current}/{total}"
+      }
     },
     {
       "id": "follow",
@@ -32,29 +101,148 @@
         {
           "source": "items",
           "row_group_id": "row-template",
-          "row_height_mm": 8.0,
+          "row_height_mm": 8,
           "rows_per_page": 12,
           "cells": [
-            { "svg_id": "item_no", "column": "no", "align": "center" },
-            { "svg_id": "item_name", "column": "name", "fit": "shrink" },
-            { "svg_id": "item_qty", "column": "qty", "align": "right" },
-            { "svg_id": "item_unit", "column": "unit", "align": "center" },
-            { "svg_id": "item_price", "column": "price", "align": "right", "format": "yen" },
-            { "svg_id": "item_amount", "column": "amount", "align": "right", "format": "yen" }
+            {
+              "svg_id": "item_no",
+              "align": "center",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "no"
+              }
+            },
+            {
+              "svg_id": "item_name",
+              "fit": "shrink",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "name"
+              }
+            },
+            {
+              "svg_id": "item_qty",
+              "align": "right",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "qty"
+              }
+            },
+            {
+              "svg_id": "item_unit",
+              "align": "center",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "unit"
+              }
+            },
+            {
+              "svg_id": "item_price",
+              "align": "right",
+              "format": "yen",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "price"
+              }
+            },
+            {
+              "svg_id": "item_amount",
+              "align": "right",
+              "format": "yen",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "amount"
+              }
+            }
           ]
         }
       ],
-      "page_number": { "svg_id": "page_no", "format": "{current}/{total}" }
+      "page_number": {
+        "svg_id": "page_no",
+        "format": "{current}/{total}"
+      }
     }
   ],
   "fields": [
-    { "svg_id": "customer_name", "source": "meta", "key": "customer.name", "fit": "shrink" },
-    { "svg_id": "customer_address", "source": "meta", "key": "customer.address", "fit": "shrink" },
-    { "svg_id": "invoice_no", "source": "meta", "key": "invoice_no" },
-    { "svg_id": "issue_date", "source": "meta", "key": "issue_date", "format": "date" },
-    { "svg_id": "due_date", "source": "meta", "key": "due_date", "format": "date" },
-    { "svg_id": "subtotal", "source": "meta", "key": "subtotal", "format": "yen", "align": "right" },
-    { "svg_id": "tax", "source": "meta", "key": "tax", "format": "yen", "align": "right" },
-    { "svg_id": "total", "source": "meta", "key": "total", "format": "yen", "align": "right" }
+    {
+      "svg_id": "customer_name",
+      "fit": "shrink",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "customer.name"
+      }
+    },
+    {
+      "svg_id": "customer_address",
+      "fit": "shrink",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "customer.address"
+      }
+    },
+    {
+      "svg_id": "invoice_no",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "invoice_no"
+      }
+    },
+    {
+      "svg_id": "issue_date",
+      "format": "date",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "issue_date"
+      }
+    },
+    {
+      "svg_id": "due_date",
+      "format": "date",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "due_date"
+      }
+    },
+    {
+      "svg_id": "subtotal",
+      "format": "yen",
+      "align": "right",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "subtotal"
+      }
+    },
+    {
+      "svg_id": "tax",
+      "format": "yen",
+      "align": "right",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "tax"
+      }
+    },
+    {
+      "svg_id": "total",
+      "format": "yen",
+      "align": "right",
+      "value": {
+        "type": "data",
+        "source": "meta",
+        "key": "total"
+      }
+    }
   ]
 }

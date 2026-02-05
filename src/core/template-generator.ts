@@ -98,9 +98,9 @@ function generateTemplateJson(
           row_height_mm: 8.0,
           rows_per_page: kind === 'first' ? 10 : 15,
           cells: [
-            { svg_id: 'item_no', column: 'no', align: 'center' },
-            { svg_id: 'item_name', column: 'name', fit: 'shrink' },
-            { svg_id: 'item_qty', column: 'qty', align: 'right' },
+            { svg_id: 'item_no', value: { type: 'data', source: 'items', key: 'no' }, align: 'center' },
+            { svg_id: 'item_name', value: { type: 'data', source: 'items', key: 'name' }, fit: 'shrink' },
+            { svg_id: 'item_qty', value: { type: 'data', source: 'items', key: 'qty' }, align: 'right' },
           ],
         },
       ],
@@ -112,7 +112,7 @@ function generateTemplateJson(
   });
 
   return {
-    schema: 'svgreport-template/v0.1',
+    schema: 'svgreport-template/v0.2',
     template: {
       id: templateId,
       version,

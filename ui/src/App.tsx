@@ -302,6 +302,11 @@ export function App() {
     }
     for (const page of template.pages) {
       for (const table of page.tables) {
+        if (table.header?.cells) {
+          for (const cell of table.header.cells) {
+            if (cell.svg_id) used.add(cell.svg_id)
+          }
+        }
         for (const cell of table.cells) {
           if (cell.svg_id) used.add(cell.svg_id)
         }
@@ -332,6 +337,11 @@ export function App() {
     if (page?.page_number?.svg_id) ids.add(page.page_number.svg_id)
     if (page) {
       for (const table of page.tables) {
+        if (table.header?.cells) {
+          for (const cell of table.header.cells) {
+            if (cell.svg_id) ids.add(cell.svg_id)
+          }
+        }
         for (const cell of table.cells) {
           if (cell.svg_id) ids.add(cell.svg_id)
         }

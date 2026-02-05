@@ -130,13 +130,16 @@ export async function validateTemplateFull(
     // Check field bindings
     for (const field of config.fields) {
       if (!allIds.has(field.svg_id)) {
+        const valueLabel = field.value.type === 'data'
+          ? `${field.value.source}:${field.value.key}`
+          : 'static';
         result.valid = false;
         result.svgErrors.push({
           type: 'missing_id',
           pageId: page.id,
           svgFile: page.svg,
           elementId: field.svg_id,
-          message: `Field binding references missing ID: ${field.svg_id} (source: ${field.source}, key: ${field.key})`,
+          message: `Field binding references missing ID: ${field.svg_id} (value: ${valueLabel})`,
         });
       }
     }
@@ -177,13 +180,36 @@ export async function validateTemplateFull(
       // Check cell bindings
       for (const cell of table.cells) {
         if (!rowGroupIds.has(cell.svg_id) && !allIds.has(cell.svg_id)) {
+          const valueLabel = cell.value.type === 'data'
+            ? `${cell.value.source}:${cell.value.key}`
+            : 'static';
           result.valid = false;
           result.svgErrors.push({
             type: 'missing_cell',
             pageId: page.id,
             svgFile: page.svg,
             elementId: cell.svg_id,
-            message: `Table cell references missing ID: ${cell.svg_id} (column: ${cell.column}) - should be inside row group ${table.row_group_id}`,
+            message: `Table cell references missing ID: ${cell.svg_id} (value: ${valueLabel}) - should be inside row group ${table.row_group_id}`,
+          });
+        }
+      }
+    }
+
+    // Check table header bindings
+    for (const table of page.tables) {
+      if (!table.header?.cells?.length) continue
+      for (const cell of table.header.cells) {
+        if (!allIds.has(cell.svg_id)) {
+          const valueLabel = cell.value.type === 'data'
+            ? `${cell.value.source}:${cell.value.key}`
+            : 'static';
+          result.valid = false;
+          result.svgErrors.push({
+            type: 'missing_id',
+            pageId: page.id,
+            svgFile: page.svg,
+            elementId: cell.svg_id,
+            message: `Table header references missing ID: ${cell.svg_id} (value: ${valueLabel})`,
           });
         }
       }

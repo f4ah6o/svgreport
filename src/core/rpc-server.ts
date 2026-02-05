@@ -11,7 +11,7 @@ import { extractTextElements, analyzeTemplateSvgs } from './text-inspector.js';
 import { validateTemplateFull, type ValidationResult } from './template-validator.js';
 import { generatePreview } from './preview-generator.js';
 import { generateTemplate } from './template-generator.js';
-import { SVGREPORT_JOB_V0_1_SCHEMA, SVGREPORT_TEMPLATE_V0_1_SCHEMA } from './schema-registry.js';
+import { SVGREPORT_JOB_V0_1_SCHEMA, SVGREPORT_TEMPLATE_V0_2_SCHEMA } from './schema-registry.js';
 const PACKAGE_VERSION = '2026.2.0';
 const API_VERSION = 'rpc/v0.1';
 
@@ -516,8 +516,8 @@ export class RpcServer {
           schema_id: 'svgreport-job/v0.1.schema.json',
         },
         template: {
-          id: 'svgreport-template/v0.1',
-          schema_id: 'svgreport-template/v0.1.schema.json',
+          id: 'svgreport-template/v0.2',
+          schema_id: 'svgreport-template/v0.2.schema.json',
         },
       },
       capabilities: {
@@ -536,7 +536,7 @@ export class RpcServer {
     if (name === 'job') {
       return { schema: SVGREPORT_JOB_V0_1_SCHEMA };
     } else if (name === 'template') {
-      return { schema: SVGREPORT_TEMPLATE_V0_1_SCHEMA };
+      return { schema: SVGREPORT_TEMPLATE_V0_2_SCHEMA };
     } else {
       return { error: { code: 'NOT_FOUND', message: `Schema not found: ${name}` } };
     }

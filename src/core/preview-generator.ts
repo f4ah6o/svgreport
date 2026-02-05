@@ -144,14 +144,46 @@ function generateDummyData(
   const meta: KVData = {};
   const items: TableData = { headers: [], rows: [] };
 
-  // Collect all unique field keys
-  const fieldKeys = new Set<string>();
+  // Collect all unique keys
+  const metaKeys = new Set<string>();
+  const itemKeys = new Set<string>();
+
   for (const field of templateConfig.fields) {
-    fieldKeys.add(field.key);
+    if (field.value.type !== 'data') continue;
+    if (field.value.source === 'meta') {
+      metaKeys.add(field.value.key);
+    } else {
+      itemKeys.add(field.value.key);
+    }
+  }
+
+  for (const page of templateConfig.pages) {
+    for (const table of page.tables) {
+      if (table.header?.cells) {
+        for (const cell of table.header.cells) {
+          if (cell.value.type === 'data') {
+            if (cell.value.source === 'meta') {
+              metaKeys.add(cell.value.key);
+            } else {
+              itemKeys.add(cell.value.key);
+            }
+          }
+        }
+      }
+      for (const cell of table.cells) {
+        if (cell.value.type === 'data') {
+          if (cell.value.source === 'meta') {
+            metaKeys.add(cell.value.key);
+          } else {
+            itemKeys.add(cell.value.key);
+          }
+        }
+      }
+    }
   }
 
   // Generate meta data based on field names
-  for (const key of fieldKeys) {
+  for (const key of metaKeys) {
     meta[key] = generateMetaValue(key, sampleData);
   }
 
@@ -184,15 +216,7 @@ function generateDummyData(
   }
 
   // Collect table columns from all pages
-  const tableColumns = new Set<string>();
-  for (const page of templateConfig.pages) {
-    for (const table of page.tables) {
-      for (const cell of table.cells) {
-        tableColumns.add(cell.column);
-      }
-    }
-  }
-
+  const tableColumns = new Set<string>(itemKeys);
   items.headers = Array.from(tableColumns);
   if (items.headers.length === 0) {
     items.headers = ['name', 'price', 'qty', 'amount'];
