@@ -135,16 +135,7 @@ export class Renderer {
   }
 
   private applyFields(svgDoc: Document, _meta: KVData, _currentPage: number, _totalPages: number): void {
-    for (const field of this.templateConfig.fields) {
-      const value = this.resolveValue(field.value);
-      try {
-        svgEngine.applyTextBinding(svgDoc, field, value);
-      } catch (error) {
-        if (error instanceof SVGReportError) {
-          console.warn(`Warning: ${error.message}`);
-        }
-      }
-    }
+    this.applyFieldList(svgDoc, this.templateConfig.fields);
   }
 
   private applyTables(
@@ -152,6 +143,9 @@ export class Renderer {
     pageConfig: PageConfig,
     pageInfo: paginator.PageInfo
   ): void {
+    if (pageConfig.fields?.length) {
+      this.applyFieldList(svgDoc, pageConfig.fields);
+    }
     for (const tableBinding of pageConfig.tables) {
       if (tableBinding.header?.cells?.length) {
         for (const cell of tableBinding.header.cells) {
@@ -181,6 +175,19 @@ export class Renderer {
           tableBinding.row_height_mm,
           (cell: TableCell, rowData) => this.resolveValue(cell.value, rowData, tableBinding.source)
         );
+      } catch (error) {
+        if (error instanceof SVGReportError) {
+          console.warn(`Warning: ${error.message}`);
+        }
+      }
+    }
+  }
+
+  private applyFieldList(svgDoc: Document, fields: { svg_id: string; value: ValueBinding; fit?: string; align?: string; format?: string }[]): void {
+    for (const field of fields) {
+      const value = this.resolveValue(field.value);
+      try {
+        svgEngine.applyTextBinding(svgDoc, field, value);
       } catch (error) {
         if (error instanceof SVGReportError) {
           console.warn(`Warning: ${error.message}`);

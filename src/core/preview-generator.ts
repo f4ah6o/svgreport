@@ -158,6 +158,15 @@ function generateDummyData(
   }
 
   for (const page of templateConfig.pages) {
+    for (const field of page.fields ?? []) {
+      if (field.value.type === 'data') {
+        if (field.value.source === 'meta') {
+          metaKeys.add(field.value.key);
+        } else {
+          itemKeys.add(field.value.key);
+        }
+      }
+    }
     for (const table of page.tables) {
       if (table.header?.cells) {
         for (const cell of table.header.cells) {

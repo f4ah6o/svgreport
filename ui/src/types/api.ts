@@ -63,6 +63,7 @@ export interface PageConfig {
   id: string;
   svg: string;
   kind: 'first' | 'repeat';
+  fields?: FieldBinding[];
   tables: TableBinding[];
   page_number?: PageNumberConfig;
 }

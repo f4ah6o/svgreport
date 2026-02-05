@@ -812,6 +812,79 @@
   margin-bottom: 1rem;
 }
 
+.template-editor {
+  display: flex;
+  gap: 1rem;
+}
+
+.template-editor-nav {
+  flex: 0 0 220px;
+  border-right: 1px solid #e0e0e0;
+  padding-right: 0.75rem;
+}
+
+.template-editor-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-section {
+  margin-bottom: 1rem;
+}
+
+.nav-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7a7a7a;
+  margin-bottom: 0.4rem;
+}
+
+.nav-button,
+.nav-page {
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f7f7f7;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #2c3e50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nav-button.active,
+.nav-page.active {
+  background: #e7f1ff;
+  border-color: #9fc4f5;
+  color: #1d4f91;
+}
+
+.nav-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.nav-page-id {
+  font-weight: 600;
+}
+
+.nav-page-kind {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: #667;
+}
+
+.nav-add {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  justify-content: center;
+}
+
 .template-editor .tabs button {
   padding: 0.45rem 0.75rem;
   border: 1px solid #d0d0d0;
@@ -962,6 +1035,12 @@
 .template-editor .table-header-section {
   margin-top: 0.75rem;
   border-top: 1px dashed #ddd;
+  padding-top: 0.75rem;
+}
+
+.template-editor .page-fields-section {
+  margin-top: 0.75rem;
+  border-top: 1px solid #e5e5e5;
   padding-top: 0.75rem;
 }
 

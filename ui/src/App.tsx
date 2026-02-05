@@ -301,6 +301,9 @@ export function App() {
       if (field.svg_id) used.add(field.svg_id)
     }
     for (const page of template.pages) {
+      for (const field of page.fields ?? []) {
+        if (field.svg_id) used.add(field.svg_id)
+      }
       for (const table of page.tables) {
         if (table.header?.cells) {
           for (const cell of table.header.cells) {
@@ -335,6 +338,11 @@ export function App() {
     // Current page bindings (tables/cells/page_number)
     const page = selectedPageId ? template.pages.find(p => p.id === selectedPageId) : undefined
     if (page?.page_number?.svg_id) ids.add(page.page_number.svg_id)
+    if (page?.fields) {
+      for (const field of page.fields) {
+        if (field.svg_id) ids.add(field.svg_id)
+      }
+    }
     if (page) {
       for (const table of page.tables) {
         if (table.header?.cells) {

@@ -91,6 +91,7 @@ function generateTemplateJson(
       id,
       svg,
       kind,
+      fields: [],
       tables: [
         {
           source: 'items',

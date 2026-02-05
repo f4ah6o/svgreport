@@ -26,8 +26,12 @@ export function TemplateEditor({
   selectedPreviewSvgId,
   onSelectBindingSvgId,
 }: TemplateEditorProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'pages' | 'fields' | 'formatters'>('info')
-  const [fieldGroupsOpen, setFieldGroupsOpen] = useState<{ static: boolean; data: boolean }>({
+  const [activeSection, setActiveSection] = useState<'info' | 'global-fields' | 'formatters' | 'page'>('page')
+  const [globalFieldGroupsOpen, setGlobalFieldGroupsOpen] = useState<{ static: boolean; data: boolean }>({
+    static: false,
+    data: true,
+  })
+  const [pageFieldGroupsOpen, setPageFieldGroupsOpen] = useState<{ static: boolean; data: boolean }>({
     static: false,
     data: true,
   })
@@ -60,6 +64,16 @@ export function TemplateEditor({
     onChange({ ...template, fields: newFields })
   }, [template, onChange])
 
+  const handlePageFieldChange = useCallback((pageId: string, index: number, field: FieldBinding) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const fields = [...(p.fields ?? [])]
+      fields[index] = field
+      return { ...p, fields }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
   const handleAddField = useCallback((kind: 'static' | 'data' = 'data') => {
     const newField: FieldBinding = {
       svg_id: '',
@@ -72,9 +86,35 @@ export function TemplateEditor({
     onChange({ ...template, fields: [...template.fields, newField] })
   }, [template, onChange])
 
+  const handleAddPageField = useCallback((pageId: string, kind: 'static' | 'data' = 'data') => {
+    const newField: FieldBinding = {
+      svg_id: '',
+      value: kind === 'static'
+        ? makeStaticValue()
+        : makeDataValue('meta', ''),
+      fit: 'none',
+      align: 'left'
+    }
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const fields = [...(p.fields ?? []), newField]
+      return { ...p, fields }
+    })
+    onChange({ ...template, pages: newPages })
+  }, [template, onChange])
+
   const handleRemoveField = useCallback((index: number) => {
     const newFields = template.fields.filter((_, i) => i !== index)
     onChange({ ...template, fields: newFields })
+  }, [template, onChange])
+
+  const handleRemovePageField = useCallback((pageId: string, index: number) => {
+    const newPages = template.pages.map(p => {
+      if (p.id !== pageId) return p
+      const fields = (p.fields ?? []).filter((_, i) => i !== index)
+      return { ...p, fields }
+    })
+    onChange({ ...template, pages: newPages })
   }, [template, onChange])
 
   const handleAddPage = useCallback(() => {
@@ -83,6 +123,7 @@ export function TemplateEditor({
       id: `page-${nextIndex}`,
       svg: `page-${nextIndex}.svg`,
       kind: template.pages.length === 0 ? 'first' : 'repeat',
+      fields: [],
       tables: [],
     }
     onChange({ ...template, pages: [...template.pages, newPage] })
@@ -233,10 +274,17 @@ export function TemplateEditor({
 
   const formatters = template.formatters || {}
   const formatterEntries = Object.entries(formatters)
-  const staticFields = template.fields
+  const globalStaticFields = template.fields
     .map((field, index) => ({ field, index }))
     .filter(({ field }) => field.value.type === 'static')
-  const dataFields = template.fields
+  const globalDataFields = template.fields
+    .map((field, index) => ({ field, index }))
+    .filter(({ field }) => field.value.type === 'data')
+  const selectedPage = selectedPageId ? template.pages.find(p => p.id === selectedPageId) : null
+  const pageStaticFields = (selectedPage?.fields ?? [])
+    .map((field, index) => ({ field, index }))
+    .filter(({ field }) => field.value.type === 'static')
+  const pageDataFields = (selectedPage?.fields ?? [])
     .map((field, index) => ({ field, index }))
     .filter(({ field }) => field.value.type === 'data')
 
@@ -267,7 +315,13 @@ export function TemplateEditor({
     if (!focusTarget) return
     if (focusTarget.path === lastFocusPath) return
 
-    setActiveTab(focusTarget.tab)
+    if (focusTarget.tab === 'pages') {
+      setActiveSection('page')
+    } else if (focusTarget.tab === 'fields') {
+      setActiveSection('global-fields')
+    } else if (focusTarget.tab === 'formatters') {
+      setActiveSection('formatters')
+    }
     setLastFocusPath(focusTarget.path)
 
     if (focusTarget.tab === 'pages') {
@@ -312,34 +366,59 @@ export function TemplateEditor({
 
   return (
     <div className="template-editor">
-      <div className="tabs">
-        <button 
-          className={activeTab === 'info' ? 'active' : ''} 
-          onClick={() => setActiveTab('info')}
-        >
-          Info
-        </button>
-        <button 
-          className={activeTab === 'pages' ? 'active' : ''} 
-          onClick={() => setActiveTab('pages')}
-        >
-          Pages ({template.pages.length})
-        </button>
-        <button 
-          className={activeTab === 'fields' ? 'active' : ''} 
-          onClick={() => setActiveTab('fields')}
-        >
-          Fields ({template.fields.length})
-        </button>
-        <button
-          className={activeTab === 'formatters' ? 'active' : ''}
-          onClick={() => setActiveTab('formatters')}
-        >
-          Formatters ({formatterEntries.length})
-        </button>
-      </div>
+      <aside className="template-editor-nav">
+        <div className="nav-section">
+          <div className="nav-title">Template</div>
+          <button
+            className={`nav-button ${activeSection === 'info' ? 'active' : ''}`}
+            onClick={() => setActiveSection('info')}
+          >
+            Info
+          </button>
+          <button
+            className={`nav-button ${activeSection === 'global-fields' ? 'active' : ''}`}
+            onClick={() => setActiveSection('global-fields')}
+          >
+            Global Fields ({template.fields.length})
+          </button>
+          <button
+            className={`nav-button ${activeSection === 'formatters' ? 'active' : ''}`}
+            onClick={() => setActiveSection('formatters')}
+          >
+            Formatters ({formatterEntries.length})
+          </button>
+        </div>
+        <div className="nav-section">
+          <div className="nav-title">Pages</div>
+          <button
+            className="btn-add nav-add"
+            onClick={() => {
+              handleAddPage()
+              setActiveSection('page')
+            }}
+          >
+            + Add Page
+          </button>
+          <div className="nav-pages">
+            {template.pages.map((page) => (
+              <button
+                key={page.id}
+                className={`nav-page ${selectedPageId === page.id ? 'active' : ''}`}
+                onClick={() => {
+                  onPageSelect(page.id)
+                  setActiveSection('page')
+                }}
+              >
+                <span className="nav-page-id">{page.id}</span>
+                <span className="nav-page-kind">{page.kind}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </aside>
 
-      {activeTab === 'info' && (
+      <div className="template-editor-content">
+      {activeSection === 'info' && (
         <div className="tab-content">
           <h3>Template Information</h3>
           <div className="form-group">
@@ -365,30 +444,16 @@ export function TemplateEditor({
         </div>
       )}
 
-      {activeTab === 'pages' && (
+      {activeSection === 'page' && (
         <div className="tab-content">
-          <h3>Pages</h3>
-          <button className="btn-add" onClick={handleAddPage}>+ Add Page</button>
-          {template.pages.map((page) => (
-            <div 
-              key={page.id} 
-              className={`page-item ${selectedPageId === page.id ? 'selected' : ''}`}
-              onClick={() => onPageSelect(page.id)}
-            >
-              <div className="page-header">
-                <span className="page-id">{page.id}</span>
-                <span className="page-kind">{page.kind}</span>
-              </div>
-              <div className="page-svg">{page.svg}</div>
-              <div className="page-tables">
-                {page.tables.length} table(s)
-              </div>
-            </div>
-          ))}
-          {selectedPageId && template.pages.find(p => p.id === selectedPageId) && (
+          <h3>Page Editor</h3>
+          {!selectedPage && (
+            <p className="empty">Select a page from the left to edit.</p>
+          )}
+          {selectedPage && (
             <div className="page-editor">
               {(() => {
-                const page = template.pages.find(p => p.id === selectedPageId)!
+                const page = selectedPage
                 const pageIndex = template.pages.findIndex(p => p.id === page.id)
                 const pageIdError = !page.id.trim()
                   ? 'Page ID is required.'
@@ -479,6 +544,328 @@ export function TemplateEditor({
                         disabled={!page.page_number?.svg_id}
                         data-focus-key={`pages[${pageIndex}].page_number.format`}
                       />
+                    </div>
+
+                    <div className="page-fields-section">
+                      <h4>Page Fields ({(page.fields ?? []).length})</h4>
+                      <div className="field-toolbar">
+                        <button className="btn-add" onClick={() => handleAddPageField(page.id, 'data')}>+ Add Data Field</button>
+                        <button className="btn-add btn-add-item" onClick={() => handleAddPageField(page.id, 'static')}>+ Add Static Field</button>
+                      </div>
+                      {(page.fields ?? []).length === 0 ? (
+                        <p className="empty">No page fields defined.</p>
+                      ) : (
+                        <>
+                          <div className="field-group">
+                            <div className="field-group-header">
+                              <h4>Data Fields ({pageDataFields.length})</h4>
+                              <button
+                                className="field-group-toggle"
+                                onClick={() => setPageFieldGroupsOpen((prev) => ({ ...prev, data: !prev.data }))}
+                              >
+                                {pageFieldGroupsOpen.data ? 'Collapse' : 'Expand'}
+                              </button>
+                            </div>
+                            {pageFieldGroupsOpen.data && (pageDataFields.length === 0 ? (
+                              <p className="empty">No data fields.</p>
+                            ) : pageDataFields.map(({ field, index }) => (
+                              <div
+                                key={index}
+                                className={`field-item field-item-data ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                                data-binding-svg-id={field.svg_id || undefined}
+                                onClick={() => onSelectBindingSvgId(field.svg_id || null)}
+                              >
+                                <div className="field-header">
+                                  <span>
+                                    Field #{index + 1}{' '}
+                                    <span className="field-source-badge field-source-data">DATA</span>
+                                    {field.value.type === 'data' ? (
+                                      <span
+                                        className={`field-source-badge ${field.value.source === 'meta' ? 'field-source-meta' : 'field-source-item'}`}
+                                      >
+                                        {field.value.source}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <button
+                                    className="btn-remove"
+                                    onClick={() => handleRemovePageField(page.id, index)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                                <div className="field-form">
+                                  <div className="form-row">
+                                    <label>Value Type:</label>
+                                    <select
+                                      value={field.value.type}
+                                      onChange={(e) => {
+                                        const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
+                                        const nextValue = nextType === 'static'
+                                          ? makeStaticValue()
+                                          : makeDataValue('meta', '')
+                                        handlePageFieldChange(page.id, index, { ...field, value: nextValue })
+                                      }}
+                                      data-focus-key={`pages[${pageIndex}].fields[${index}].value.type`}
+                                    >
+                                      <option value="data">data</option>
+                                      <option value="static">static</option>
+                                    </select>
+                                  </div>
+                                  <div className="form-row">
+                                    <label>SVG ID:</label>
+                                    <input
+                                      type="text"
+                                      value={field.svg_id}
+                                      onChange={(e) => {
+                                        const nextSvgId = (e.target as HTMLInputElement).value
+                                        handlePageFieldChange(page.id, index, { ...field, svg_id: nextSvgId })
+                                        onSelectBindingSvgId(nextSvgId || null)
+                                      }}
+                                      onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
+                                      data-focus-key={`pages[${pageIndex}].fields[${index}].svg_id`}
+                                    />
+                                    {!field.svg_id && (
+                                      <div className="suggested-row">
+                                        <select
+                                          className="suggested-select"
+                                          defaultValue=""
+                                          disabled={suggestedSvgIds.length === 0}
+                                          onChange={(e) => {
+                                            const value = (e.target as HTMLSelectElement).value
+                                            if (value) {
+                                              handlePageFieldChange(page.id, index, { ...field, svg_id: value })
+                                              ;(e.target as HTMLSelectElement).value = ''
+                                            }
+                                          }}
+                                        >
+                                          <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
+                                          {suggestedSvgIds.map((id) => (
+                                            <option key={id} value={id}>{id}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {field.value.type === 'data' ? (
+                                    <>
+                                      <div className="form-row">
+                                        <label>Source:</label>
+                                        <select
+                                          value={field.value.source}
+                                          onChange={(e) => handlePageFieldChange(page.id, index, {
+                                            ...field,
+                                            value: makeDataValue((e.target as HTMLSelectElement).value, (field.value as DataValueBinding).key)
+                                          })}
+                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.source`}
+                                        >
+                                          <option value="meta">meta</option>
+                                          <option value="items">items</option>
+                                        </select>
+                                      </div>
+                                      <div className="form-row">
+                                        <label>Key:</label>
+                                        <input
+                                          type="text"
+                                          value={field.value.key}
+                                          onChange={(e) => handlePageFieldChange(page.id, index, {
+                                            ...field,
+                                            value: makeDataValue((field.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
+                                          })}
+                                          className={!field.value.key.trim() ? 'input-error' : ''}
+                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.key`}
+                                        />
+                                        {!field.value.key.trim() && <span className="error-text">Key is required.</span>}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="form-row">
+                                      <label>Text:</label>
+                                      <input
+                                        type="text"
+                                        value={field.value.text}
+                                        onChange={(e) => handlePageFieldChange(page.id, index, {
+                                          ...field,
+                                          value: makeStaticValue((e.target as HTMLInputElement).value)
+                                        })}
+                                        className={!field.value.text.trim() ? 'input-error' : ''}
+                                        data-focus-key={`pages[${pageIndex}].fields[${index}].value.text`}
+                                      />
+                                      {!field.value.text.trim() && <span className="error-text">Text is required.</span>}
+                                    </div>
+                                  )}
+                                  <div className="form-row">
+                                    <label>Align:</label>
+                                    <select
+                                      value={field.align || 'left'}
+                                      onChange={(e) => handlePageFieldChange(page.id, index, {
+                                        ...field,
+                                        align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
+                                      })}
+                                      data-focus-key={`pages[${pageIndex}].fields[${index}].align`}
+                                    >
+                                      <option value="left">Left</option>
+                                      <option value="center">Center</option>
+                                      <option value="right">Right</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            )))}
+                          </div>
+
+                          <div className="field-group">
+                            <div className="field-group-header">
+                              <h4>Static Fields ({pageStaticFields.length})</h4>
+                              <button
+                                className="field-group-toggle"
+                                onClick={() => setPageFieldGroupsOpen((prev) => ({ ...prev, static: !prev.static }))}
+                              >
+                                {pageFieldGroupsOpen.static ? 'Collapse' : 'Expand'}
+                              </button>
+                            </div>
+                            {pageFieldGroupsOpen.static && (pageStaticFields.length === 0 ? (
+                              <p className="empty">No static fields.</p>
+                            ) : pageStaticFields.map(({ field, index }) => (
+                              <div
+                                key={index}
+                                className={`field-item field-item-static ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
+                                data-binding-svg-id={field.svg_id || undefined}
+                                onClick={() => onSelectBindingSvgId(field.svg_id || null)}
+                              >
+                                <div className="field-header">
+                                  <span>
+                                    Field #{index + 1}{' '}
+                                    <span className="field-source-badge field-source-static">STATIC</span>
+                                  </span>
+                                  <button
+                                    className="btn-remove"
+                                    onClick={() => handleRemovePageField(page.id, index)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                                <div className="field-form">
+                                  <div className="form-row">
+                                    <label>Value Type:</label>
+                                    <select
+                                      value={field.value.type}
+                                      onChange={(e) => {
+                                        const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
+                                        const nextValue = nextType === 'static'
+                                          ? makeStaticValue()
+                                          : makeDataValue('meta', '')
+                                        handlePageFieldChange(page.id, index, { ...field, value: nextValue })
+                                      }}
+                                      data-focus-key={`pages[${pageIndex}].fields[${index}].value.type`}
+                                    >
+                                      <option value="static">static</option>
+                                      <option value="data">data</option>
+                                    </select>
+                                  </div>
+                                  <div className="form-row">
+                                    <label>SVG ID:</label>
+                                    <input
+                                      type="text"
+                                      value={field.svg_id}
+                                      onChange={(e) => {
+                                        const nextSvgId = (e.target as HTMLInputElement).value
+                                        handlePageFieldChange(page.id, index, { ...field, svg_id: nextSvgId })
+                                        onSelectBindingSvgId(nextSvgId || null)
+                                      }}
+                                      onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
+                                      data-focus-key={`pages[${pageIndex}].fields[${index}].svg_id`}
+                                    />
+                                    {!field.svg_id && (
+                                      <div className="suggested-row">
+                                        <select
+                                          className="suggested-select"
+                                          defaultValue=""
+                                          disabled={suggestedSvgIds.length === 0}
+                                          onChange={(e) => {
+                                            const value = (e.target as HTMLSelectElement).value
+                                            if (value) {
+                                              handlePageFieldChange(page.id, index, { ...field, svg_id: value })
+                                              ;(e.target as HTMLSelectElement).value = ''
+                                            }
+                                          }}
+                                        >
+                                          <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
+                                          {suggestedSvgIds.map((id) => (
+                                            <option key={id} value={id}>{id}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {field.value.type === 'data' ? (
+                                    <>
+                                      <div className="form-row">
+                                        <label>Source:</label>
+                                        <select
+                                          value={field.value.source}
+                                          onChange={(e) => handlePageFieldChange(page.id, index, {
+                                            ...field,
+                                            value: makeDataValue((e.target as HTMLSelectElement).value, (field.value as DataValueBinding).key)
+                                          })}
+                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.source`}
+                                        >
+                                          <option value="meta">meta</option>
+                                          <option value="items">items</option>
+                                        </select>
+                                      </div>
+                                      <div className="form-row">
+                                        <label>Key:</label>
+                                        <input
+                                          type="text"
+                                          value={field.value.key}
+                                          onChange={(e) => handlePageFieldChange(page.id, index, {
+                                            ...field,
+                                            value: makeDataValue((field.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
+                                          })}
+                                          className={!field.value.key.trim() ? 'input-error' : ''}
+                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.key`}
+                                        />
+                                        {!field.value.key.trim() && <span className="error-text">Key is required.</span>}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="form-row">
+                                      <label>Text:</label>
+                                      <input
+                                        type="text"
+                                        value={field.value.text}
+                                        onChange={(e) => handlePageFieldChange(page.id, index, {
+                                          ...field,
+                                          value: makeStaticValue((e.target as HTMLInputElement).value)
+                                        })}
+                                        className={!field.value.text.trim() ? 'input-error' : ''}
+                                        data-focus-key={`pages[${pageIndex}].fields[${index}].value.text`}
+                                      />
+                                      {!field.value.text.trim() && <span className="error-text">Text is required.</span>}
+                                    </div>
+                                  )}
+                                  <div className="form-row">
+                                    <label>Align:</label>
+                                    <select
+                                      value={field.align || 'left'}
+                                      onChange={(e) => handlePageFieldChange(page.id, index, {
+                                        ...field,
+                                        align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
+                                      })}
+                                      data-focus-key={`pages[${pageIndex}].fields[${index}].align`}
+                                    >
+                                      <option value="left">Left</option>
+                                      <option value="center">Center</option>
+                                      <option value="right">Right</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            )))}
+                          </div>
+                        </>
+                      )}
                     </div>
                     <button className="btn-remove" onClick={() => handleRemovePage(page.id)}>
                       Remove Page
@@ -875,9 +1262,9 @@ export function TemplateEditor({
         </div>
       )}
 
-      {activeTab === 'fields' && (
+      {activeSection === 'global-fields' && (
         <div className="tab-content">
-          <h3>Field Bindings</h3>
+          <h3>Global Fields</h3>
           <div className="field-toolbar">
             <button className="btn-add" onClick={() => handleAddField('data')}>+ Add Data Field</button>
             <button className="btn-add btn-add-item" onClick={() => handleAddField('static')}>+ Add Static Field</button>
@@ -889,17 +1276,17 @@ export function TemplateEditor({
             <>
               <div className="field-group">
                 <div className="field-group-header">
-                  <h4>Data Fields ({dataFields.length})</h4>
+                  <h4>Data Fields ({globalDataFields.length})</h4>
                   <button
                     className="field-group-toggle"
-                    onClick={() => setFieldGroupsOpen((prev) => ({ ...prev, data: !prev.data }))}
+                    onClick={() => setGlobalFieldGroupsOpen((prev) => ({ ...prev, data: !prev.data }))}
                   >
-                    {fieldGroupsOpen.data ? 'Collapse' : 'Expand'}
+                    {globalFieldGroupsOpen.data ? 'Collapse' : 'Expand'}
                   </button>
                 </div>
-                {fieldGroupsOpen.data && (dataFields.length === 0 ? (
+                {globalFieldGroupsOpen.data && (globalDataFields.length === 0 ? (
                   <p className="empty">No data fields.</p>
-                ) : dataFields.map(({ field, index }) => (
+                ) : globalDataFields.map(({ field, index }) => (
                   <div
                     key={index}
                     className={`field-item field-item-data ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
@@ -1050,17 +1437,17 @@ export function TemplateEditor({
 
               <div className="field-group">
                 <div className="field-group-header">
-                  <h4>Static Fields ({staticFields.length})</h4>
+                  <h4>Static Fields ({globalStaticFields.length})</h4>
                   <button
                     className="field-group-toggle"
-                    onClick={() => setFieldGroupsOpen((prev) => ({ ...prev, static: !prev.static }))}
+                    onClick={() => setGlobalFieldGroupsOpen((prev) => ({ ...prev, static: !prev.static }))}
                   >
-                    {fieldGroupsOpen.static ? 'Collapse' : 'Expand'}
+                    {globalFieldGroupsOpen.static ? 'Collapse' : 'Expand'}
                   </button>
                 </div>
-                {fieldGroupsOpen.static && (staticFields.length === 0 ? (
+                {globalFieldGroupsOpen.static && (globalStaticFields.length === 0 ? (
                   <p className="empty">No static fields.</p>
-                ) : staticFields.map(({ field, index }) => (
+                ) : globalStaticFields.map(({ field, index }) => (
                   <div
                     key={index}
                     className={`field-item field-item-static ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
@@ -1206,7 +1593,7 @@ export function TemplateEditor({
         </div>
       )}
 
-      {activeTab === 'formatters' && (
+      {activeSection === 'formatters' && (
         <div className="tab-content">
           <h3>Formatters</h3>
           <button className="btn-add" onClick={handleAddFormatter}>+ Add Formatter</button>
@@ -1276,6 +1663,7 @@ export function TemplateEditor({
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

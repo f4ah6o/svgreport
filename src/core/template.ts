@@ -130,6 +130,13 @@ export function getReferencedSources(config: TemplateConfig): Set<string> {
 
   // Add table sources
   for (const page of config.pages) {
+    if (page.fields) {
+      for (const field of page.fields) {
+        if (field.value.type === 'data') {
+          sources.add(field.value.source);
+        }
+      }
+    }
     for (const table of page.tables) {
       sources.add(table.source);
       if (table.header?.cells) {

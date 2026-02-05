@@ -45,6 +45,11 @@ export const SVGREPORT_TEMPLATE_V0_2_SCHEMA = {
         id: { type: 'string', minLength: 1 },
         svg: { type: 'string', minLength: 1, description: 'SVG filename (e.g., page-1.svg)' },
         kind: { type: 'string', enum: ['first', 'repeat'] },
+        fields: {
+          type: 'array',
+          items: { $ref: '#/$defs/fieldBinding' },
+          description: 'Page-scoped fields.',
+        },
         tables: {
           type: 'array',
           items: { $ref: '#/$defs/tableBinding' },
