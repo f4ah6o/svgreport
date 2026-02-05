@@ -361,6 +361,7 @@ program
   .option('--output <path>', 'Default output directory', 'out')
   .option('--ui-remote-url <url>', 'UI remote URL for reverse proxy (e.g., https://intra-ui.example/svgpaper-ui/v0.1/)')
   .option('--ui-allow-host <hosts>', 'Comma-separated list of allowed UI hosts (default: localhost,127.0.0.1)', 'localhost,127.0.0.1')
+  .option('--ui-static-dir <path>', 'Serve UI from local directory (e.g., ./ui/dist)')
   .action(async (options) => {
     try {
       const port = parseInt(options.port, 10);
@@ -373,6 +374,7 @@ program
         outputDir: options.output,
         uiRemoteUrl: options.uiRemoteUrl,
         uiAllowHosts,
+        uiStaticDir: options.uiStaticDir,
       };
 
       await startRpcServer(serverOptions);

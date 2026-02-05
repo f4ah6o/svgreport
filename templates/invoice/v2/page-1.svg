@@ -40,7 +40,7 @@
     <text x="150" y="14" text-anchor="middle" class="header">品名</text>
     <text x="320" y="14" text-anchor="middle" class="header">数量</text>
     <text x="370" y="14" text-anchor="middle" class="header">単位</text>
-    <text x="430" y="14" text-anchor="middle" class="header">単価</text>
+    <text x="430" y="14" text-anchor="middle" class="header" id="text_75_214">単価</text>
     <text x="470" y="14" text-anchor="end" class="header">金額</text>
   </g>
   
@@ -53,7 +53,7 @@
       <text id="item_name" x="60" y="14" class="cell">商品名</text>
       <text id="item_qty" x="320" y="14" text-anchor="right" class="cell">1</text>
       <text id="item_unit" x="370" y="14" text-anchor="middle" class="cell">個</text>
-      <text id="item_price" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
+      <text id="text_200_214" x="430" y="14" text-anchor="end" class="cell">¥1,000</text>
       <text id="item_amount" x="470" y="14" text-anchor="end" class="cell">¥1,000</text>
     </g>
   </g>
