@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect } from 'preact/hooks'
 import type { TemplateConfig, FieldBinding, PageConfig, TableBinding, TableCell, FormatterDef, ValueBinding, DataValueBinding } from '../types/api'
+import type { BindingRef } from '../types/binding'
+import { encodeBindingRef, bindingRefEquals, BINDING_MIME } from '../types/binding'
 
 interface TemplateEditorProps {
   template: TemplateConfig
@@ -9,9 +11,10 @@ interface TemplateEditorProps {
   onSelectedPageIdChange: (pageId: string) => void
   focusTarget: { tab: 'pages' | 'fields' | 'formatters'; path: string } | null
   onFocusTargetConsumed: () => void
-  suggestedSvgIds: string[]
   selectedPreviewSvgId: string | null
   onSelectBindingSvgId: (svgId: string | null) => void
+  selectedBindingRef: BindingRef | null
+  onSelectBindingRef: (ref: BindingRef | null) => void
 }
 
 export function TemplateEditor({
@@ -22,9 +25,10 @@ export function TemplateEditor({
   onSelectedPageIdChange,
   focusTarget,
   onFocusTargetConsumed,
-  suggestedSvgIds,
   selectedPreviewSvgId,
   onSelectBindingSvgId,
+  selectedBindingRef,
+  onSelectBindingRef,
 }: TemplateEditorProps) {
   const [activeSection, setActiveSection] = useState<'info' | 'global-fields' | 'formatters' | 'page'>('page')
   const [globalFieldGroupsOpen, setGlobalFieldGroupsOpen] = useState<{ static: boolean; data: boolean }>({
@@ -42,6 +46,55 @@ export function TemplateEditor({
     acc[key] = (acc[key] || 0) + 1
     return acc
   }, {})
+
+  const formatValueLabel = (binding: FieldBinding | TableCell): string => {
+    if (binding.value.type === 'static') {
+      return binding.value.text ? `"${binding.value.text}"` : '(static)'
+    }
+    return `${binding.value.source}.${binding.value.key || '(key)'}`
+  }
+
+  const handleDragStart = (ref: BindingRef, label: string) => (event: DragEvent) => {
+    const payload = encodeBindingRef(ref)
+    event.dataTransfer?.setData(BINDING_MIME, payload)
+    event.dataTransfer?.setData('application/json', payload)
+    event.dataTransfer?.setData('text/plain', payload)
+    event.dataTransfer?.setData('text/x-svgpaper-label', label)
+    event.dataTransfer && (event.dataTransfer.effectAllowed = 'copy')
+  }
+
+  const renderBindingCard = (args: {
+    ref: BindingRef
+    binding: FieldBinding | TableCell
+    title: string
+    subtitle?: string
+  }) => {
+    const { ref, binding, title, subtitle } = args
+    const valueLabel = formatValueLabel(binding)
+    const isSelected = bindingRefEquals(selectedBindingRef, ref)
+    const isBound = Boolean(binding.svg_id)
+
+    return (
+      <div
+        className={`binding-card ${isSelected ? 'selected' : ''} ${isBound ? 'bound' : 'unbound'}`}
+        draggable
+        onDragStart={handleDragStart(ref, valueLabel)}
+        onClick={() => onSelectBindingRef(ref)}
+      >
+        <div className="binding-card-header">
+          <span className="binding-card-title">{title}</span>
+          {subtitle ? <span className="binding-card-subtitle">{subtitle}</span> : null}
+          <span className={`binding-card-status ${isBound ? 'bound' : 'unbound'}`}>
+            {isBound ? 'bound' : 'unbound'}
+          </span>
+        </div>
+        <div className="binding-card-body">
+          <span className="binding-card-value">{valueLabel}</span>
+          <span className="binding-card-target">{binding.svg_id || 'Drop on SVG'}</span>
+        </div>
+      </div>
+    )
+  }
 
 
   const handleTemplateIdChange = useCallback((value: string) => {
@@ -287,6 +340,79 @@ export function TemplateEditor({
   const pageDataFields = (selectedPage?.fields ?? [])
     .map((field, index) => ({ field, index }))
     .filter(({ field }) => field.value.type === 'data')
+
+  type SelectedBinding =
+    | { kind: 'global-field'; binding: FieldBinding; ref: Extract<BindingRef, { kind: 'global-field' }> }
+    | { kind: 'page-field'; binding: FieldBinding; ref: Extract<BindingRef, { kind: 'page-field' }>; pageId: string }
+    | { kind: 'table-header'; binding: TableCell; ref: Extract<BindingRef, { kind: 'table-header' }>; pageId: string }
+    | { kind: 'table-cell'; binding: TableCell; ref: Extract<BindingRef, { kind: 'table-cell' }>; pageId: string }
+
+  const selectedBinding: SelectedBinding | null = (() => {
+    if (!selectedBindingRef) return null
+    if (selectedBindingRef.kind === 'global-field') {
+      const binding = template.fields[selectedBindingRef.index]
+      if (!binding) return null
+      return { kind: 'global-field', binding, ref: selectedBindingRef }
+    }
+    const page = template.pages.find(p => p.id === selectedBindingRef.pageId)
+    if (!page) return null
+    if (selectedBindingRef.kind === 'page-field') {
+      const binding = page.fields?.[selectedBindingRef.index]
+      if (!binding) return null
+      return { kind: 'page-field', binding, ref: selectedBindingRef, pageId: page.id }
+    }
+    if (selectedBindingRef.kind === 'table-header') {
+      const binding = page.tables[selectedBindingRef.tableIndex]?.header?.cells?.[selectedBindingRef.cellIndex]
+      if (!binding) return null
+      return { kind: 'table-header', binding, ref: selectedBindingRef, pageId: page.id }
+    }
+    if (selectedBindingRef.kind === 'table-cell') {
+      const binding = page.tables[selectedBindingRef.tableIndex]?.cells?.[selectedBindingRef.cellIndex]
+      if (!binding) return null
+      return { kind: 'table-cell', binding, ref: selectedBindingRef, pageId: page.id }
+    }
+    return null
+  })()
+
+  const applySelectedBindingUpdate = (updater: (binding: FieldBinding | TableCell) => FieldBinding | TableCell) => {
+    if (!selectedBinding) return
+    const nextBinding = updater(selectedBinding.binding)
+    if (selectedBinding.kind === 'global-field') {
+      handleFieldChange(selectedBinding.ref.index, nextBinding as FieldBinding)
+      return
+    }
+    if (selectedBinding.kind === 'page-field') {
+      handlePageFieldChange(selectedBinding.pageId!, selectedBinding.ref.index, nextBinding as FieldBinding)
+      return
+    }
+    if (selectedBinding.kind === 'table-header') {
+      handleHeaderCellChange(selectedBinding.pageId!, selectedBinding.ref.tableIndex, selectedBinding.ref.cellIndex, nextBinding as TableCell)
+      return
+    }
+    if (selectedBinding.kind === 'table-cell') {
+      handleCellChange(selectedBinding.pageId!, selectedBinding.ref.tableIndex, selectedBinding.ref.cellIndex, nextBinding as TableCell)
+    }
+  }
+
+  const removeSelectedBinding = () => {
+    if (!selectedBinding) return
+    if (selectedBinding.kind === 'global-field') {
+      handleRemoveField(selectedBinding.ref.index)
+    } else if (selectedBinding.kind === 'page-field') {
+      handleRemovePageField(selectedBinding.pageId!, selectedBinding.ref.index)
+    } else if (selectedBinding.kind === 'table-header') {
+      handleRemoveHeaderCell(selectedBinding.pageId!, selectedBinding.ref.tableIndex, selectedBinding.ref.cellIndex)
+    } else if (selectedBinding.kind === 'table-cell') {
+      handleRemoveCell(selectedBinding.pageId!, selectedBinding.ref.tableIndex, selectedBinding.ref.cellIndex)
+    }
+    onSelectBindingRef(null)
+  }
+
+  const clearSelectedBindingSvgId = () => {
+    if (!selectedBinding) return
+    applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: '' }))
+    onSelectBindingSvgId(null)
+  }
 
   const handleAddFormatter = useCallback(() => {
     const nextKey = `formatter_${formatterEntries.length + 1}`
@@ -568,150 +694,20 @@ export function TemplateEditor({
                             </div>
                             {pageFieldGroupsOpen.data && (pageDataFields.length === 0 ? (
                               <p className="empty">No data fields.</p>
-                            ) : pageDataFields.map(({ field, index }) => (
-                              <div
-                                key={index}
-                                className={`field-item field-item-data ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                                data-binding-svg-id={field.svg_id || undefined}
-                                onClick={() => onSelectBindingSvgId(field.svg_id || null)}
-                              >
-                                <div className="field-header">
-                                  <span>
-                                    Field #{index + 1}{' '}
-                                    <span className="field-source-badge field-source-data">DATA</span>
-                                    {field.value.type === 'data' ? (
-                                      <span
-                                        className={`field-source-badge ${field.value.source === 'meta' ? 'field-source-meta' : 'field-source-item'}`}
-                                      >
-                                        {field.value.source}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                  <button
-                                    className="btn-remove"
-                                    onClick={() => handleRemovePageField(page.id, index)}
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                                <div className="field-form">
-                                  <div className="form-row">
-                                    <label>Value Type:</label>
-                                    <select
-                                      value={field.value.type}
-                                      onChange={(e) => {
-                                        const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
-                                        const nextValue = nextType === 'static'
-                                          ? makeStaticValue()
-                                          : makeDataValue('meta', '')
-                                        handlePageFieldChange(page.id, index, { ...field, value: nextValue })
-                                      }}
-                                      data-focus-key={`pages[${pageIndex}].fields[${index}].value.type`}
-                                    >
-                                      <option value="data">data</option>
-                                      <option value="static">static</option>
-                                    </select>
+                            ) : (
+                              <div className="binding-list">
+                                {pageDataFields.map(({ field, index }) => (
+                                  <div key={index} className="binding-row">
+                                    {renderBindingCard({
+                                      ref: { kind: 'page-field', pageId: page.id, index },
+                                      binding: field,
+                                      title: `Field #${index + 1}`,
+                                      subtitle: field.value.type === 'data' ? field.value.source : undefined,
+                                    })}
                                   </div>
-                                  <div className="form-row">
-                                    <label>SVG ID:</label>
-                                    <input
-                                      type="text"
-                                      value={field.svg_id}
-                                      onChange={(e) => {
-                                        const nextSvgId = (e.target as HTMLInputElement).value
-                                        handlePageFieldChange(page.id, index, { ...field, svg_id: nextSvgId })
-                                        onSelectBindingSvgId(nextSvgId || null)
-                                      }}
-                                      onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
-                                      data-focus-key={`pages[${pageIndex}].fields[${index}].svg_id`}
-                                    />
-                                    {!field.svg_id && (
-                                      <div className="suggested-row">
-                                        <select
-                                          className="suggested-select"
-                                          defaultValue=""
-                                          disabled={suggestedSvgIds.length === 0}
-                                          onChange={(e) => {
-                                            const value = (e.target as HTMLSelectElement).value
-                                            if (value) {
-                                              handlePageFieldChange(page.id, index, { ...field, svg_id: value })
-                                              ;(e.target as HTMLSelectElement).value = ''
-                                            }
-                                          }}
-                                        >
-                                          <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                                          {suggestedSvgIds.map((id) => (
-                                            <option key={id} value={id}>{id}</option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {field.value.type === 'data' ? (
-                                    <>
-                                      <div className="form-row">
-                                        <label>Source:</label>
-                                        <select
-                                          value={field.value.source}
-                                          onChange={(e) => handlePageFieldChange(page.id, index, {
-                                            ...field,
-                                            value: makeDataValue((e.target as HTMLSelectElement).value, (field.value as DataValueBinding).key)
-                                          })}
-                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.source`}
-                                        >
-                                          <option value="meta">meta</option>
-                                          <option value="items">items</option>
-                                        </select>
-                                      </div>
-                                      <div className="form-row">
-                                        <label>Key:</label>
-                                        <input
-                                          type="text"
-                                          value={field.value.key}
-                                          onChange={(e) => handlePageFieldChange(page.id, index, {
-                                            ...field,
-                                            value: makeDataValue((field.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
-                                          })}
-                                          className={!field.value.key.trim() ? 'input-error' : ''}
-                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.key`}
-                                        />
-                                        {!field.value.key.trim() && <span className="error-text">Key is required.</span>}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="form-row">
-                                      <label>Text:</label>
-                                      <input
-                                        type="text"
-                                        value={field.value.text}
-                                        onChange={(e) => handlePageFieldChange(page.id, index, {
-                                          ...field,
-                                          value: makeStaticValue((e.target as HTMLInputElement).value)
-                                        })}
-                                        className={!field.value.text.trim() ? 'input-error' : ''}
-                                        data-focus-key={`pages[${pageIndex}].fields[${index}].value.text`}
-                                      />
-                                      {!field.value.text.trim() && <span className="error-text">Text is required.</span>}
-                                    </div>
-                                  )}
-                                  <div className="form-row">
-                                    <label>Align:</label>
-                                    <select
-                                      value={field.align || 'left'}
-                                      onChange={(e) => handlePageFieldChange(page.id, index, {
-                                        ...field,
-                                        align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
-                                      })}
-                                      data-focus-key={`pages[${pageIndex}].fields[${index}].align`}
-                                    >
-                                      <option value="left">Left</option>
-                                      <option value="center">Center</option>
-                                      <option value="right">Right</option>
-                                    </select>
-                                  </div>
-                                </div>
+                                ))}
                               </div>
-                            )))}
+                            ))}
                           </div>
 
                           <div className="field-group">
@@ -726,143 +722,20 @@ export function TemplateEditor({
                             </div>
                             {pageFieldGroupsOpen.static && (pageStaticFields.length === 0 ? (
                               <p className="empty">No static fields.</p>
-                            ) : pageStaticFields.map(({ field, index }) => (
-                              <div
-                                key={index}
-                                className={`field-item field-item-static ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                                data-binding-svg-id={field.svg_id || undefined}
-                                onClick={() => onSelectBindingSvgId(field.svg_id || null)}
-                              >
-                                <div className="field-header">
-                                  <span>
-                                    Field #{index + 1}{' '}
-                                    <span className="field-source-badge field-source-static">STATIC</span>
-                                  </span>
-                                  <button
-                                    className="btn-remove"
-                                    onClick={() => handleRemovePageField(page.id, index)}
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                                <div className="field-form">
-                                  <div className="form-row">
-                                    <label>Value Type:</label>
-                                    <select
-                                      value={field.value.type}
-                                      onChange={(e) => {
-                                        const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
-                                        const nextValue = nextType === 'static'
-                                          ? makeStaticValue()
-                                          : makeDataValue('meta', '')
-                                        handlePageFieldChange(page.id, index, { ...field, value: nextValue })
-                                      }}
-                                      data-focus-key={`pages[${pageIndex}].fields[${index}].value.type`}
-                                    >
-                                      <option value="static">static</option>
-                                      <option value="data">data</option>
-                                    </select>
+                            ) : (
+                              <div className="binding-list">
+                                {pageStaticFields.map(({ field, index }) => (
+                                  <div key={index} className="binding-row">
+                                    {renderBindingCard({
+                                      ref: { kind: 'page-field', pageId: page.id, index },
+                                      binding: field,
+                                      title: `Field #${index + 1}`,
+                                      subtitle: 'static',
+                                    })}
                                   </div>
-                                  <div className="form-row">
-                                    <label>SVG ID:</label>
-                                    <input
-                                      type="text"
-                                      value={field.svg_id}
-                                      onChange={(e) => {
-                                        const nextSvgId = (e.target as HTMLInputElement).value
-                                        handlePageFieldChange(page.id, index, { ...field, svg_id: nextSvgId })
-                                        onSelectBindingSvgId(nextSvgId || null)
-                                      }}
-                                      onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
-                                      data-focus-key={`pages[${pageIndex}].fields[${index}].svg_id`}
-                                    />
-                                    {!field.svg_id && (
-                                      <div className="suggested-row">
-                                        <select
-                                          className="suggested-select"
-                                          defaultValue=""
-                                          disabled={suggestedSvgIds.length === 0}
-                                          onChange={(e) => {
-                                            const value = (e.target as HTMLSelectElement).value
-                                            if (value) {
-                                              handlePageFieldChange(page.id, index, { ...field, svg_id: value })
-                                              ;(e.target as HTMLSelectElement).value = ''
-                                            }
-                                          }}
-                                        >
-                                          <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                                          {suggestedSvgIds.map((id) => (
-                                            <option key={id} value={id}>{id}</option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {field.value.type === 'data' ? (
-                                    <>
-                                      <div className="form-row">
-                                        <label>Source:</label>
-                                        <select
-                                          value={field.value.source}
-                                          onChange={(e) => handlePageFieldChange(page.id, index, {
-                                            ...field,
-                                            value: makeDataValue((e.target as HTMLSelectElement).value, (field.value as DataValueBinding).key)
-                                          })}
-                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.source`}
-                                        >
-                                          <option value="meta">meta</option>
-                                          <option value="items">items</option>
-                                        </select>
-                                      </div>
-                                      <div className="form-row">
-                                        <label>Key:</label>
-                                        <input
-                                          type="text"
-                                          value={field.value.key}
-                                          onChange={(e) => handlePageFieldChange(page.id, index, {
-                                            ...field,
-                                            value: makeDataValue((field.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
-                                          })}
-                                          className={!field.value.key.trim() ? 'input-error' : ''}
-                                          data-focus-key={`pages[${pageIndex}].fields[${index}].value.key`}
-                                        />
-                                        {!field.value.key.trim() && <span className="error-text">Key is required.</span>}
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="form-row">
-                                      <label>Text:</label>
-                                      <input
-                                        type="text"
-                                        value={field.value.text}
-                                        onChange={(e) => handlePageFieldChange(page.id, index, {
-                                          ...field,
-                                          value: makeStaticValue((e.target as HTMLInputElement).value)
-                                        })}
-                                        className={!field.value.text.trim() ? 'input-error' : ''}
-                                        data-focus-key={`pages[${pageIndex}].fields[${index}].value.text`}
-                                      />
-                                      {!field.value.text.trim() && <span className="error-text">Text is required.</span>}
-                                    </div>
-                                  )}
-                                  <div className="form-row">
-                                    <label>Align:</label>
-                                    <select
-                                      value={field.align || 'left'}
-                                      onChange={(e) => handlePageFieldChange(page.id, index, {
-                                        ...field,
-                                        align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
-                                      })}
-                                      data-focus-key={`pages[${pageIndex}].fields[${index}].align`}
-                                    >
-                                      <option value="left">Left</option>
-                                      <option value="center">Center</option>
-                                      <option value="right">Right</option>
-                                    </select>
-                                  </div>
-                                </div>
+                                ))}
                               </div>
-                            )))}
+                            ))}
                           </div>
                         </>
                       )}
@@ -950,142 +823,15 @@ export function TemplateEditor({
                                 {!table.header?.cells?.length ? (
                                   <p className="empty">No header cells defined.</p>
                                 ) : (
-                                  <div className="cells-list">
+                                  <div className="binding-list">
                                     {table.header.cells.map((cell, cellIndex) => (
-                                      <div
-                                        key={cellIndex}
-                                        className={`cell-item header-cell-item ${selectedPreviewSvgId && cell.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                                        data-binding-svg-id={cell.svg_id || undefined}
-                                        onClick={() => onSelectBindingSvgId(cell.svg_id || null)}
-                                      >
-                                        <div className="field-header">
-                                          <span>Header Cell #{cellIndex + 1}</span>
-                                          <button className="btn-remove" onClick={() => handleRemoveHeaderCell(page.id, tableIndex, cellIndex)}>
-                                            Remove
-                                          </button>
-                                        </div>
-                                        <div className="field-form">
-                                          <div className="form-row">
-                                            <label>SVG ID:</label>
-                                            <input
-                                              type="text"
-                                              value={cell.svg_id}
-                                              onChange={(e) => {
-                                                const nextSvgId = (e.target as HTMLInputElement).value
-                                                handleHeaderCellChange(page.id, tableIndex, cellIndex, { svg_id: nextSvgId })
-                                                onSelectBindingSvgId(nextSvgId || null)
-                                              }}
-                                              onFocus={() => onSelectBindingSvgId(cell.svg_id || null)}
-                                              className={!cell.svg_id.trim() ? 'input-error' : ''}
-                                              data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].svg_id`}
-                                            />
-                                            {!cell.svg_id.trim() && <span className="error-text">SVG ID is required.</span>}
-                                            {!cell.svg_id && (
-                                              <div className="suggested-row">
-                                                <select
-                                                  className="suggested-select"
-                                                  defaultValue=""
-                                                  disabled={suggestedSvgIds.length === 0}
-                                                  onChange={(e) => {
-                                                    const value = (e.target as HTMLSelectElement).value
-                                                    if (value) {
-                                                      handleHeaderCellChange(page.id, tableIndex, cellIndex, { svg_id: value })
-                                                      ;(e.target as HTMLSelectElement).value = ''
-                                                    }
-                                                  }}
-                                                >
-                                                  <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                                                  {suggestedSvgIds.map((id) => (
-                                                    <option key={id} value={id}>{id}</option>
-                                                  ))}
-                                                </select>
-                                              </div>
-                                            )}
-                                          </div>
-                                          <div className="form-row">
-                                            <label>Value Type:</label>
-                                            <select
-                                              value={cell.value.type}
-                                              onChange={(e) => {
-                                                const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
-                                                const nextValue = nextType === 'static'
-                                                  ? makeStaticValue()
-                                                  : makeDataValue('meta', '')
-                                                handleHeaderCellChange(page.id, tableIndex, cellIndex, { value: nextValue })
-                                              }}
-                                              data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].value.type`}
-                                            >
-                                              <option value="static">static</option>
-                                              <option value="data">data</option>
-                                            </select>
-                                          </div>
-                                          {cell.value.type === 'data' ? (
-                                            <>
-                                              <div className="form-row">
-                                                <label>Source:</label>
-                                                <select
-                                                  value={cell.value.source}
-                                                  onChange={(e) => handleHeaderCellChange(page.id, tableIndex, cellIndex, {
-                                                    value: makeDataValue((e.target as HTMLSelectElement).value, (cell.value as DataValueBinding).key)
-                                                  })}
-                                                  data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].value.source`}
-                                                >
-                                                  <option value="meta">meta</option>
-                                                  <option value={table.source}>{table.source}</option>
-                                                </select>
-                                              </div>
-                                              <div className="form-row">
-                                                <label>Key:</label>
-                                                <input
-                                                  type="text"
-                                                  value={cell.value.key}
-                                                  onChange={(e) => handleHeaderCellChange(page.id, tableIndex, cellIndex, {
-                                                    value: makeDataValue((cell.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
-                                                  })}
-                                                  className={!cell.value.key.trim() ? 'input-error' : ''}
-                                                  data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].value.key`}
-                                                />
-                                                {!cell.value.key.trim() && <span className="error-text">Key is required.</span>}
-                                              </div>
-                                            </>
-                                          ) : (
-                                            <div className="form-row">
-                                              <label>Text:</label>
-                                              <input
-                                                type="text"
-                                                value={cell.value.text}
-                                                onChange={(e) => handleHeaderCellChange(page.id, tableIndex, cellIndex, {
-                                                  value: makeStaticValue((e.target as HTMLInputElement).value)
-                                                })}
-                                                className={!cell.value.text.trim() ? 'input-error' : ''}
-                                                data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].value.text`}
-                                              />
-                                              {!cell.value.text.trim() && <span className="error-text">Text is required.</span>}
-                                            </div>
-                                          )}
-                                          <div className="form-row">
-                                            <label>Align:</label>
-                                            <select
-                                              value={cell.align || 'left'}
-                                              onChange={(e) => handleHeaderCellChange(page.id, tableIndex, cellIndex, {
-                                                align: (e.target as HTMLSelectElement).value as TableCell['align']
-                                              })}
-                                            >
-                                              <option value="left">left</option>
-                                              <option value="center">center</option>
-                                              <option value="right">right</option>
-                                            </select>
-                                          </div>
-                                          <div className="form-row">
-                                            <label>Format:</label>
-                                            <input
-                                              type="text"
-                                              value={cell.format || ''}
-                                              onChange={(e) => handleHeaderCellChange(page.id, tableIndex, cellIndex, { format: (e.target as HTMLInputElement).value })}
-                                              placeholder="optional"
-                                            />
-                                          </div>
-                                        </div>
+                                      <div key={cellIndex} className="binding-row">
+                                        {renderBindingCard({
+                                          ref: { kind: 'table-header', pageId: page.id, tableIndex, cellIndex },
+                                          binding: cell,
+                                          title: `Header Cell #${cellIndex + 1}`,
+                                          subtitle: cell.value.type === 'data' ? cell.value.source : 'static',
+                                        })}
                                       </div>
                                     ))}
                                   </div>
@@ -1098,152 +844,15 @@ export function TemplateEditor({
                                 {table.cells.length === 0 ? (
                                   <p className="empty">No cells defined.</p>
                                 ) : (
-                                  <div className="cells-list">
+                                  <div className="binding-list">
                                     {table.cells.map((cell, cellIndex) => (
-                                  <div
-                                    key={cellIndex}
-                                    className={`cell-item ${selectedPreviewSvgId && cell.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                                    data-binding-svg-id={cell.svg_id || undefined}
-                                    onClick={() => onSelectBindingSvgId(cell.svg_id || null)}
-                                  >
-                                        <div className="field-header">
-                                          <span>Cell #{cellIndex + 1}</span>
-                                          <button className="btn-remove" onClick={() => handleRemoveCell(page.id, tableIndex, cellIndex)}>
-                                            Remove
-                                          </button>
-                                        </div>
-                                        <div className="field-form">
-                                          <div className="form-row">
-                                            <label>SVG ID:</label>
-                                            <input
-                                              type="text"
-                                              value={cell.svg_id}
-                                              onChange={(e) => {
-                                                const nextSvgId = (e.target as HTMLInputElement).value
-                                                handleCellChange(page.id, tableIndex, cellIndex, { svg_id: nextSvgId })
-                                                onSelectBindingSvgId(nextSvgId || null)
-                                              }}
-                                              onFocus={() => onSelectBindingSvgId(cell.svg_id || null)}
-                                              className={!cell.svg_id.trim() ? 'input-error' : ''}
-                                              data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].svg_id`}
-                                            />
-                                            {!cell.svg_id.trim() && <span className="error-text">SVG ID is required.</span>}
-                                            {!cell.svg_id && (
-                                              <div className="suggested-row">
-                                                <select
-                                                  className="suggested-select"
-                                                  defaultValue=""
-                                                  disabled={suggestedSvgIds.length === 0}
-                                                  onChange={(e) => {
-                                                    const value = (e.target as HTMLSelectElement).value
-                                                    if (value) {
-                                                      handleCellChange(page.id, tableIndex, cellIndex, { svg_id: value })
-                                                      ;(e.target as HTMLSelectElement).value = ''
-                                                    }
-                                                  }}
-                                                >
-                                                  <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                                                  {suggestedSvgIds.map((id) => (
-                                                    <option key={id} value={id}>{id}</option>
-                                                  ))}
-                                                </select>
-                                              </div>
-                                            )}
-                                          </div>
-                                          <div className="form-row">
-                                            <label>Value Type:</label>
-                                            <select
-                                              value={cell.value.type}
-                                              onChange={(e) => {
-                                                const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
-                                                const nextValue = nextType === 'static'
-                                                  ? makeStaticValue()
-                                                  : makeDataValue(table.source, '')
-                                                handleCellChange(page.id, tableIndex, cellIndex, { value: nextValue })
-                                              }}
-                                              data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].value.type`}
-                                            >
-                                              <option value="data">data</option>
-                                              <option value="static">static</option>
-                                            </select>
-                                          </div>
-                                          {cell.value.type === 'data' ? (
-                                            <>
-                                              <div className="form-row">
-                                                <label>Source:</label>
-                                                <select
-                                                  value={cell.value.source}
-                                                  onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, {
-                                                    value: makeDataValue((e.target as HTMLSelectElement).value, (cell.value as DataValueBinding).key)
-                                                  })}
-                                                  data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].value.source`}
-                                                >
-                                                  <option value={table.source}>{table.source}</option>
-                                                  <option value="meta">meta</option>
-                                                </select>
-                                              </div>
-                                              <div className="form-row">
-                                                <label>Key:</label>
-                                                <input
-                                                  type="text"
-                                                  value={cell.value.key}
-                                                  onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, {
-                                                    value: makeDataValue((cell.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
-                                                  })}
-                                                  className={!cell.value.key.trim() ? 'input-error' : ''}
-                                                  data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].value.key`}
-                                                />
-                                                {!cell.value.key.trim() && <span className="error-text">Key is required.</span>}
-                                              </div>
-                                            </>
-                                          ) : (
-                                            <div className="form-row">
-                                              <label>Text:</label>
-                                              <input
-                                                type="text"
-                                                value={cell.value.text}
-                                                onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, {
-                                                  value: makeStaticValue((e.target as HTMLInputElement).value)
-                                                })}
-                                                className={!cell.value.text.trim() ? 'input-error' : ''}
-                                                data-focus-key={`pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].value.text`}
-                                              />
-                                              {!cell.value.text.trim() && <span className="error-text">Text is required.</span>}
-                                            </div>
-                                          )}
-                                          <div className="form-row">
-                                            <label>Fit:</label>
-                                            <select
-                                              value={cell.fit || 'none'}
-                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { fit: (e.target as HTMLSelectElement).value as TableCell['fit'] })}
-                                            >
-                                              <option value="none">none</option>
-                                              <option value="shrink">shrink</option>
-                                              <option value="wrap">wrap</option>
-                                              <option value="clip">clip</option>
-                                            </select>
-                                          </div>
-                                          <div className="form-row">
-                                            <label>Align:</label>
-                                            <select
-                                              value={cell.align || 'left'}
-                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { align: (e.target as HTMLSelectElement).value as TableCell['align'] })}
-                                            >
-                                              <option value="left">left</option>
-                                              <option value="center">center</option>
-                                              <option value="right">right</option>
-                                            </select>
-                                          </div>
-                                          <div className="form-row">
-                                            <label>Format:</label>
-                                            <input
-                                              type="text"
-                                              value={cell.format || ''}
-                                              onChange={(e) => handleCellChange(page.id, tableIndex, cellIndex, { format: (e.target as HTMLInputElement).value })}
-                                              placeholder="optional"
-                                            />
-                                          </div>
-                                        </div>
+                                      <div key={cellIndex} className="binding-row">
+                                        {renderBindingCard({
+                                          ref: { kind: 'table-cell', pageId: page.id, tableIndex, cellIndex },
+                                          binding: cell,
+                                          title: `Cell #${cellIndex + 1}`,
+                                          subtitle: cell.value.type === 'data' ? cell.value.source : 'static',
+                                        })}
                                       </div>
                                     ))}
                                   </div>
@@ -1286,153 +895,20 @@ export function TemplateEditor({
                 </div>
                 {globalFieldGroupsOpen.data && (globalDataFields.length === 0 ? (
                   <p className="empty">No data fields.</p>
-                ) : globalDataFields.map(({ field, index }) => (
-                  <div
-                    key={index}
-                    className={`field-item field-item-data ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                    data-binding-svg-id={field.svg_id || undefined}
-                    onClick={() => onSelectBindingSvgId(field.svg_id || null)}
-                  >
-                    <div className="field-header">
-                      <span>
-                        Field #{index + 1}{' '}
-                        <span className="field-source-badge field-source-data">DATA</span>
-                        {field.value.type === 'data' ? (
-                          <span
-                            className={`field-source-badge ${field.value.source === 'meta' ? 'field-source-meta' : 'field-source-item'}`}
-                          >
-                            {field.value.source}
-                          </span>
-                        ) : null}
-                      </span>
-                      <button
-                        className="btn-remove"
-                        onClick={() => handleRemoveField(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="field-form">
-                      <div className="form-row">
-                        <label>Value Type:</label>
-                        <select
-                          value={field.value.type}
-                          onChange={(e) => {
-                            const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
-                            const nextValue = nextType === 'static'
-                              ? makeStaticValue()
-                              : makeDataValue('meta', '')
-                            handleFieldChange(index, { ...field, value: nextValue })
-                          }}
-                          data-focus-key={`fields[${index}].value.type`}
-                        >
-                          <option value="data">data</option>
-                          <option value="static">static</option>
-                        </select>
+                ) : (
+                  <div className="binding-list">
+                    {globalDataFields.map(({ field, index }) => (
+                      <div key={index} className="binding-row">
+                        {renderBindingCard({
+                          ref: { kind: 'global-field', index },
+                          binding: field,
+                          title: `Field #${index + 1}`,
+                          subtitle: field.value.type === 'data' ? field.value.source : undefined,
+                        })}
                       </div>
-                      <div className="form-row">
-                        <label>SVG ID:</label>
-                        <input
-                          type="text"
-                          value={field.svg_id}
-                          onChange={(e) => {
-                            const nextSvgId = (e.target as HTMLInputElement).value
-                            handleFieldChange(index, {
-                              ...field,
-                              svg_id: nextSvgId
-                            })
-                            onSelectBindingSvgId(nextSvgId || null)
-                          }}
-                          onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
-                          data-focus-key={`fields[${index}].svg_id`}
-                        />
-                        {!field.svg_id && (
-                          <div className="suggested-row">
-                            <select
-                              className="suggested-select"
-                              defaultValue=""
-                              disabled={suggestedSvgIds.length === 0}
-                              onChange={(e) => {
-                                const value = (e.target as HTMLSelectElement).value
-                                if (value) {
-                                  handleFieldChange(index, { ...field, svg_id: value })
-                                  ;(e.target as HTMLSelectElement).value = ''
-                                }
-                              }}
-                            >
-                              <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                              {suggestedSvgIds.map((id) => (
-                                <option key={id} value={id}>{id}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                      {field.value.type === 'data' ? (
-                        <>
-                          <div className="form-row">
-                            <label>Source:</label>
-                            <select
-                              value={field.value.source}
-                              onChange={(e) => handleFieldChange(index, {
-                                ...field,
-                                value: makeDataValue((e.target as HTMLSelectElement).value, (field.value as DataValueBinding).key)
-                              })}
-                              data-focus-key={`fields[${index}].value.source`}
-                            >
-                              <option value="meta">meta</option>
-                              <option value="items">items</option>
-                            </select>
-                          </div>
-                          <div className="form-row">
-                            <label>Key:</label>
-                            <input
-                              type="text"
-                              value={field.value.key}
-                              onChange={(e) => handleFieldChange(index, {
-                                ...field,
-                                value: makeDataValue((field.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
-                              })}
-                              className={!field.value.key.trim() ? 'input-error' : ''}
-                              data-focus-key={`fields[${index}].value.key`}
-                            />
-                            {!field.value.key.trim() && <span className="error-text">Key is required.</span>}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="form-row">
-                          <label>Text:</label>
-                          <input
-                            type="text"
-                            value={field.value.text}
-                            onChange={(e) => handleFieldChange(index, {
-                              ...field,
-                              value: makeStaticValue((e.target as HTMLInputElement).value)
-                            })}
-                            className={!field.value.text.trim() ? 'input-error' : ''}
-                            data-focus-key={`fields[${index}].value.text`}
-                          />
-                          {!field.value.text.trim() && <span className="error-text">Text is required.</span>}
-                        </div>
-                      )}
-                      <div className="form-row">
-                        <label>Align:</label>
-                        <select
-                          value={field.align || 'left'}
-                          onChange={(e) => handleFieldChange(index, {
-                            ...field,
-                            align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
-                          })}
-                          data-focus-key={`fields[${index}].align`}
-                        >
-                          <option value="left">Left</option>
-                          <option value="center">Center</option>
-                          <option value="right">Right</option>
-                        </select>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                )))}
+                ))}
               </div>
 
               <div className="field-group">
@@ -1447,146 +923,20 @@ export function TemplateEditor({
                 </div>
                 {globalFieldGroupsOpen.static && (globalStaticFields.length === 0 ? (
                   <p className="empty">No static fields.</p>
-                ) : globalStaticFields.map(({ field, index }) => (
-                  <div
-                    key={index}
-                    className={`field-item field-item-static ${selectedPreviewSvgId && field.svg_id === selectedPreviewSvgId ? 'binding-match' : ''}`}
-                    data-binding-svg-id={field.svg_id || undefined}
-                    onClick={() => onSelectBindingSvgId(field.svg_id || null)}
-                  >
-                    <div className="field-header">
-                      <span>
-                        Field #{index + 1}{' '}
-                        <span className="field-source-badge field-source-static">STATIC</span>
-                      </span>
-                      <button
-                        className="btn-remove"
-                        onClick={() => handleRemoveField(index)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="field-form">
-                      <div className="form-row">
-                        <label>Value Type:</label>
-                        <select
-                          value={field.value.type}
-                          onChange={(e) => {
-                            const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
-                            const nextValue = nextType === 'static'
-                              ? makeStaticValue()
-                              : makeDataValue('meta', '')
-                            handleFieldChange(index, { ...field, value: nextValue })
-                          }}
-                          data-focus-key={`fields[${index}].value.type`}
-                        >
-                          <option value="static">static</option>
-                          <option value="data">data</option>
-                        </select>
+                ) : (
+                  <div className="binding-list">
+                    {globalStaticFields.map(({ field, index }) => (
+                      <div key={index} className="binding-row">
+                        {renderBindingCard({
+                          ref: { kind: 'global-field', index },
+                          binding: field,
+                          title: `Field #${index + 1}`,
+                          subtitle: 'static',
+                        })}
                       </div>
-                      <div className="form-row">
-                        <label>SVG ID:</label>
-                        <input
-                          type="text"
-                          value={field.svg_id}
-                          onChange={(e) => {
-                            const nextSvgId = (e.target as HTMLInputElement).value
-                            handleFieldChange(index, {
-                              ...field,
-                              svg_id: nextSvgId
-                            })
-                            onSelectBindingSvgId(nextSvgId || null)
-                          }}
-                          onFocus={() => onSelectBindingSvgId(field.svg_id || null)}
-                          data-focus-key={`fields[${index}].svg_id`}
-                        />
-                        {!field.svg_id && (
-                          <div className="suggested-row">
-                            <select
-                              className="suggested-select"
-                              defaultValue=""
-                              disabled={suggestedSvgIds.length === 0}
-                              onChange={(e) => {
-                                const value = (e.target as HTMLSelectElement).value
-                                if (value) {
-                                  handleFieldChange(index, { ...field, svg_id: value })
-                                  ;(e.target as HTMLSelectElement).value = ''
-                                }
-                              }}
-                            >
-                              <option value="">{suggestedSvgIds.length > 0 ? 'Use suggested…' : 'Select a page first'}</option>
-                              {suggestedSvgIds.map((id) => (
-                                <option key={id} value={id}>{id}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                      {field.value.type === 'data' ? (
-                        <>
-                          <div className="form-row">
-                            <label>Source:</label>
-                            <select
-                              value={field.value.source}
-                              onChange={(e) => handleFieldChange(index, {
-                                ...field,
-                                value: makeDataValue((e.target as HTMLSelectElement).value, (field.value as DataValueBinding).key)
-                              })}
-                              data-focus-key={`fields[${index}].value.source`}
-                            >
-                              <option value="meta">meta</option>
-                              <option value="items">items</option>
-                            </select>
-                          </div>
-                          <div className="form-row">
-                            <label>Key:</label>
-                            <input
-                              type="text"
-                              value={field.value.key}
-                              onChange={(e) => handleFieldChange(index, {
-                                ...field,
-                                value: makeDataValue((field.value as DataValueBinding).source, (e.target as HTMLInputElement).value)
-                              })}
-                              className={!field.value.key.trim() ? 'input-error' : ''}
-                              data-focus-key={`fields[${index}].value.key`}
-                            />
-                            {!field.value.key.trim() && <span className="error-text">Key is required.</span>}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="form-row">
-                          <label>Text:</label>
-                          <input
-                            type="text"
-                            value={field.value.text}
-                            onChange={(e) => handleFieldChange(index, {
-                              ...field,
-                              value: makeStaticValue((e.target as HTMLInputElement).value)
-                            })}
-                            className={!field.value.text.trim() ? 'input-error' : ''}
-                            data-focus-key={`fields[${index}].value.text`}
-                          />
-                          {!field.value.text.trim() && <span className="error-text">Text is required.</span>}
-                        </div>
-                      )}
-                      <div className="form-row">
-                        <label>Align:</label>
-                        <select
-                          value={field.align || 'left'}
-                          onChange={(e) => handleFieldChange(index, {
-                            ...field,
-                            align: (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
-                          })}
-                          data-focus-key={`fields[${index}].align`}
-                        >
-                          <option value="left">Left</option>
-                          <option value="center">Center</option>
-                          <option value="right">Right</option>
-                        </select>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                )))}
+                ))}
               </div>
             </>
           )}
@@ -1661,6 +1011,154 @@ export function TemplateEditor({
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {selectedBinding && (
+        <div className="binding-details">
+          <div className="binding-details-header">
+            <div>
+              <h4>Binding Details</h4>
+              <div className="binding-details-subtitle">
+                {selectedBinding.kind === 'global-field' && 'Global Field'}
+                {selectedBinding.kind === 'page-field' && 'Page Field'}
+                {selectedBinding.kind === 'table-header' && 'Table Header Cell'}
+                {selectedBinding.kind === 'table-cell' && 'Table Cell'}
+              </div>
+            </div>
+            <div className="binding-details-actions">
+              <button
+                className="btn-secondary"
+                onClick={clearSelectedBindingSvgId}
+                disabled={!selectedBinding.binding.svg_id}
+              >
+                Unbind
+              </button>
+              <button className="btn-remove" onClick={removeSelectedBinding}>Remove</button>
+            </div>
+          </div>
+
+          <div className="binding-details-body">
+            <div className="form-row">
+              <label>SVG ID:</label>
+              <input
+                type="text"
+                value={selectedBinding.binding.svg_id}
+                onChange={(e) => {
+                  const nextSvgId = (e.target as HTMLInputElement).value
+                  applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: nextSvgId }))
+                  onSelectBindingSvgId(nextSvgId || null)
+                }}
+              />
+            </div>
+
+            <div className="form-row">
+              <label>Value Type:</label>
+              <select
+                value={selectedBinding.binding.value.type}
+                onChange={(e) => {
+                  const nextType = (e.target as HTMLSelectElement).value as 'static' | 'data'
+                  const nextValue = nextType === 'static'
+                    ? makeStaticValue()
+                    : makeDataValue('meta', '')
+                  applySelectedBindingUpdate((binding) => ({ ...binding, value: nextValue }))
+                }}
+              >
+                <option value="data">data</option>
+                <option value="static">static</option>
+              </select>
+            </div>
+
+            {selectedBinding.binding.value.type === 'data' ? (
+              <>
+                <div className="form-row">
+                  <label>Source:</label>
+                  <select
+                    value={selectedBinding.binding.value.source}
+                    onChange={(e) => {
+                      const nextSource = (e.target as HTMLSelectElement).value
+                      applySelectedBindingUpdate((binding) => ({
+                        ...binding,
+                        value: makeDataValue(nextSource, (binding.value as DataValueBinding).key),
+                      }))
+                    }}
+                  >
+                    <option value="meta">meta</option>
+                    <option value="items">items</option>
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Key:</label>
+                  <input
+                    type="text"
+                    value={selectedBinding.binding.value.key}
+                    onChange={(e) => {
+                      const nextKey = (e.target as HTMLInputElement).value
+                      applySelectedBindingUpdate((binding) => ({
+                        ...binding,
+                        value: makeDataValue((binding.value as DataValueBinding).source, nextKey),
+                      }))
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="form-row">
+                <label>Text:</label>
+                <input
+                  type="text"
+                  value={selectedBinding.binding.value.text}
+                  onChange={(e) => {
+                    const nextText = (e.target as HTMLInputElement).value
+                    applySelectedBindingUpdate((binding) => ({ ...binding, value: makeStaticValue(nextText) }))
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="form-row">
+              <label>Align:</label>
+              <select
+                value={selectedBinding.binding.align || 'left'}
+                onChange={(e) => {
+                  const next = (e.target as HTMLSelectElement).value as 'left' | 'center' | 'right'
+                  applySelectedBindingUpdate((binding) => ({ ...binding, align: next }))
+                }}
+              >
+                <option value="left">left</option>
+                <option value="center">center</option>
+                <option value="right">right</option>
+              </select>
+            </div>
+
+            <div className="form-row">
+              <label>Fit:</label>
+              <select
+                value={selectedBinding.binding.fit || 'none'}
+                onChange={(e) => {
+                  const next = (e.target as HTMLSelectElement).value as TableCell['fit']
+                  applySelectedBindingUpdate((binding) => ({ ...binding, fit: next }))
+                }}
+              >
+                <option value="none">none</option>
+                <option value="shrink">shrink</option>
+                <option value="wrap">wrap</option>
+                <option value="clip">clip</option>
+              </select>
+            </div>
+
+            <div className="form-row">
+              <label>Format:</label>
+              <input
+                type="text"
+                value={selectedBinding.binding.format || ''}
+                onChange={(e) => {
+                  const next = (e.target as HTMLInputElement).value
+                  applySelectedBindingUpdate((binding) => ({ ...binding, format: next }))
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
       </div>

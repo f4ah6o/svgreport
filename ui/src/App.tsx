@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'preact/hooks'
 import type { TemplateConfig, TextElement, ValidationResponse, PreviewResponse, TemplateListItem } from './types/api'
+import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
 import { TemplateEditor } from './components/TemplateEditor'
 import { SvgViewer } from './components/SvgViewer'
@@ -20,6 +21,7 @@ export function App() {
   const [selectedTextIndex, setSelectedTextIndex] = useState<number | null>(null)
   const [selectedText, setSelectedText] = useState<TextElement | null>(null)
   const [selectedBindingSvgId, setSelectedBindingSvgId] = useState<string | null>(null)
+  const [selectedBindingRef, setSelectedBindingRef] = useState<BindingRef | null>(null)
   const [pendingId, setPendingId] = useState<string>('')
   const [templatesBaseDir, setTemplatesBaseDir] = useState('templates')
   const [templatesList, setTemplatesList] = useState<TemplateListItem[]>([])
@@ -253,6 +255,103 @@ export function App() {
     setPendingId(element.suggestedId || element.id || '')
   }, [svgElements])
 
+  const resolveBindingSvgId = useCallback((ref: BindingRef | null, templateRef: TemplateConfig | null): string | null => {
+    if (!ref || !templateRef) return null
+    if (ref.kind === 'global-field') {
+      return templateRef.fields[ref.index]?.svg_id ?? null
+    }
+    const page = templateRef.pages.find(p => p.id === ref.pageId)
+    if (!page) return null
+    if (ref.kind === 'page-field') {
+      return page.fields?.[ref.index]?.svg_id ?? null
+    }
+    if (ref.kind === 'table-header') {
+      return page.tables[ref.tableIndex]?.header?.cells?.[ref.cellIndex]?.svg_id ?? null
+    }
+    if (ref.kind === 'table-cell') {
+      return page.tables[ref.tableIndex]?.cells?.[ref.cellIndex]?.svg_id ?? null
+    }
+    return null
+  }, [])
+
+  const handleSelectBindingRef = useCallback((ref: BindingRef | null) => {
+    setSelectedBindingRef(ref)
+    setSelectedBindingSvgId(resolveBindingSvgId(ref, template))
+  }, [resolveBindingSvgId, template])
+
+  const updateBindingSvgId = useCallback((ref: BindingRef, svgId: string) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      if (ref.kind === 'global-field') {
+        const fields = prev.fields.map((field, index) =>
+          index === ref.index ? { ...field, svg_id: svgId } : field
+        )
+        return { ...prev, fields }
+      }
+      const pages = prev.pages.map((page) => {
+        if (page.id !== ref.pageId) return page
+        if (ref.kind === 'page-field') {
+          const fields = (page.fields ?? []).map((field, index) =>
+            index === ref.index ? { ...field, svg_id: svgId } : field
+          )
+          return { ...page, fields }
+        }
+        if (ref.kind === 'table-header') {
+          const tables = page.tables.map((table, tableIndex) => {
+            if (tableIndex !== ref.tableIndex) return table
+            if (!table.header?.cells) return table
+            const cells = table.header.cells.map((cell, cellIndex) =>
+              cellIndex === ref.cellIndex ? { ...cell, svg_id: svgId } : cell
+            )
+            return { ...table, header: { cells } }
+          })
+          return { ...page, tables }
+        }
+        if (ref.kind === 'table-cell') {
+          const tables = page.tables.map((table, tableIndex) => {
+            if (tableIndex !== ref.tableIndex) return table
+            const cells = table.cells.map((cell, cellIndex) =>
+              cellIndex === ref.cellIndex ? { ...cell, svg_id: svgId } : cell
+            )
+            return { ...table, cells }
+          })
+          return { ...page, tables }
+        }
+        return page
+      })
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleDropBindingOnElement = useCallback(async (ref: BindingRef, element: TextElement) => {
+    if (!template || !selectedSvg) return
+    let targetId = element.id || ''
+    const svgPath = `${templateDir}/${selectedSvg}`
+
+    if (!targetId) {
+      if (!element.suggestedId) {
+        setNotification('Target element has no ID. Assign an ID first.')
+        return
+      }
+      try {
+        await rpc.setSvgIds(svgPath, [
+          { selector: { byIndex: element.index }, id: element.suggestedId },
+        ])
+        const inspectResult = await rpc.inspectText(svgPath)
+        setSvgElements(inspectResult.texts)
+        targetId = element.suggestedId
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to assign ID'
+        setNotification(message)
+        return
+      }
+    }
+
+    updateBindingSvgId(ref, targetId)
+    setSelectedBindingRef(ref)
+    setSelectedBindingSvgId(targetId)
+  }, [template, selectedSvg, templateDir, updateBindingSvgId])
+
   const handleUseSuggestedId = useCallback(() => {
     if (!selectedText) return
     setPendingId(selectedText.suggestedId || '')
@@ -293,38 +392,6 @@ export function App() {
       setIsLoading(false)
     }
   }, [pendingId, selectedText, selectedSvg, templateDir])
-
-  const suggestedSvgIds = useMemo(() => {
-    if (!template || !selectedPageId || !selectedSvg) return []
-    const used = new Set<string>()
-    for (const field of template.fields) {
-      if (field.svg_id) used.add(field.svg_id)
-    }
-    for (const page of template.pages) {
-      for (const field of page.fields ?? []) {
-        if (field.svg_id) used.add(field.svg_id)
-      }
-      for (const table of page.tables) {
-        if (table.header?.cells) {
-          for (const cell of table.header.cells) {
-            if (cell.svg_id) used.add(cell.svg_id)
-          }
-        }
-        for (const cell of table.cells) {
-          if (cell.svg_id) used.add(cell.svg_id)
-        }
-      }
-    }
-
-    const candidates = new Set<string>()
-    for (const element of svgElements) {
-      const candidate = element.suggestedId || element.id
-      if (candidate && !used.has(candidate)) {
-        candidates.add(candidate)
-      }
-    }
-    return Array.from(candidates).sort()
-  }, [template, svgElements, selectedPageId, selectedSvg])
 
   const bindingSvgIds = useMemo(() => {
     if (!template) return []
@@ -623,9 +690,10 @@ export function App() {
                 onSelectedPageIdChange={handleSelectedPageIdChange}
                 focusTarget={focusTarget}
                 onFocusTargetConsumed={clearFocusTarget}
-                suggestedSvgIds={suggestedSvgIds}
                 selectedPreviewSvgId={selectedText?.id || null}
                 onSelectBindingSvgId={setSelectedBindingSvgId}
+                selectedBindingRef={selectedBindingRef}
+                onSelectBindingRef={handleSelectBindingRef}
               />
             </div>
             <div
@@ -644,6 +712,7 @@ export function App() {
                 selectedElementIndex={selectedTextIndex}
                 highlightedBindingSvgId={selectedBindingSvgId}
                 onSelectElement={handleSelectTextElement}
+                onDropBinding={handleDropBindingOnElement}
                 pendingId={pendingId}
                 onPendingIdChange={setPendingId}
                 onUseSuggestedId={handleUseSuggestedId}

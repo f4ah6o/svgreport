@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
 import type { TextElement } from '../types/api'
 import { rpc } from '../lib/rpc'
+import type { BindingRef } from '../types/binding'
+import { decodeBindingRef, BINDING_MIME } from '../types/binding'
 
 interface SvgViewerProps {
   svgPath: string | null
@@ -11,6 +13,7 @@ interface SvgViewerProps {
   selectedElementIndex: number | null
   highlightedBindingSvgId: string | null
   onSelectElement: (index: number) => void
+  onDropBinding: (ref: BindingRef, element: TextElement) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
   onUseSuggestedId: () => void
@@ -27,6 +30,7 @@ export function SvgViewer({
   selectedElementIndex,
   highlightedBindingSvgId,
   onSelectElement,
+  onDropBinding,
   pendingId,
   onPendingIdChange,
   onUseSuggestedId,
@@ -134,6 +138,11 @@ export function SvgViewer({
     return map
   }, [elements, measuredBBoxes])
 
+  const getDropPadding = useCallback((bbox: { w: number; h: number }) => {
+    const base = Math.min(bbox.w, bbox.h)
+    return Math.max(6, Math.min(16, base * 0.2))
+  }, [])
+
   const overlayItems = useMemo(() => {
     return overlayElements.map((element) => {
       const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
@@ -143,6 +152,25 @@ export function SvgViewer({
       return { element, bbox, listIndex, isBound, isHighlighted }
     })
   }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId])
+
+  const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
+    event.preventDefault()
+    const payload =
+      event.dataTransfer?.getData(BINDING_MIME)
+      || event.dataTransfer?.getData('application/json')
+      || event.dataTransfer?.getData('text/plain')
+      || null
+    const ref = decodeBindingRef(payload)
+    if (!ref) return
+    onDropBinding(ref, element)
+  }, [onDropBinding])
+
+  const handleDragOver = useCallback((event: DragEvent) => {
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
 
   const highlightedOverlayItems = useMemo(() => {
     if (!highlightedBindingSvgId) return []
@@ -357,33 +385,49 @@ export function SvgViewer({
               >
                   {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
-                      <rect
-                        className={
-                          isHighlighted
-                            ? 'svg-overlay-rect-linked'
-                            : isBound
-                              ? 'svg-overlay-rect-bound'
-                              : 'svg-overlay-rect-dim'
-                        }
-                        x={bbox.x}
-                        y={bbox.y}
-                        width={Math.max(bbox.w, 6)}
-                        height={Math.max(bbox.h, 6)}
-                        onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
-                        }}
-                      />
-                      <text
-                        className={isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
-                        x={bbox.x + 1}
-                        y={bbox.y - 1}
-                        style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
-                        onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
-                        }}
-                      >
-                        {element.index}
-                      </text>
+                    <rect
+                      className="svg-overlay-drop-zone"
+                      x={bbox.x - getDropPadding(bbox)}
+                      y={bbox.y - getDropPadding(bbox)}
+                      width={Math.max(bbox.w, 6) + getDropPadding(bbox) * 2}
+                      height={Math.max(bbox.h, 6) + getDropPadding(bbox) * 2}
+                      onClick={() => {
+                        if (listIndex !== undefined) onSelectElement(listIndex)
+                      }}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(element)}
+                    />
+                    <rect
+                      className={
+                        isHighlighted
+                          ? 'svg-overlay-rect-linked'
+                          : isBound
+                            ? 'svg-overlay-rect-bound'
+                            : 'svg-overlay-rect-dim'
+                      }
+                      x={bbox.x}
+                      y={bbox.y}
+                      width={Math.max(bbox.w, 6)}
+                      height={Math.max(bbox.h, 6)}
+                      onClick={() => {
+                        if (listIndex !== undefined) onSelectElement(listIndex)
+                      }}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(element)}
+                    />
+                    <text
+                      className={isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
+                      x={bbox.x + 1}
+                      y={bbox.y - 1}
+                      style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
+                      onClick={() => {
+                        if (listIndex !== undefined) onSelectElement(listIndex)
+                      }}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(element)}
+                    >
+                      {element.index}
+                    </text>
                     </g>
                   ))}
                   {showElementMap && showBindingElements && tableOverlays.map((rect) => (
@@ -426,6 +470,18 @@ export function SvgViewer({
                 {!showElementMap && highlightedOverlayItems.map(({ element, bbox, listIndex }) => (
                   <g key={`linked-${element.index}`}>
                     <rect
+                      className="svg-overlay-drop-zone"
+                      x={bbox.x - getDropPadding(bbox)}
+                      y={bbox.y - getDropPadding(bbox)}
+                      width={Math.max(bbox.w, 6) + getDropPadding(bbox) * 2}
+                      height={Math.max(bbox.h, 6) + getDropPadding(bbox) * 2}
+                      onClick={() => {
+                        if (listIndex !== undefined) onSelectElement(listIndex)
+                      }}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(element)}
+                    />
+                    <rect
                       className="svg-overlay-rect-linked"
                       x={bbox.x}
                       y={bbox.y}
@@ -434,6 +490,8 @@ export function SvgViewer({
                       onClick={() => {
                         if (listIndex !== undefined) onSelectElement(listIndex)
                       }}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(element)}
                     />
                     <text
                       className="svg-overlay-label-bound"
@@ -443,6 +501,8 @@ export function SvgViewer({
                       onClick={() => {
                         if (listIndex !== undefined) onSelectElement(listIndex)
                       }}
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop(element)}
                     >
                       {element.index}
                     </text>

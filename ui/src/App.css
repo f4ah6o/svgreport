@@ -506,6 +506,12 @@
   vector-effect: non-scaling-stroke;
 }
 
+.svg-overlay-drop-zone {
+  fill: rgba(0, 0, 0, 0.001);
+  stroke: none;
+  pointer-events: all;
+}
+
 .svg-overlay-rect-dim {
   fill: rgba(52, 152, 219, 0.12);
   stroke: #3498db;
@@ -815,6 +821,126 @@
 .template-editor {
   display: flex;
   gap: 1rem;
+}
+
+.binding-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.binding-row {
+  display: flex;
+}
+
+.binding-card {
+  flex: 1;
+  border: 1px solid #dfe6ee;
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  background: #fff;
+  display: grid;
+  gap: 0.35rem;
+  cursor: grab;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.binding-card:active {
+  cursor: grabbing;
+}
+
+.binding-card.selected {
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+  background: #f2f8ff;
+}
+
+.binding-card.unbound {
+  background: #fffdf7;
+}
+
+.binding-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.binding-card-title {
+  font-weight: 600;
+}
+
+.binding-card-subtitle {
+  font-size: 0.75rem;
+  color: #6c7a89;
+}
+
+.binding-card-status {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.15rem 0.35rem;
+  border-radius: 10px;
+  background: #ecf0f1;
+  color: #53616f;
+}
+
+.binding-card-status.bound {
+  background: #e9f7ef;
+  color: #1e7e34;
+}
+
+.binding-card-status.unbound {
+  background: #fff3cd;
+  color: #9a5b00;
+}
+
+.binding-card-body {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.binding-card-value {
+  color: #2c3e50;
+}
+
+.binding-card-target {
+  color: #7f8c8d;
+  font-family: 'Courier New', monospace;
+}
+
+.binding-details {
+  margin-top: 1rem;
+  border: 1px solid #dfe6ee;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #fbfcfe;
+}
+
+.binding-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.binding-details-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.binding-details-subtitle {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7a7a7a;
+}
+
+.binding-details-body {
+  display: grid;
+  gap: 0.6rem;
 }
 
 .template-editor-nav {
