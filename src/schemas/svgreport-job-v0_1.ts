@@ -43,6 +43,13 @@ export const SVGREPORT_JOB_V0_1_SCHEMA = {
       },
       description: 'Data sources. Keys become source names (e.g., meta, items, payments).',
     },
+    models: {
+      type: 'object',
+      description: 'Optional data model definition for issuing systems.',
+      additionalProperties: {
+        $ref: '#/$defs/model',
+      },
+    },
   },
   additionalProperties: false,
   $defs: {
@@ -72,6 +79,34 @@ export const SVGREPORT_JOB_V0_1_SCHEMA = {
         },
       },
       additionalProperties: false,
+    },
+    model: {
+      oneOf: [
+        {
+          type: 'object',
+          required: ['kind', 'fields'],
+          properties: {
+            kind: { const: 'kv' },
+            fields: {
+              type: 'array',
+              items: { type: 'string', minLength: 1 },
+            },
+          },
+          additionalProperties: false,
+        },
+        {
+          type: 'object',
+          required: ['kind', 'columns'],
+          properties: {
+            kind: { const: 'table' },
+            columns: {
+              type: 'array',
+              items: { type: 'string', minLength: 1 },
+            },
+          },
+          additionalProperties: false,
+        },
+      ],
     },
   },
 } as const;

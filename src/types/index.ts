@@ -11,6 +11,7 @@ export interface JobManifest {
   encoding: 'utf-8';
   locale?: string;
   inputs: Record<string, InputSpec>;
+  models?: Record<string, DataModelSpec>;
 }
 
 export interface TemplateRef {
@@ -23,6 +24,18 @@ export interface InputSpec {
   path: string;
   kind: 'kv' | 'table';
   options?: CsvOptions;
+}
+
+export type DataModelSpec = KvModelSpec | TableModelSpec;
+
+export interface KvModelSpec {
+  kind: 'kv';
+  fields: string[];
+}
+
+export interface TableModelSpec {
+  kind: 'table';
+  columns: string[];
 }
 
 export interface CsvOptions {

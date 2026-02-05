@@ -1,7 +1,9 @@
-import { useState, useCallback, useEffect } from 'preact/hooks'
-import type { TemplateConfig, FieldBinding, PageConfig, TableBinding, TableCell, FormatterDef, ValueBinding, DataValueBinding } from '../types/api'
+import { useState, useCallback, useEffect, useMemo } from 'preact/hooks'
+import type { TemplateConfig, FieldBinding, PageConfig, TableBinding, TableCell, FormatterDef, ValueBinding, DataValueBinding, KVData, TableData } from '../types/api'
 import type { BindingRef } from '../types/binding'
 import { encodeBindingRef, bindingRefEquals, BINDING_MIME } from '../types/binding'
+import type { DataKeyRef } from '../types/data-key'
+import { encodeDataKeyRef, decodeDataKeyRef, DATA_KEY_MIME } from '../types/data-key'
 
 interface TemplateEditorProps {
   template: TemplateConfig
@@ -15,6 +17,20 @@ interface TemplateEditorProps {
   onSelectBindingSvgId: (svgId: string | null) => void
   selectedBindingRef: BindingRef | null
   onSelectBindingRef: (ref: BindingRef | null) => void
+  metaData: KVData | null
+  itemsData: TableData | null
+  metaFileName: string | null
+  itemsFileName: string | null
+  dataError: string | null
+  dataLoading: boolean
+  templateModels: Record<string, { kind: 'kv' | 'table'; fields?: string[]; columns?: string[] }> | null
+  onMetaUpload: (file: File) => void
+  onItemsUpload: (file: File) => void
+  onMetaUrlLoad: (url: string) => void
+  onItemsUrlLoad: (url: string) => void
+  onClearMeta: () => void
+  onClearItems: () => void
+  onNotify: (message: string) => void
 }
 
 export function TemplateEditor({
@@ -29,8 +45,22 @@ export function TemplateEditor({
   onSelectBindingSvgId,
   selectedBindingRef,
   onSelectBindingRef,
+  metaData,
+  itemsData,
+  metaFileName,
+  itemsFileName,
+  dataError,
+  dataLoading,
+  templateModels,
+  onMetaUpload,
+  onItemsUpload,
+  onMetaUrlLoad,
+  onItemsUrlLoad,
+  onClearMeta,
+  onClearItems,
+  onNotify,
 }: TemplateEditorProps) {
-  const [activeSection, setActiveSection] = useState<'info' | 'global-fields' | 'formatters' | 'page'>('page')
+  const [activeSection, setActiveSection] = useState<'info' | 'global-fields' | 'formatters' | 'page' | 'data'>('page')
   const [globalFieldGroupsOpen, setGlobalFieldGroupsOpen] = useState<{ static: boolean; data: boolean }>({
     static: false,
     data: true,
@@ -40,6 +70,11 @@ export function TemplateEditor({
     data: true,
   })
   const [lastFocusPath, setLastFocusPath] = useState<string | null>(null)
+  const [metaUrlInput, setMetaUrlInput] = useState('')
+  const [itemsUrlInput, setItemsUrlInput] = useState('')
+  const metaKeys = useMemo(() => (metaData ? Object.keys(metaData).sort() : []), [metaData])
+  const itemColumns = useMemo(() => (itemsData?.headers ? [...itemsData.headers] : []), [itemsData])
+  const itemSampleRows = useMemo(() => (itemsData?.rows ? itemsData.rows.slice(0, 3) : []), [itemsData])
   const pageIdCounts = template.pages.reduce<Record<string, number>>((acc, page) => {
     const key = page.id.trim()
     if (!key) return acc
@@ -63,6 +98,53 @@ export function TemplateEditor({
     event.dataTransfer && (event.dataTransfer.effectAllowed = 'copy')
   }
 
+  const handleDataDragStart = (ref: DataKeyRef) => (event: DragEvent) => {
+    const payload = encodeDataKeyRef(ref)
+    event.dataTransfer?.setData(DATA_KEY_MIME, payload)
+    event.dataTransfer?.setData('application/json', payload)
+    event.dataTransfer?.setData('text/plain', payload)
+    event.dataTransfer && (event.dataTransfer.effectAllowed = 'copy')
+  }
+
+  const handleBindingDragOver = (event: DragEvent) => {
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy'
+    }
+  }
+
+  const handleMetaFileChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (file) {
+      onMetaUpload(file)
+    }
+    input.value = ''
+  }
+
+  const handleItemsFileChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (file) {
+      onItemsUpload(file)
+    }
+    input.value = ''
+  }
+
+  const handleCopyModels = async () => {
+    if (!templateModels) {
+      onNotify('No models to copy')
+      return
+    }
+    try {
+      const payload = JSON.stringify(templateModels, null, 2)
+      await navigator.clipboard.writeText(payload)
+      onNotify('Copied models JSON')
+    } catch {
+      onNotify('Failed to copy models')
+    }
+  }
+
   const renderBindingCard = (args: {
     ref: BindingRef
     binding: FieldBinding | TableCell
@@ -79,6 +161,8 @@ export function TemplateEditor({
         className={`binding-card ${isSelected ? 'selected' : ''} ${isBound ? 'bound' : 'unbound'}`}
         draggable
         onDragStart={handleDragStart(ref, valueLabel)}
+        onDragOver={handleBindingDragOver}
+        onDrop={handleBindingDrop(ref)}
         onClick={() => onSelectBindingRef(ref)}
       >
         <div className="binding-card-header">
@@ -394,6 +478,68 @@ export function TemplateEditor({
     }
   }
 
+  const applyBindingUpdateByRef = (ref: BindingRef, updater: (binding: FieldBinding | TableCell) => FieldBinding | TableCell) => {
+    if (ref.kind === 'global-field') {
+      const binding = template.fields[ref.index]
+      if (!binding) return
+      handleFieldChange(ref.index, updater(binding) as FieldBinding)
+      return
+    }
+    if (ref.kind === 'page-field') {
+      const page = template.pages.find(p => p.id === ref.pageId)
+      const binding = page?.fields?.[ref.index]
+      if (!binding) return
+      handlePageFieldChange(ref.pageId, ref.index, updater(binding) as FieldBinding)
+      return
+    }
+    if (ref.kind === 'table-header') {
+      const page = template.pages.find(p => p.id === ref.pageId)
+      const binding = page?.tables[ref.tableIndex]?.header?.cells?.[ref.cellIndex]
+      if (!binding) return
+      handleHeaderCellChange(ref.pageId, ref.tableIndex, ref.cellIndex, updater(binding) as TableCell)
+      return
+    }
+    if (ref.kind === 'table-cell') {
+      const page = template.pages.find(p => p.id === ref.pageId)
+      const binding = page?.tables[ref.tableIndex]?.cells?.[ref.cellIndex]
+      if (!binding) return
+      handleCellChange(ref.pageId, ref.tableIndex, ref.cellIndex, updater(binding) as TableCell)
+    }
+  }
+
+  const handleBindingDrop = (ref: BindingRef) => (event: DragEvent) => {
+    event.preventDefault()
+    const payload =
+      event.dataTransfer?.getData(DATA_KEY_MIME)
+      || event.dataTransfer?.getData('application/json')
+      || event.dataTransfer?.getData('text/plain')
+      || null
+    const dataRef = decodeDataKeyRef(payload)
+    if (!dataRef) return
+    applyBindingUpdateByRef(ref, (binding) => ({
+      ...binding,
+      value: makeDataValue(dataRef.source, dataRef.key),
+    }))
+    onSelectBindingRef(ref)
+    onSelectBindingSvgId((() => {
+      if (ref.kind === 'global-field') return template.fields[ref.index]?.svg_id || null
+      if (ref.kind === 'page-field') {
+        const page = template.pages.find(p => p.id === ref.pageId)
+        return page?.fields?.[ref.index]?.svg_id || null
+      }
+      if (ref.kind === 'table-header') {
+        const page = template.pages.find(p => p.id === ref.pageId)
+        return page?.tables[ref.tableIndex]?.header?.cells?.[ref.cellIndex]?.svg_id || null
+      }
+      if (ref.kind === 'table-cell') {
+        const page = template.pages.find(p => p.id === ref.pageId)
+        return page?.tables[ref.tableIndex]?.cells?.[ref.cellIndex]?.svg_id || null
+      }
+      return null
+    })())
+    onNotify(`Mapped ${dataRef.source}.${dataRef.key}`)
+  }
+
   const removeSelectedBinding = () => {
     if (!selectedBinding) return
     if (selectedBinding.kind === 'global-field') {
@@ -512,6 +658,12 @@ export function TemplateEditor({
             onClick={() => setActiveSection('formatters')}
           >
             Formatters ({formatterEntries.length})
+          </button>
+          <button
+            className={`nav-button ${activeSection === 'data' ? 'active' : ''}`}
+            onClick={() => setActiveSection('data')}
+          >
+            Data
           </button>
         </div>
         <div className="nav-section">
@@ -868,6 +1020,153 @@ export function TemplateEditor({
               })()}
             </div>
           )}
+        </div>
+      )}
+
+      {activeSection === 'data' && (
+        <div className="tab-content">
+          <h3>Data Sources</h3>
+          {dataError && <div className="error">{dataError}</div>}
+
+          <div className="data-section">
+            <div className="data-section-header">
+              <h4>Meta (JSON)</h4>
+              <div className="data-actions">
+                <label className="btn-secondary data-upload">
+                  Upload JSON
+                  <input type="file" accept="application/json,.json" onChange={handleMetaFileChange} />
+                </label>
+                {metaData && (
+                  <button className="btn-secondary" onClick={onClearMeta}>Clear</button>
+                )}
+              </div>
+            </div>
+            <div className="data-meta">
+              <div className="data-meta-info">
+                {metaFileName ? <span>File: {metaFileName}</span> : <span>No file loaded</span>}
+                {metaData && <span>{metaKeys.length} keys</span>}
+              </div>
+              <div className="data-url">
+                <input
+                  type="text"
+                  value={metaUrlInput}
+                  onChange={(e) => setMetaUrlInput((e.target as HTMLInputElement).value)}
+                  placeholder="https://api.example.com/meta.json"
+                  disabled={dataLoading}
+                />
+                <button
+                  className="btn-secondary"
+                  onClick={() => onMetaUrlLoad(metaUrlInput)}
+                  disabled={dataLoading || !metaUrlInput.trim()}
+                >
+                  Load URL
+                </button>
+              </div>
+              {metaKeys.length === 0 ? (
+                <p className="empty">No meta data loaded.</p>
+              ) : (
+                <div className="data-chip-list">
+                  {metaKeys.map((key) => (
+                    <div
+                      key={key}
+                      className="data-chip data-chip-meta"
+                      draggable
+                      onDragStart={handleDataDragStart({ source: 'meta', key })}
+                    >
+                      {key}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="data-section">
+            <div className="data-section-header">
+              <h4>Items (CSV)</h4>
+              <div className="data-actions">
+                <label className="btn-secondary data-upload">
+                  Upload CSV
+                  <input type="file" accept=".csv,text/csv" onChange={handleItemsFileChange} />
+                </label>
+                {itemsData && (
+                  <button className="btn-secondary" onClick={onClearItems}>Clear</button>
+                )}
+              </div>
+            </div>
+            <div className="data-meta">
+              <div className="data-meta-info">
+                {itemsFileName ? <span>File: {itemsFileName}</span> : <span>No file loaded</span>}
+                {itemsData && <span>{itemColumns.length} columns · {itemsData.rows.length} rows</span>}
+              </div>
+              <div className="data-url">
+                <input
+                  type="text"
+                  value={itemsUrlInput}
+                  onChange={(e) => setItemsUrlInput((e.target as HTMLInputElement).value)}
+                  placeholder="https://api.example.com/items.csv"
+                  disabled={dataLoading}
+                />
+                <button
+                  className="btn-secondary"
+                  onClick={() => onItemsUrlLoad(itemsUrlInput)}
+                  disabled={dataLoading || !itemsUrlInput.trim()}
+                >
+                  Load URL
+                </button>
+              </div>
+              {itemColumns.length === 0 ? (
+                <p className="empty">No items data loaded.</p>
+              ) : (
+                <div className="data-chip-list">
+                  {itemColumns.map((column) => (
+                    <div
+                      key={column}
+                      className="data-chip data-chip-items"
+                      draggable
+                      onDragStart={handleDataDragStart({ source: 'items', key: column })}
+                    >
+                      {column}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {itemSampleRows.length > 0 && (
+                <div className="data-preview">
+                  <table>
+                    <thead>
+                      <tr>
+                        {itemColumns.map((column) => (
+                          <th key={column}>{column}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itemSampleRows.map((row, idx) => (
+                        <tr key={idx}>
+                          {itemColumns.map((column) => (
+                            <td key={column}>{row[column] ?? ''}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="data-section">
+            <div className="data-section-header">
+              <h4>Models (from template)</h4>
+              <button className="btn-secondary" onClick={handleCopyModels}>Copy JSON</button>
+            </div>
+            {!templateModels || Object.keys(templateModels).length === 0 ? (
+              <p className="empty">No data bindings found in template.</p>
+            ) : (
+              <pre className="data-model-preview">{JSON.stringify(templateModels, null, 2)}</pre>
+            )}
+          </div>
         </div>
       )}
 

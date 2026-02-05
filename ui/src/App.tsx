@@ -1,5 +1,13 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'preact/hooks'
-import type { TemplateConfig, TextElement, ValidationResponse, PreviewResponse, TemplateListItem } from './types/api'
+import type {
+  TemplateConfig,
+  TextElement,
+  ValidationResponse,
+  PreviewResponse,
+  TemplateListItem,
+  KVData,
+  TableData,
+} from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
 import { TemplateEditor } from './components/TemplateEditor'
@@ -27,6 +35,12 @@ export function App() {
   const [templatesList, setTemplatesList] = useState<TemplateListItem[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [metaData, setMetaData] = useState<KVData | null>(null)
+  const [itemsData, setItemsData] = useState<TableData | null>(null)
+  const [metaFileName, setMetaFileName] = useState<string | null>(null)
+  const [itemsFileName, setItemsFileName] = useState<string | null>(null)
+  const [dataError, setDataError] = useState<string | null>(null)
+  const [dataLoading, setDataLoading] = useState(false)
   const [focusTarget, setFocusTarget] = useState<{ tab: 'pages' | 'fields' | 'formatters'; path: string } | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
   const [validationGroupsOpen, setValidationGroupsOpen] = useState<Record<'pages' | 'fields' | 'formatters' | 'other', boolean>>({
@@ -161,7 +175,8 @@ export function App() {
     
     try {
       const outputDir = `out/preview/${template.template.id}-${template.template.version}`
-      const result = await rpc.preview(templateDir, outputDir, 'realistic')
+      const data = metaData || itemsData ? { meta: metaData ?? undefined, items: itemsData ?? undefined } : undefined
+      const result = await rpc.preview(templateDir, outputDir, 'realistic', data)
       setPreviewResult(result)
       setStatus(result.ok ? `Preview generated: ${result.output?.pages.length || 0} pages` : 'Preview generation failed')
     } catch (err) {
@@ -170,7 +185,81 @@ export function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [templateDir, template])
+  }, [templateDir, template, metaData, itemsData])
+
+  const handleMetaUpload = useCallback(async (file: File) => {
+    setDataError(null)
+    try {
+      const content = await file.text()
+      const result = await rpc.parseJsonData(content)
+      setMetaData(result.data)
+      setMetaFileName(file.name)
+      setNotification(`Loaded meta data (${Object.keys(result.data).length} keys)`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to parse meta JSON'
+      setDataError(message)
+    }
+  }, [])
+
+  const handleItemsUpload = useCallback(async (file: File) => {
+    setDataError(null)
+    try {
+      const content = await file.text()
+      const result = await rpc.parseCsvData(content, 'table')
+      setItemsData(result.data as TableData)
+      setItemsFileName(file.name)
+      const headers = (result.data as TableData).headers
+      setNotification(`Loaded items (${headers.length} columns)`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to parse items CSV'
+      setDataError(message)
+    }
+  }, [])
+
+  const handleMetaUrlLoad = useCallback(async (url: string) => {
+    if (!url.trim()) return
+    setDataError(null)
+    setDataLoading(true)
+    try {
+      const result = await rpc.fetchDataFromUrl(url.trim(), 'json')
+      setMetaData(result.data as KVData)
+      setMetaFileName(url.trim())
+      setNotification(`Loaded meta data (${Object.keys(result.data as KVData).length} keys)`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch meta JSON'
+      setDataError(message)
+    } finally {
+      setDataLoading(false)
+    }
+  }, [])
+
+  const handleItemsUrlLoad = useCallback(async (url: string) => {
+    if (!url.trim()) return
+    setDataError(null)
+    setDataLoading(true)
+    try {
+      const result = await rpc.fetchDataFromUrl(url.trim(), 'csv', 'table')
+      setItemsData(result.data as TableData)
+      setItemsFileName(url.trim())
+      const headers = (result.data as TableData).headers
+      setNotification(`Loaded items (${headers.length} columns)`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch items CSV'
+      setDataError(message)
+    } finally {
+      setDataLoading(false)
+    }
+  }, [])
+
+  const clearMetaData = useCallback(() => {
+    setMetaData(null)
+    setMetaFileName(null)
+  }, [])
+
+  const clearItemsData = useCallback(() => {
+    setItemsData(null)
+    setItemsFileName(null)
+  }, [])
 
   const handleTemplateChange = useCallback((newTemplate: TemplateConfig) => {
     setTemplate(newTemplate)
@@ -425,6 +514,80 @@ export function App() {
 
     return Array.from(ids)
   }, [template, selectedPageId])
+
+  const templateModels = useMemo(() => {
+    if (!template) return null
+
+    const tableSources = new Set<string>()
+    for (const page of template.pages) {
+      for (const table of page.tables) {
+        if (table.source) tableSources.add(table.source)
+      }
+    }
+
+    type ModelBucket = { kind: 'kv' | 'table'; fields: Set<string>; columns: Set<string> }
+    const buckets = new Map<string, ModelBucket>()
+
+    const ensureBucket = (source: string, kind: 'kv' | 'table') => {
+      if (!buckets.has(source)) {
+        buckets.set(source, { kind, fields: new Set<string>(), columns: new Set<string>() })
+      }
+      const bucket = buckets.get(source)!
+      if (bucket.kind !== kind && kind === 'table') {
+        bucket.kind = 'table'
+      }
+      return bucket
+    }
+
+    const addKey = (source: string, key: string, kindHint?: 'kv' | 'table') => {
+      if (!source || !key) return
+      const inferred = kindHint || (tableSources.has(source) || source === 'items' ? 'table' : 'kv')
+      const bucket = ensureBucket(source, inferred)
+      if (bucket.kind === 'table') {
+        bucket.columns.add(key)
+      } else {
+        bucket.fields.add(key)
+      }
+    }
+
+    const visitBinding = (binding: { value: { type: string; source?: string; key?: string } }) => {
+      if (binding.value.type !== 'data') return
+      addKey(binding.value.source || '', binding.value.key || '')
+    }
+
+    for (const field of template.fields) {
+      visitBinding(field)
+    }
+
+    for (const page of template.pages) {
+      for (const field of page.fields ?? []) {
+        visitBinding(field)
+      }
+      for (const table of page.tables) {
+        for (const cell of table.header?.cells ?? []) {
+          if (cell.value.type !== 'data') continue
+          const kind = cell.value.source === table.source ? 'table' : undefined
+          addKey(cell.value.source || '', cell.value.key || '', kind)
+        }
+        for (const cell of table.cells) {
+          if (cell.value.type !== 'data') continue
+          const kind = cell.value.source === table.source ? 'table' : undefined
+          addKey(cell.value.source || '', cell.value.key || '', kind)
+        }
+      }
+    }
+
+    const result: Record<string, { kind: 'kv' | 'table'; fields?: string[]; columns?: string[] }> = {}
+    for (const [source, bucket] of buckets.entries()) {
+      if (bucket.kind === 'table') {
+        result[source] = { kind: 'table', columns: Array.from(bucket.columns).sort() }
+      } else {
+        result[source] = { kind: 'kv', fields: Array.from(bucket.fields).sort() }
+      }
+    }
+
+    return result
+  }, [template])
 
   const tableBindingGroups = useMemo(() => {
     if (!template || !selectedPageId) return []
@@ -694,6 +857,20 @@ export function App() {
                 onSelectBindingSvgId={setSelectedBindingSvgId}
                 selectedBindingRef={selectedBindingRef}
                 onSelectBindingRef={handleSelectBindingRef}
+                metaData={metaData}
+                itemsData={itemsData}
+                metaFileName={metaFileName}
+                itemsFileName={itemsFileName}
+                dataError={dataError}
+                dataLoading={dataLoading}
+                templateModels={templateModels}
+                onMetaUpload={handleMetaUpload}
+                onItemsUpload={handleItemsUpload}
+                onMetaUrlLoad={handleMetaUrlLoad}
+                onItemsUrlLoad={handleItemsUrlLoad}
+                onClearMeta={clearMetaData}
+                onClearItems={clearItemsData}
+                onNotify={setNotification}
               />
             </div>
             <div

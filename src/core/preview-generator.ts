@@ -13,6 +13,10 @@ export interface PreviewOptions {
   sampleData?: 'minimal' | 'realistic' | 'multi-page';
   outputDir: string;
   includeDebug?: boolean;
+  data?: {
+    meta?: KVData;
+    items?: TableData;
+  };
 }
 
 export interface PreviewResult {
@@ -34,7 +38,7 @@ export async function generatePreview(
   templateDir: string,
   options: PreviewOptions
 ): Promise<PreviewResult> {
-  const { sampleData = 'realistic', outputDir, includeDebug = true } = options;
+  const { sampleData = 'realistic', outputDir, includeDebug = true, data } = options;
 
   // Load template
   const templateJsonPath = path.join(templateDir, 'template.json');
@@ -55,7 +59,9 @@ export async function generatePreview(
   }
 
   // Generate dummy data
-  const { meta, items } = generateDummyData(templateConfig, sampleData);
+  const fallback = generateDummyData(templateConfig, sampleData);
+  const meta = data?.meta ?? fallback.meta;
+  const items = normalizeTableData(data?.items ?? fallback.items);
 
   // Create mock manifest
   const manifest: JobManifest = {
@@ -258,6 +264,16 @@ function generateDummyData(
   }
 
   return { meta, items };
+}
+
+function normalizeTableData(input: TableData): TableData {
+  if (input.headers && input.headers.length > 0) {
+    return input;
+  }
+  if (!input.rows || input.rows.length === 0) {
+    return { headers: [], rows: [] };
+  }
+  return { headers: Object.keys(input.rows[0]), rows: input.rows };
 }
 
 /**

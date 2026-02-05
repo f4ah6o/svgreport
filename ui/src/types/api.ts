@@ -122,6 +122,13 @@ export interface FormatterDef {
   currency?: string;
 }
 
+export type KVData = Record<string, string>;
+
+export interface TableData {
+  headers: string[];
+  rows: Record<string, string>[];
+}
+
 export interface TextElement {
   index: number;
   domIndex?: number;

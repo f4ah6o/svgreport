@@ -41,6 +41,62 @@ export function parseCsv(content: Buffer, spec: InputSpec): DataSource {
 }
 
 /**
+ * Parse JSON object into KV data with dot-notation keys.
+ */
+export function parseJsonToKv(input: unknown): KVData {
+  if (Array.isArray(input)) {
+    const result: KVData = {};
+    for (const entry of input) {
+      if (!entry || typeof entry !== 'object') continue;
+      const record = entry as Record<string, unknown>;
+      if (typeof record.key === 'string' && record.key.trim()) {
+        result[record.key.trim()] = String(record.value ?? '');
+      }
+    }
+    return result;
+  }
+
+  if (!input || typeof input !== 'object') {
+    throw new SVGReportError('Invalid JSON data', 'inputs', 'Expected an object or array of {key,value}.');
+  }
+
+  const result: KVData = {};
+
+  const visit = (value: unknown, prefix: string) => {
+    if (value === null || value === undefined) {
+      result[prefix] = '';
+      return;
+    }
+    if (Array.isArray(value)) {
+      result[prefix] = JSON.stringify(value);
+      return;
+    }
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const keys = Object.keys(obj);
+      if (keys.length === 0) {
+        result[prefix] = '';
+        return;
+      }
+      for (const key of keys) {
+        const nextKey = prefix ? `${prefix}.${key}` : key;
+        visit(obj[key], nextKey);
+      }
+      return;
+    }
+    result[prefix] = String(value);
+  };
+
+  const root = input as Record<string, unknown>;
+  const keys = Object.keys(root);
+  for (const key of keys) {
+    visit(root[key], key);
+  }
+
+  return result;
+}
+
+/**
  * Parse key-value CSV format
  * Expected: rows of [key, value] pairs
  * First row is header: key,value (skipped if has_header=true)

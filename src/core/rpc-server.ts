@@ -12,6 +12,7 @@ import { validateTemplateFull, type ValidationResult } from './template-validato
 import { generatePreview } from './preview-generator.js';
 import { generateTemplate } from './template-generator.js';
 import { SVGREPORT_JOB_V0_1_SCHEMA, SVGREPORT_TEMPLATE_V0_2_SCHEMA } from './schema-registry.js';
+import { parseCsv, parseJsonToKv } from './datasource.js';
 const PACKAGE_VERSION = '2026.2.0';
 const API_VERSION = 'rpc/v0.1';
 
@@ -378,6 +379,15 @@ export class RpcServer {
       } else if (pathname === '/rpc/svg/set-ids' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgSetIds(body);
+      } else if (pathname === '/rpc/data/parse-csv' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleParseCsv(body);
+      } else if (pathname === '/rpc/data/parse-json' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleParseJson(body);
+      } else if (pathname === '/rpc/data/fetch' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleFetchData(body);
       } else if (pathname === '/rpc/validate' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleValidate(body);
@@ -495,6 +505,14 @@ export class RpcServer {
       throw new Error('PATH_TRAVERSAL');
     }
     return resolved;
+  }
+
+  private validateHttpUrl(url: string): URL {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('INVALID_URL');
+    }
+    return parsed;
   }
 
   // ============================================
@@ -758,6 +776,91 @@ export class RpcServer {
     }
   }
 
+  private async handleParseCsv(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { content, kind, options } = body as { content?: string; kind?: 'kv' | 'table'; options?: Record<string, unknown> };
+
+    if (!content || !kind) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required fields: content, kind' } };
+    }
+
+    try {
+      const data = parseCsv(Buffer.from(content, 'utf-8'), {
+        type: 'csv',
+        path: 'inline.csv',
+        kind,
+        options: options as Record<string, unknown>,
+      });
+      return { data };
+    } catch (error) {
+      return { error: { code: 'BAD_REQUEST', message: `Failed to parse CSV: ${error}` } };
+    }
+  }
+
+  private async handleParseJson(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { content } = body as { content?: string };
+
+    if (!content) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required field: content' } };
+    }
+
+    try {
+      const parsed = JSON.parse(content) as unknown;
+      const data = parseJsonToKv(parsed);
+      return { data };
+    } catch (error) {
+      return { error: { code: 'BAD_REQUEST', message: `Failed to parse JSON: ${error}` } };
+    }
+  }
+
+  private async handleFetchData(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { url, format, kind, options } = body as {
+      url?: string;
+      format?: 'json' | 'csv';
+      kind?: 'kv' | 'table';
+      options?: Record<string, unknown>;
+    };
+
+    if (!url || !format) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required fields: url, format' } };
+    }
+
+    if (format === 'csv' && !kind) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required field for CSV: kind' } };
+    }
+
+    try {
+      const targetUrl = this.validateHttpUrl(url);
+      const response = await fetch(targetUrl.toString(), {
+        headers: {
+          'Accept': format === 'json' ? 'application/json' : 'text/csv',
+        },
+      });
+      if (!response.ok) {
+        return { error: { code: 'BAD_REQUEST', message: `Failed to fetch URL: ${response.status}` } };
+      }
+
+      const text = await response.text();
+
+      if (format === 'json') {
+        const parsed = JSON.parse(text) as unknown;
+        const data = parseJsonToKv(parsed);
+        return { data };
+      }
+
+      const data = parseCsv(Buffer.from(text, 'utf-8'), {
+        type: 'csv',
+        path: targetUrl.pathname || 'remote.csv',
+        kind: kind as 'kv' | 'table',
+        options: options as Record<string, unknown>,
+      });
+      return { data };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code = message === 'INVALID_URL' ? 'BAD_REQUEST' : 'BAD_REQUEST';
+      return { error: { code, message: `Failed to fetch data: ${message}` } };
+    }
+  }
+
   private async handleValidate(body: Record<string, unknown>): Promise<RpcResponse> {
     const { templateDir } = body as { templateDir: string };
 
@@ -802,11 +905,12 @@ export class RpcServer {
   }
 
   private async handlePreview(body: Record<string, unknown>): Promise<RpcResponse> {
-    const { templateDir, outputDir, sampleMode, options = {} } = body as {
+    const { templateDir, outputDir, sampleMode, options = {}, data } = body as {
       templateDir: string;
       outputDir: string;
       sampleMode?: 'minimal' | 'realistic' | 'multi-page';
       options?: { emitSvgs?: boolean; emitDebug?: boolean };
+      data?: { meta?: Record<string, string>; items?: { headers: string[]; rows: Record<string, string>[] } };
     };
 
     if (!templateDir || !outputDir) {
@@ -821,6 +925,7 @@ export class RpcServer {
         sampleData: sampleMode || 'realistic',
         outputDir: resolvedOutputDir,
         includeDebug: options.emitDebug !== false,
+        data,
       });
 
       return {

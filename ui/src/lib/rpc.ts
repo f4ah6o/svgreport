@@ -8,6 +8,8 @@ import type {
   ValidationResponse,
   PreviewResponse,
   SaveResponse,
+  KVData,
+  TableData,
 } from '../types/api'
 
 const RPC_BASE = '/rpc'
@@ -82,7 +84,8 @@ class RpcClient {
   async preview(
     templateDir: string,
     outputDir: string,
-    sampleMode: 'minimal' | 'realistic' | 'multi-page' = 'realistic'
+    sampleMode: 'minimal' | 'realistic' | 'multi-page' = 'realistic',
+    data?: { meta?: KVData; items?: TableData }
   ): Promise<PreviewResponse> {
     return this.request<PreviewResponse>('/preview', {
       method: 'POST',
@@ -91,6 +94,7 @@ class RpcClient {
         outputDir,
         sampleMode,
         options: { emitSvgs: true, emitDebug: true },
+        data,
       }),
     })
   }
@@ -111,6 +115,32 @@ class RpcClient {
     return this.request('/generate', {
       method: 'POST',
       body: JSON.stringify({ id, version, baseDir, pageTypes }),
+    })
+  }
+
+  async parseCsvData(content: string, kind: 'kv' | 'table', options?: Record<string, unknown>): Promise<{ data: KVData | TableData }> {
+    return this.request('/data/parse-csv', {
+      method: 'POST',
+      body: JSON.stringify({ content, kind, options }),
+    })
+  }
+
+  async parseJsonData(content: string): Promise<{ data: KVData }> {
+    return this.request('/data/parse-json', {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    })
+  }
+
+  async fetchDataFromUrl(
+    url: string,
+    format: 'json' | 'csv',
+    kind?: 'kv' | 'table',
+    options?: Record<string, unknown>
+  ): Promise<{ data: KVData | TableData }> {
+    return this.request('/data/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ url, format, kind, options }),
     })
   }
 }
