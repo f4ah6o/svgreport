@@ -1323,6 +1323,10 @@
   background: #f9fafc;
 }
 
+.graph-map-node-row {
+  margin-bottom: 0.55rem;
+}
+
 .graph-map-group-table {
   border-color: #cfe3f6;
   background: #f3f8ff;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'preact/hooks'
+import { useEffect, useRef, useCallback, useMemo } from 'preact/hooks'
 import type { DataKeyRef } from '../types/data-key'
 
 export type GraphMapNode = {
@@ -9,13 +9,21 @@ export type GraphMapNode = {
   missing: boolean
 }
 
+export type GraphMapSection = {
+  id: string
+  kind: 'group' | 'node'
+  title?: string
+  nodes: GraphMapNode[]
+}
+
 interface GraphMapOverlayProps {
   nodes: GraphMapNode[]
   groups?: Array<{ id: string; title: string; nodes: GraphMapNode[] }>
+  sections?: GraphMapSection[]
   onAnchorsChange: (anchors: Map<string, { x: number; y: number }>) => void
 }
 
-export function GraphMapOverlay({ nodes, groups, onAnchorsChange }: GraphMapOverlayProps) {
+export function GraphMapOverlay({ nodes, groups, sections, onAnchorsChange }: GraphMapOverlayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nodeRefs = useRef(new Map<string, HTMLElement>())
 
@@ -61,9 +69,33 @@ export function GraphMapOverlay({ nodes, groups, onAnchorsChange }: GraphMapOver
     }
   }, [updateAnchors])
 
-  const groupList = groups && groups.length > 0
-    ? groups.filter(group => group.nodes.length > 0)
-    : [{ id: 'all', title: 'Data', nodes }]
+  const sectionList: GraphMapSection[] = useMemo(() => {
+    if (sections && sections.length > 0) {
+      return sections.filter(section => section.nodes.length > 0)
+    }
+    if (groups && groups.length > 0) {
+      return groups.filter(group => group.nodes.length > 0).map(group => ({
+        id: group.id,
+        kind: 'group' as const,
+        title: group.title,
+        nodes: group.nodes,
+      }))
+    }
+    return [{ id: 'all', kind: 'group', title: 'Data', nodes }]
+  }, [sections, groups, nodes])
+
+  const renderNode = (node: GraphMapNode) => (
+    <div
+      key={node.key}
+      ref={setNodeRef(node.key)}
+      className={`graph-map-node graph-map-node-${node.type} ${node.missing ? 'missing' : ''}`}
+    >
+      <div className="graph-map-node-header">
+        <span className="graph-map-node-label">{node.label}</span>
+        <span className="graph-map-node-type">{node.type}</span>
+      </div>
+    </div>
+  )
 
   return (
     <div className="graph-map-overlay" ref={containerRef}>
@@ -72,24 +104,19 @@ export function GraphMapOverlay({ nodes, groups, onAnchorsChange }: GraphMapOver
         <p className="empty">No data nodes.</p>
       ) : (
         <div className="graph-map-groups">
-          {groupList.map((group) => (
-            <div key={group.id} className={`graph-map-group ${group.id.startsWith('table') ? 'graph-map-group-table' : ''}`}>
-              <div className="graph-map-group-title">{group.title}</div>
-              <div className="graph-map-list">
-                {group.nodes.map((node) => (
-                  <div
-                    key={node.key}
-                    ref={setNodeRef(node.key)}
-                    className={`graph-map-node graph-map-node-${node.type} ${node.missing ? 'missing' : ''}`}
-                  >
-                    <div className="graph-map-node-header">
-                      <span className="graph-map-node-label">{node.label}</span>
-                      <span className="graph-map-node-type">{node.type}</span>
-                    </div>
-                  </div>
-                ))}
+          {sectionList.map((section) => (
+            section.kind === 'group' ? (
+              <div key={section.id} className={`graph-map-group ${section.id.startsWith('table') ? 'graph-map-group-table' : ''}`}>
+                {section.title && <div className="graph-map-group-title">{section.title}</div>}
+                <div className="graph-map-list">
+                  {section.nodes.map((node) => renderNode(node))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div key={section.id} className="graph-map-node-row">
+                {section.nodes.map((node) => renderNode(node))}
+              </div>
+            )
           ))}
         </div>
       )}

@@ -433,7 +433,88 @@ export function SvgViewer({
     })
   }, [graphMapNodes, graphConnections, graphSvgAnchors])
 
-  const graphMapGroups = undefined
+  const graphMapSections = useMemo(() => {
+    if (!graphMapNodes || graphMapNodes.length === 0) return []
+    const byKey = new Map(graphMapNodes.map(node => [node.key, node]))
+    const orderIndex = new Map(orderedGraphNodes.map((node, idx) => [node.key, idx]))
+
+    const scoreByKey = new Map<string, number>()
+    if (graphConnections && graphSvgAnchors.size > 0) {
+      const sums = new Map<string, { sum: number; count: number }>()
+      for (const connection of graphConnections) {
+        const anchor = graphSvgAnchors.get(connection.svgId)
+        if (!anchor) continue
+        const current = sums.get(connection.key) || { sum: 0, count: 0 }
+        current.sum += anchor.y
+        current.count += 1
+        sums.set(connection.key, current)
+      }
+      for (const [key, value] of sums.entries()) {
+        if (value.count > 0) scoreByKey.set(key, value.sum / value.count)
+      }
+    }
+
+    const sortNodes = (a: GraphMapNode, b: GraphMapNode) => {
+      const scoreA = scoreByKey.get(a.key)
+      const scoreB = scoreByKey.get(b.key)
+      if (scoreA !== undefined && scoreB !== undefined && scoreA !== scoreB) return scoreA - scoreB
+      if (scoreA !== undefined && scoreB === undefined) return -1
+      if (scoreA === undefined && scoreB !== undefined) return 1
+      return (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0)
+    }
+
+    const itemGroups = new Map<number, Set<string>>()
+    const assignedKeys = new Set<string>()
+
+    if (graphConnections) {
+      for (const connection of graphConnections) {
+        const ref = decodeDataKeyRef(connection.key)
+        if (ref?.source !== 'items') continue
+        if (connection.tableIndex === undefined || connection.tableIndex === null) continue
+        const set = itemGroups.get(connection.tableIndex) || new Set<string>()
+        set.add(connection.key)
+        itemGroups.set(connection.tableIndex, set)
+        assignedKeys.add(connection.key)
+      }
+    }
+
+    const tableSections: Array<{ id: string; kind: 'group'; title: string; nodes: GraphMapNode[]; score: number | null; fallback: number }> = []
+    for (const [tableIndex, keys] of itemGroups.entries()) {
+      const nodes = Array.from(keys)
+        .map(key => byKey.get(key))
+        .filter((node): node is GraphMapNode => Boolean(node))
+        .sort(sortNodes)
+      if (nodes.length === 0) continue
+      const scores = nodes.map(node => scoreByKey.get(node.key)).filter((v): v is number => v !== undefined)
+      const score = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null
+      const fallback = Math.min(...nodes.map(node => orderIndex.get(node.key) ?? 0))
+      tableSections.push({
+        id: `table-${tableIndex}`,
+        kind: 'group',
+        title: `Table ${tableIndex + 1}`,
+        nodes,
+        score,
+        fallback,
+      })
+    }
+
+    const looseNodes = graphMapNodes.filter((node) => !(node.type === 'items' && assignedKeys.has(node.key)))
+    const looseSections = looseNodes.map((node) => ({
+      id: `node-${node.key}`,
+      kind: 'node' as const,
+      nodes: [node],
+      score: scoreByKey.get(node.key) ?? null,
+      fallback: orderIndex.get(node.key) ?? 0,
+    }))
+
+    const sections = [...tableSections, ...looseSections]
+    return sections.sort((a, b) => {
+      if (a.score !== null && b.score !== null && a.score !== b.score) return a.score - b.score
+      if (a.score !== null && b.score === null) return -1
+      if (a.score === null && b.score !== null) return 1
+      return a.fallback - b.fallback
+    })
+  }, [graphMapNodes, graphConnections, graphSvgAnchors, orderedGraphNodes])
 
   const graphLines = useMemo(() => {
     if (!graphConnections || graphConnections.length === 0) return []
@@ -607,7 +688,7 @@ export function SvgViewer({
               {graphMapNodes && (
                 <GraphMapOverlay
                   nodes={orderedGraphNodes}
-                  groups={graphMapGroups}
+                  sections={graphMapSections}
                   onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
                 />
               )}
