@@ -108,17 +108,16 @@
 
 .graph-connector-layer line {
   stroke-width: 1.5px;
-  pointer-events: none;
 }
 
-.graph-connector-hit {
+.graph-connector-layer .graph-connector-hit {
   stroke: transparent;
   stroke-width: 10px;
   pointer-events: stroke;
   cursor: pointer;
 }
 
-.graph-connector-visible {
+.graph-connector-layer .graph-connector-visible {
   pointer-events: none;
 }
 

@@ -156,7 +156,7 @@ export function SvgViewer({
 
   const viewBoxNumbers = useMemo(() => {
     if (!overlayViewBox) return null
-    const parts = overlayViewBox.split(/\s+/).map((value) => parseFloat(value))
+    const parts = overlayViewBox.split(/[,\s]+/).filter(Boolean).map((value) => parseFloat(value))
     if (parts.length < 4 || parts.some((value) => Number.isNaN(value))) return null
     return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] }
   }, [overlayViewBox])
@@ -724,7 +724,20 @@ export function SvgViewer({
               </button>
               <button
                 className={`btn-secondary ${lineEditMode ? 'active' : ''}`}
-                onClick={() => setLineEditMode((prev) => !prev)}
+                onClick={() => {
+                  setLineEditMode((prev) => {
+                    const next = !prev
+                    if (next) {
+                      setTableDrawMode(false)
+                      setTableDragRect(null)
+                      setTableDragStart(null)
+                      setMetaDrawMode(false)
+                      setMetaDragRect(null)
+                      setMetaDragStart(null)
+                    }
+                    return next
+                  })
+                }}
                 disabled={!showGraphLines}
               >
                 {lineEditMode ? 'Done Editing' : 'Edit Lines'}
@@ -766,6 +779,7 @@ export function SvgViewer({
                 setTableDrawMode(false)
                 setTableDragRect(null)
                 setTableDragStart(null)
+                setLineEditMode(false)
               }}
             >
               {metaDrawMode ? 'Cancel Meta Bind' : 'Bind Meta List'}
