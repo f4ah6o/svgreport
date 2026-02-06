@@ -438,61 +438,82 @@ export function SvgViewer({
     const byKey = new Map(graphMapNodes.map(node => [node.key, node]))
     const orderIndex = new Map(orderedGraphNodes.map((node, idx) => [node.key, idx]))
 
-    const itemGroups = new Map<number, Set<string>>()
-    const itemUnassigned = new Set<string>()
-    for (const node of graphMapNodes) {
-      if (node.type !== 'items') continue
-      itemUnassigned.add(node.key)
+    const scoreByKey = new Map<string, number>()
+    if (graphConnections && graphSvgAnchors.size > 0) {
+      const sums = new Map<string, { sum: number; count: number }>()
+      for (const connection of graphConnections) {
+        const anchor = graphSvgAnchors.get(connection.svgId)
+        if (!anchor) continue
+        const current = sums.get(connection.key) || { sum: 0, count: 0 }
+        current.sum += anchor.y
+        current.count += 1
+        sums.set(connection.key, current)
+      }
+      for (const [key, value] of sums.entries()) {
+        if (value.count > 0) scoreByKey.set(key, value.sum / value.count)
+      }
     }
+
+    const sortNodes = (a: GraphMapNode, b: GraphMapNode) => {
+      const scoreA = scoreByKey.get(a.key)
+      const scoreB = scoreByKey.get(b.key)
+      if (scoreA !== undefined && scoreB !== undefined && scoreA !== scoreB) return scoreA - scoreB
+      if (scoreA !== undefined && scoreB === undefined) return -1
+      if (scoreA === undefined && scoreB !== undefined) return 1
+      return (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0)
+    }
+
+    const itemGroups = new Map<number, Set<string>>()
+    const assignedKeys = new Set<string>()
 
     if (graphConnections) {
       for (const connection of graphConnections) {
         const ref = decodeDataKeyRef(connection.key)
         if (ref?.source !== 'items') continue
-        if (connection.tableIndex === undefined || connection.tableIndex === null) {
-          itemUnassigned.add(connection.key)
-          continue
-        }
+        if (connection.tableIndex === undefined || connection.tableIndex === null) continue
         const set = itemGroups.get(connection.tableIndex) || new Set<string>()
         set.add(connection.key)
         itemGroups.set(connection.tableIndex, set)
-        itemUnassigned.delete(connection.key)
+        assignedKeys.add(connection.key)
       }
+    }
+
+    const unassigned = new Set<string>()
+    for (const node of graphMapNodes) {
+      if (node.type === 'items' && assignedKeys.has(node.key)) continue
+      unassigned.add(node.key)
     }
 
     const toNodes = (keys: Set<string>) => {
       return Array.from(keys)
         .map(key => byKey.get(key))
         .filter((node): node is GraphMapNode => Boolean(node))
-        .sort((a, b) => (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0))
+        .sort(sortNodes)
     }
 
-    const groups: Array<{ id: string; title: string; nodes: GraphMapNode[] }> = []
-    const tableIndices = Array.from(itemGroups.keys()).sort((a, b) => a - b)
-    for (const tableIndex of tableIndices) {
-      const nodes = toNodes(itemGroups.get(tableIndex) || new Set())
-      if (nodes.length > 0) {
-        groups.push({ id: `table-${tableIndex}`, title: `Table ${tableIndex + 1}`, nodes })
-      }
-    }
-    if (itemUnassigned.size > 0) {
-      groups.push({ id: 'table-unassigned', title: 'Items (Unassigned)', nodes: toNodes(itemUnassigned) })
+    const groups: Array<{ id: string; title: string; nodes: GraphMapNode[]; score: number | null; order: number }> = []
+    for (const [tableIndex, keys] of itemGroups.entries()) {
+      const nodes = toNodes(keys)
+      if (nodes.length === 0) continue
+      const scores = nodes.map(node => scoreByKey.get(node.key)).filter((v): v is number => v !== undefined)
+      const score = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null
+      groups.push({ id: `table-${tableIndex}`, title: `Table ${tableIndex + 1}`, nodes, score, order: tableIndex })
     }
 
-    const metaNodes = graphMapNodes.filter(node => node.type === 'meta')
-      .sort((a, b) => (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0))
-    if (metaNodes.length > 0) {
-      groups.push({ id: 'meta', title: 'Meta', nodes: metaNodes })
+    if (unassigned.size > 0) {
+      const nodes = toNodes(unassigned)
+      const scores = nodes.map(node => scoreByKey.get(node.key)).filter((v): v is number => v !== undefined)
+      const score = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null
+      groups.push({ id: 'data', title: 'Data', nodes, score, order: groups.length + 1000 })
     }
 
-    const staticNodes = graphMapNodes.filter(node => node.type === 'static')
-      .sort((a, b) => (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0))
-    if (staticNodes.length > 0) {
-      groups.push({ id: 'static', title: 'Static', nodes: staticNodes })
-    }
-
-    return groups
-  }, [graphMapNodes, graphConnections, orderedGraphNodes])
+    return groups.sort((a, b) => {
+      if (a.score !== null && b.score !== null && a.score !== b.score) return a.score - b.score
+      if (a.score !== null && b.score === null) return -1
+      if (a.score === null && b.score !== null) return 1
+      return a.order - b.order
+    })
+  }, [graphMapNodes, graphConnections, graphSvgAnchors, orderedGraphNodes])
 
   const graphLines = useMemo(() => {
     if (!graphConnections || graphConnections.length === 0) return []
