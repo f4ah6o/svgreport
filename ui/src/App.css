@@ -104,6 +104,8 @@
 
 .graph-connector-layer line {
   stroke-width: 1.5px;
+  pointer-events: stroke;
+  cursor: pointer;
 }
 
 .graph-connector-line-meta {

@@ -24,6 +24,7 @@ interface SvgViewerProps {
   tableEditTargetIndex?: number | null
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onBindMetaPairsFromSelection?: (elements: TextElement[]) => void
+  onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
   onUseSuggestedId: () => void
@@ -47,6 +48,7 @@ export function SvgViewer({
   tableEditTargetIndex = null,
   onCreateTableFromSelection,
   onBindMetaPairsFromSelection,
+  onRemoveGraphBinding,
   pendingId,
   onPendingIdChange,
   onUseSuggestedId,
@@ -574,7 +576,7 @@ export function SvgViewer({
   const graphLines = useMemo(() => {
     if (!graphConnections || graphConnections.length === 0) return []
     if (!graphContainerRect.width || !graphContainerRect.height) return []
-    const lines: Array<{ x1: number; y1: number; x2: number; y2: number; type: DataKeyRef['source'] }> = []
+    const lines: Array<{ x1: number; y1: number; x2: number; y2: number; type: DataKeyRef['source']; key: string; svgId: string }> = []
     for (const connection of graphConnections) {
       const start = graphDataAnchors.get(connection.key)
       const end = graphSvgAnchors.get(connection.svgId)
@@ -587,6 +589,8 @@ export function SvgViewer({
         x2: end.x - graphContainerRect.left,
         y2: end.y - graphContainerRect.top,
         type,
+        key: connection.key,
+        svgId: connection.svgId,
       })
     }
     return lines
@@ -963,12 +967,18 @@ export function SvgViewer({
               >
                 {graphLines.map((line, idx) => (
                   <line
-                    key={idx}
+                    key={`${line.key}-${line.svgId}-${idx}`}
                     className={`graph-connector-line graph-connector-line-${line.type} graph-connector-${lineStyle}`}
                     x1={line.x1}
                     y1={line.y1}
                     x2={line.x2}
                     y2={line.y2}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (onRemoveGraphBinding) {
+                        onRemoveGraphBinding({ key: line.key, svgId: line.svgId })
+                      }
+                    }}
                   />
                 ))}
               </svg>

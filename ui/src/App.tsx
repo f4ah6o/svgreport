@@ -685,6 +685,60 @@ export function App() {
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
   }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex])
 
+  const handleRemoveGraphBinding = useCallback((connection: { key: string; svgId: string }) => {
+    const ref = decodeDataKeyRef(connection.key)
+    if (!ref || !template || !selectedPageId) return
+
+    const matchesValue = (
+      value: { type: string; source?: string; key?: string; text?: string },
+      tableSource?: string
+    ) => {
+      if (ref.source === 'static') {
+        return value.type === 'static' && value.text === ref.key
+      }
+      if (value.type !== 'data') return false
+      if (ref.source === 'items') {
+        if (tableSource) {
+          return value.key === ref.key && value.source === tableSource
+        }
+        return value.key === ref.key && value.source === 'items'
+      }
+      return value.key === ref.key && value.source !== 'items'
+    }
+
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const svgId = connection.svgId
+
+      const fields = prev.fields.filter(field => !(field.svg_id === svgId && matchesValue(field.value)))
+
+      const pages = prev.pages.map((page) => {
+        if (page.id !== selectedPageId) return page
+        const pageFields = (page.fields ?? []).filter(field => !(field.svg_id === svgId && matchesValue(field.value)))
+
+        const tables = page.tables.map((table) => {
+          const headerCells = table.header?.cells
+            ? table.header.cells.filter(cell => !(cell.svg_id === svgId && matchesValue(cell.value, table.source)))
+            : undefined
+          const cells = table.cells.filter(cell => !(cell.svg_id === svgId && matchesValue(cell.value, table.source)))
+          return {
+            ...table,
+            header: headerCells ? { cells: headerCells } : table.header,
+            cells,
+          }
+        })
+        return { ...page, fields: pageFields, tables }
+      })
+
+      return { ...prev, fields, pages }
+    })
+
+    if (selectedBindingSvgId === connection.svgId) {
+      setSelectedBindingSvgId(null)
+    }
+    setNotification('Binding removed.')
+  }, [template, selectedPageId, selectedBindingSvgId])
+
   const handleBindMetaPairs = useCallback(async (hitElements: TextElement[]) => {
     if (!template || !selectedPageId) return
     if (!metaData) {
@@ -1311,6 +1365,7 @@ export function App() {
                   graphConnections={graphConnections}
                   tableEditTargetIndex={graphEditTableIndex}
                   onBindMetaPairsFromSelection={handleBindMetaPairs}
+                  onRemoveGraphBinding={handleRemoveGraphBinding}
                   onCreateTableFromSelection={(_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)
