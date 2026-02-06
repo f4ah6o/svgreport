@@ -23,8 +23,6 @@ interface SvgViewerProps {
   graphConnections?: Array<{ key: string; svgId: string; tableIndex?: number }>
   tableEditTargetIndex?: number | null
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
-  onBindMetaPairsFromSelection?: (elements: TextElement[]) => void
-  onBindMetaPairSelection?: (elements: [TextElement, TextElement]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
@@ -48,8 +46,6 @@ export function SvgViewer({
   graphConnections,
   tableEditTargetIndex = null,
   onCreateTableFromSelection,
-  onBindMetaPairsFromSelection,
-  onBindMetaPairSelection,
   onRemoveGraphBinding,
   pendingId,
   onPendingIdChange,
@@ -75,10 +71,6 @@ export function SvgViewer({
   const [tableDrawMode, setTableDrawMode] = useState(false)
   const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
   const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-  const [metaDrawMode, setMetaDrawMode] = useState(false)
-  const [metaDragStart, setMetaDragStart] = useState<{ x: number; y: number } | null>(null)
-  const [metaDragRect, setMetaDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-  const [metaClickSelection, setMetaClickSelection] = useState<TextElement[]>([])
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphContainerRect, setGraphContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
@@ -212,10 +204,9 @@ export function SvgViewer({
       const isBound = Boolean(element.id && bindingSet.has(element.id))
       const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
       const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
-      const isMetaPick = metaClickSelection.some((item) => item.index === element.index)
-      return { element, bbox, listIndex, isBound, isHighlighted, bindingType, isMetaPick }
+      return { element, bbox, listIndex, isBound, isHighlighted, bindingType }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId, metaClickSelection])
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId])
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
@@ -304,70 +295,9 @@ export function SvgViewer({
     setTableDrawMode(false)
   }, [tableDrawMode, tableDragStart, tableDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onCreateTableFromSelection])
 
-  const handleMetaMouseDown = useCallback((event: MouseEvent) => {
-    if (!metaDrawMode) return
-    const point = toSvgPoint(event)
-    if (!point) return
-    event.preventDefault()
-    event.stopPropagation()
-    setMetaDragStart({ x: point.x, y: point.y })
-    setMetaDragRect({ x: point.x, y: point.y, w: 0, h: 0 })
-  }, [metaDrawMode, toSvgPoint])
-
-  const handleMetaMouseMove = useCallback((event: MouseEvent) => {
-    if (!metaDrawMode || !metaDragStart) return
-    const point = toSvgPoint(event)
-    if (!point) return
-    event.preventDefault()
-    event.stopPropagation()
-    const x = Math.min(metaDragStart.x, point.x)
-    const y = Math.min(metaDragStart.y, point.y)
-    const w = Math.abs(point.x - metaDragStart.x)
-    const h = Math.abs(point.y - metaDragStart.y)
-    setMetaDragRect({ x, y, w, h })
-  }, [metaDrawMode, metaDragStart, toSvgPoint])
-
-  const handleMetaMouseUp = useCallback((event: MouseEvent) => {
-    if (!metaDrawMode || !metaDragStart || !metaDragRect) return
-    const point = toSvgPoint(event)
-    if (!point) return
-    event.preventDefault()
-    event.stopPropagation()
-    const x = Math.min(metaDragStart.x, point.x)
-    const y = Math.min(metaDragStart.y, point.y)
-    const w = Math.abs(point.x - metaDragStart.x)
-    const h = Math.abs(point.y - metaDragStart.y)
-    const rect = { x, y, w, h }
-    const hits = elements.filter((element) => {
-      const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
-      const intersects = bbox.x < rect.x + rect.w
-        && bbox.x + bbox.w > rect.x
-        && bbox.y < rect.y + rect.h
-        && bbox.y + bbox.h > rect.y
-      return intersects
-    })
-    if (onBindMetaPairsFromSelection) {
-      onBindMetaPairsFromSelection(hits)
-    }
-    setMetaDragStart(null)
-    setMetaDragRect(null)
-    setMetaDrawMode(false)
-  }, [metaDrawMode, metaDragStart, metaDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onBindMetaPairsFromSelection])
-
-  const handleElementClick = useCallback((element: TextElement, listIndex?: number) => {
-    if (metaDrawMode && onBindMetaPairSelection) {
-      setMetaClickSelection((prev) => {
-        const exists = prev.some(item => item.index === element.index)
-        const next = exists ? prev : [...prev, element]
-        if (next.length >= 2) {
-          onBindMetaPairSelection(next.slice(0, 2) as [TextElement, TextElement])
-          return []
-        }
-        return next
-      })
-    }
+  const handleElementClick = useCallback((_element: TextElement, listIndex?: number) => {
     if (listIndex !== undefined) onSelectElement(listIndex)
-  }, [metaDrawMode, onBindMetaPairSelection, onSelectElement])
+  }, [onSelectElement])
 
   const updateAnchors = useCallback(() => {
     if (!overlaySvgRef.current) return
@@ -616,6 +546,11 @@ export function SvgViewer({
     return lines
   }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect])
 
+  const boundGraphKeys = useMemo(() => {
+    if (!graphConnections) return new Set<string>()
+    return new Set(graphConnections.map(connection => connection.key))
+  }, [graphConnections])
+
 
   const updateContainerRect = useCallback(() => {
     const container = svgContainerRef.current
@@ -750,10 +685,6 @@ export function SvgViewer({
                       setTableDrawMode(false)
                       setTableDragRect(null)
                       setTableDragStart(null)
-                      setMetaDrawMode(false)
-                      setMetaDragRect(null)
-                      setMetaDragStart(null)
-                      setMetaClickSelection([])
                     }
                     return next
                   })
@@ -779,33 +710,12 @@ export function SvgViewer({
                 setTableDrawMode((prev) => !prev)
                 setTableDragRect(null)
                 setTableDragStart(null)
-                setMetaDrawMode(false)
-                setMetaDragRect(null)
-                setMetaDragStart(null)
-                setMetaClickSelection([])
                 setLineEditMode(false)
               }}
             >
               {tableEditTargetIndex !== null
                 ? (tableDrawMode ? 'Cancel Table Update' : `Update Table #${tableEditTargetIndex + 1}`)
                 : (tableDrawMode ? 'Cancel Table' : 'Add Table')}
-            </button>
-          )}
-          {onBindMetaPairsFromSelection && (
-            <button
-              className={`btn-secondary ${metaDrawMode ? 'active' : ''}`}
-              onClick={() => {
-                setMetaDrawMode((prev) => !prev)
-                setMetaDragRect(null)
-                setMetaDragStart(null)
-                setMetaClickSelection([])
-                setTableDrawMode(false)
-                setTableDragRect(null)
-                setTableDragStart(null)
-                setLineEditMode(false)
-              }}
-            >
-              {metaDrawMode ? 'Cancel Meta Bind' : 'Bind Meta List'}
             </button>
           )}
         </div>
@@ -820,6 +730,8 @@ export function SvgViewer({
                 <GraphMapOverlay
                   nodes={orderedGraphNodes}
                   sections={graphMapSections}
+                  dragEnabled={lineEditMode}
+                  boundKeys={boundGraphKeys}
                   onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
                 />
               )}
@@ -836,7 +748,7 @@ export function SvgViewer({
                     preserveAspectRatio={overlayPreserveAspectRatio}
                     ref={overlaySvgRef}
                   >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isMetaPick }) => (
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
                         className="svg-overlay-drop-zone"
@@ -858,7 +770,6 @@ export function SvgViewer({
                               ? 'svg-overlay-rect-bound'
                               : 'svg-overlay-rect-dim',
                           isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
-                          isMetaPick ? 'svg-overlay-rect-meta-pick' : '',
                         ].join(' ')}
                         x={bbox.x}
                         y={bbox.y}
@@ -874,7 +785,6 @@ export function SvgViewer({
                         className={[
                           isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label',
                           isBound && bindingType ? `svg-overlay-label-${bindingType}` : '',
-                          isMetaPick ? 'svg-overlay-label-meta-pick' : '',
                         ].join(' ')}
                         x={bbox.x + 1}
                         y={bbox.y - 1}
@@ -987,27 +897,6 @@ export function SvgViewer({
                       y={tableDragRect.y}
                       width={tableDragRect.w}
                       height={tableDragRect.h}
-                    />
-                  )}
-                  {metaDrawMode && viewBoxNumbers && (
-                    <rect
-                      className="svg-overlay-meta-capture"
-                      x={viewBoxNumbers.x}
-                      y={viewBoxNumbers.y}
-                      width={viewBoxNumbers.w}
-                      height={viewBoxNumbers.h}
-                      onMouseDown={handleMetaMouseDown}
-                      onMouseMove={handleMetaMouseMove}
-                      onMouseUp={handleMetaMouseUp}
-                    />
-                  )}
-                  {metaDragRect && (
-                    <rect
-                      className="svg-overlay-meta-select"
-                      x={metaDragRect.x}
-                      y={metaDragRect.y}
-                      width={metaDragRect.w}
-                      height={metaDragRect.h}
                     />
                   )}
                   </svg>

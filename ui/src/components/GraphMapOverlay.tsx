@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo } from 'preact/hooks'
 import type { DataKeyRef } from '../types/data-key'
+import { encodeDataKeyRef, DATA_KEY_MIME } from '../types/data-key'
 
 export type GraphMapNode = {
   key: string
@@ -20,10 +21,19 @@ interface GraphMapOverlayProps {
   nodes: GraphMapNode[]
   groups?: Array<{ id: string; title: string; nodes: GraphMapNode[] }>
   sections?: GraphMapSection[]
+  dragEnabled?: boolean
+  boundKeys?: Set<string>
   onAnchorsChange: (anchors: Map<string, { x: number; y: number }>) => void
 }
 
-export function GraphMapOverlay({ nodes, groups, sections, onAnchorsChange }: GraphMapOverlayProps) {
+export function GraphMapOverlay({
+  nodes,
+  groups,
+  sections,
+  dragEnabled = false,
+  boundKeys,
+  onAnchorsChange,
+}: GraphMapOverlayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nodeRefs = useRef(new Map<string, HTMLElement>())
 
@@ -84,18 +94,36 @@ export function GraphMapOverlay({ nodes, groups, sections, onAnchorsChange }: Gr
     return [{ id: 'all', kind: 'group', title: 'Data', nodes }]
   }, [sections, groups, nodes])
 
-  const renderNode = (node: GraphMapNode) => (
+  const renderNode = (node: GraphMapNode) => {
+    const isBound = boundKeys?.has(node.key) ?? false
+    const canDrag = dragEnabled && !isBound
+    return (
     <div
       key={node.key}
       ref={setNodeRef(node.key)}
-      className={`graph-map-node graph-map-node-${node.type} ${node.missing ? 'missing' : ''}`}
+      className={[
+        'graph-map-node',
+        `graph-map-node-${node.type}`,
+        node.missing ? 'missing' : '',
+        canDrag ? 'graph-map-node-draggable' : '',
+      ].join(' ')}
+      draggable={canDrag}
+      onDragStart={(event) => {
+        if (!canDrag) return
+        const payload = encodeDataKeyRef(node.ref)
+        event.dataTransfer?.setData(DATA_KEY_MIME, payload)
+        event.dataTransfer?.setData('application/json', payload)
+        event.dataTransfer?.setData('text/plain', payload)
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
+      }}
     >
       <div className="graph-map-node-header">
         <span className="graph-map-node-label">{node.label}</span>
         <span className="graph-map-node-type">{node.type}</span>
       </div>
     </div>
-  )
+    )
+  }
 
   return (
     <div className="graph-map-overlay" ref={containerRef}>

@@ -8,7 +8,6 @@ import type {
   KVData,
   TableData,
   TableBinding,
-  FieldBinding,
 } from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
@@ -49,7 +48,6 @@ export function App() {
   const [itemsFileName, setItemsFileName] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
-  const [metaBindCursor, setMetaBindCursor] = useState(0)
   const [editorMode, setEditorMode] = useState<'graph' | 'legacy'>('graph')
   const [graphMetaScope, setGraphMetaScope] = useState<'page' | 'global'>('page')
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
@@ -90,9 +88,6 @@ export function App() {
     if (saved.selectedPageId) setSelectedPageId(saved.selectedPageId)
   }, [])
 
-  useEffect(() => {
-    setMetaBindCursor(0)
-  }, [metaData, templateDir])
 
 
 
@@ -715,17 +710,37 @@ export function App() {
       if (!prev) return prev
       const svgId = connection.svgId
 
-      const fields = prev.fields.filter(field => !(field.svg_id === svgId && matchesValue(field.value)))
+      const fields = prev.fields.map((field) => {
+        if (field.svg_id === svgId && matchesValue(field.value)) {
+          return { ...field, svg_id: '' }
+        }
+        return field
+      })
 
       const pages = prev.pages.map((page) => {
         if (page.id !== selectedPageId) return page
-        const pageFields = (page.fields ?? []).filter(field => !(field.svg_id === svgId && matchesValue(field.value)))
+        const pageFields = (page.fields ?? []).map((field) => {
+          if (field.svg_id === svgId && matchesValue(field.value)) {
+            return { ...field, svg_id: '' }
+          }
+          return field
+        })
 
         const tables = page.tables.map((table) => {
           const headerCells = table.header?.cells
-            ? table.header.cells.filter(cell => !(cell.svg_id === svgId && matchesValue(cell.value, table.source)))
+            ? table.header.cells.map((cell) => {
+              if (cell.svg_id === svgId && matchesValue(cell.value, table.source)) {
+                return { ...cell, svg_id: '' }
+              }
+              return cell
+            })
             : undefined
-          const cells = table.cells.filter(cell => !(cell.svg_id === svgId && matchesValue(cell.value, table.source)))
+          const cells = table.cells.map((cell) => {
+            if (cell.svg_id === svgId && matchesValue(cell.value, table.source)) {
+              return { ...cell, svg_id: '' }
+            }
+            return cell
+          })
           return {
             ...table,
             header: headerCells ? { cells: headerCells } : table.header,
@@ -744,219 +759,6 @@ export function App() {
     setNotification('Binding removed.')
   }, [template, selectedPageId, selectedBindingSvgId])
 
-  const handleBindMetaPairs = useCallback(async (hitElements: TextElement[]) => {
-    if (!template || !selectedPageId) return
-    if (!metaData) {
-      setNotification('Load meta data first.')
-      return
-    }
-    const entries = Object.entries(metaData)
-    if (entries.length === 0) {
-      setNotification('Meta data is empty.')
-      return
-    }
-    const startIndex = metaBindCursor
-    if (startIndex >= entries.length) {
-      setNotification('No remaining meta keys to bind.')
-      return
-    }
-    if (!selectedSvg) {
-      setNotification('Select a page before binding meta.')
-      return
-    }
-
-    const candidates = hitElements.filter(el => el.id || el.suggestedId)
-    if (candidates.length < 2) {
-      setNotification('Select at least two elements (key and value).')
-      return
-    }
-
-    const sorted = [...candidates].sort((a, b) => {
-      const dy = a.bbox.y - b.bbox.y
-      if (Math.abs(dy) > 1) return dy
-      return a.bbox.x - b.bbox.x
-    })
-    const heights = sorted.map(el => el.bbox.h).filter(h => h > 0)
-    const medianHeight = (() => {
-      if (heights.length === 0) return 10
-      const copy = [...heights].sort((a, b) => a - b)
-      const mid = Math.floor(copy.length / 2)
-      if (copy.length % 2 === 1) return copy[mid]
-      return (copy[mid - 1] + copy[mid]) / 2
-    })()
-    const rowGap = Math.max(6, medianHeight * 0.9)
-
-    const rows: TextElement[][] = []
-    for (const el of sorted) {
-      const current = rows[rows.length - 1]
-      if (!current) {
-        rows.push([el])
-        continue
-      }
-      const currentY = current.reduce((sum, item) => sum + item.bbox.y, 0) / current.length
-      if (Math.abs(el.bbox.y - currentY) <= rowGap) {
-        current.push(el)
-      } else {
-        rows.push([el])
-      }
-    }
-
-    const pairs = rows.map((row) => {
-      const rowSorted = [...row].sort((a, b) => a.bbox.x - b.bbox.x)
-      if (rowSorted.length < 2) return null
-      return { keyEl: rowSorted[0], valueEl: rowSorted[rowSorted.length - 1] }
-    }).filter((pair): pair is { keyEl: TextElement; valueEl: TextElement } => Boolean(pair))
-
-    if (pairs.length === 0) {
-      setNotification('No key/value pairs found in selection.')
-      return
-    }
-
-    const remainingEntries = entries.slice(startIndex)
-    const maxPairs = Math.min(pairs.length, remainingEntries.length)
-    const assignments = new Map<number, string>()
-    const resolveId = (el: TextElement) => {
-      if (el.id) return el.id
-      if (el.suggestedId) {
-        assignments.set(el.index, el.suggestedId)
-        return el.suggestedId
-      }
-      return null
-    }
-
-    const bindings: Array<{ key: string; keySvgId: string; valueSvgId: string }> = []
-    let skipped = 0
-    for (let i = 0; i < maxPairs; i += 1) {
-      const [metaKey] = remainingEntries[i]
-      const { keyEl, valueEl } = pairs[i]
-      const keyId = resolveId(keyEl)
-      const valueId = resolveId(valueEl)
-      if (!keyId || !valueId) {
-        skipped += 1
-        continue
-      }
-      bindings.push({ key: metaKey, keySvgId: keyId, valueSvgId: valueId })
-    }
-
-    if (bindings.length === 0) {
-      setNotification('No bindable pairs (missing IDs).')
-      return
-    }
-
-    const svgPath = `${templateDir}/${selectedSvg}`
-    if (assignments.size > 0) {
-      const assignmentList = Array.from(assignments.entries()).map(([index, id]) => ({
-        selector: { byIndex: index },
-        id,
-      }))
-      try {
-        await rpc.setSvgIds(svgPath, assignmentList)
-        await loadInspectText(svgPath)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to assign IDs'
-        setNotification(message)
-        return
-      }
-    }
-
-    setTemplate((prev) => {
-      if (!prev) return prev
-      const applyField = (fields: FieldBinding[], svg_id: string, value: FieldBinding['value']) => {
-        const idx = fields.findIndex(field => field.svg_id === svg_id)
-        if (idx >= 0) {
-          fields[idx] = { ...fields[idx], svg_id, value }
-        } else {
-          fields.push({ svg_id, value })
-        }
-      }
-
-      const pages = prev.pages.map((page) => {
-        if (page.id !== selectedPageId) return page
-        if (graphMetaScope !== 'page') return page
-        const fields = [...(page.fields ?? [])]
-        for (const binding of bindings) {
-          applyField(fields, binding.keySvgId, { type: 'static', text: binding.key })
-          applyField(fields, binding.valueSvgId, { type: 'data', source: 'meta', key: binding.key })
-        }
-        return { ...page, fields }
-      })
-
-      if (graphMetaScope === 'global') {
-        const fields = [...prev.fields]
-        for (const binding of bindings) {
-          applyField(fields, binding.keySvgId, { type: 'static', text: binding.key })
-          applyField(fields, binding.valueSvgId, { type: 'data', source: 'meta', key: binding.key })
-        }
-        return { ...prev, fields, pages }
-      }
-
-      return { ...prev, pages }
-    })
-
-    setMetaBindCursor(startIndex + maxPairs)
-    const extra = skipped > 0 ? ` (${skipped} skipped)` : ''
-    setNotification(`Bound ${bindings.length} meta pairs.${extra}`)
-  }, [template, selectedPageId, metaData, selectedSvg, templateDir, graphMetaScope, loadInspectText, metaBindCursor])
-
-  const handleBindMetaPair = useCallback(async (pair: [TextElement, TextElement]) => {
-    if (!template || !selectedPageId) return
-    if (!metaData) {
-      setNotification('Load meta data first.')
-      return
-    }
-    const entries = Object.entries(metaData)
-    if (entries.length === 0) {
-      setNotification('Meta data is empty.')
-      return
-    }
-    if (metaBindCursor >= entries.length) {
-      setNotification('No remaining meta keys to bind.')
-      return
-    }
-
-    const [metaKey] = entries[metaBindCursor]
-    const sorted = [...pair].sort((a, b) => a.bbox.x - b.bbox.x)
-    const keyEl = sorted[0]
-    const valueEl = sorted[1]
-
-    const keyId = await ensureSvgIdForElement(keyEl)
-    if (!keyId) return
-    const valueId = await ensureSvgIdForElement(valueEl)
-    if (!valueId) return
-
-    setTemplate((prev) => {
-      if (!prev) return prev
-      const applyField = (fields: FieldBinding[], svg_id: string, value: FieldBinding['value']) => {
-        const idx = fields.findIndex(field => field.svg_id === svg_id)
-        if (idx >= 0) {
-          fields[idx] = { ...fields[idx], svg_id, value }
-        } else {
-          fields.push({ svg_id, value })
-        }
-      }
-
-      const pages = prev.pages.map((page) => {
-        if (page.id !== selectedPageId) return page
-        if (graphMetaScope !== 'page') return page
-        const fields = [...(page.fields ?? [])]
-        applyField(fields, keyId, { type: 'static', text: metaKey })
-        applyField(fields, valueId, { type: 'data', source: 'meta', key: metaKey })
-        return { ...page, fields }
-      })
-
-      if (graphMetaScope === 'global') {
-        const fields = [...prev.fields]
-        applyField(fields, keyId, { type: 'static', text: metaKey })
-        applyField(fields, valueId, { type: 'data', source: 'meta', key: metaKey })
-        return { ...prev, fields, pages }
-      }
-
-      return { ...prev, pages }
-    })
-
-    setMetaBindCursor((prev) => prev + 1)
-    setNotification(`Bound ${metaKey}`)
-  }, [template, selectedPageId, metaData, metaBindCursor, graphMetaScope, ensureSvgIdForElement])
 
   const templateModels = useMemo(() => {
     if (!template) return null
@@ -1112,6 +914,20 @@ export function App() {
       }
     }
 
+    const hasMetaData = Boolean(metaData)
+    const hasItemsData = Boolean(itemsData?.headers && itemsData.headers.length > 0)
+    const missingFor = (ref: DataKeyRef) => {
+      if (ref.source === 'meta') {
+        if (!hasMetaData) return false
+        return !(metaData && ref.key in metaData)
+      }
+      if (ref.source === 'items') {
+        if (!hasItemsData) return false
+        return !(itemsData?.headers ?? []).includes(ref.key)
+      }
+      return false
+    }
+
     if (metaData) {
       for (const key of Object.keys(metaData)) {
         addNode({ source: 'meta', key }, key, false)
@@ -1121,6 +937,38 @@ export function App() {
     if (itemsData?.headers) {
       for (const key of itemsData.headers) {
         addNode({ source: 'items', key }, key, false)
+      }
+    }
+
+    if (template) {
+      const toDataRef = (value: { type: string; source?: string; key?: string }, fallbackSource?: string): DataKeyRef | null => {
+        if (value.type !== 'data' || !value.key) return null
+        const source = value.source || fallbackSource || 'meta'
+        const normalized: DataKeyRef['source'] = source === 'items' ? 'items' : 'meta'
+        return { source: normalized, key: value.key }
+      }
+
+      for (const field of template.fields) {
+        const ref = toDataRef(field.value)
+        if (ref) addNode(ref, ref.key, missingFor(ref))
+      }
+
+      const page = template.pages.find(p => p.id === selectedPageId)
+      if (page) {
+        for (const field of page.fields ?? []) {
+          const ref = toDataRef(field.value)
+          if (ref) addNode(ref, ref.key, missingFor(ref))
+        }
+        for (const table of page.tables ?? []) {
+          for (const cell of table.header?.cells ?? []) {
+            const ref = toDataRef(cell.value, table.source || 'items')
+            if (ref) addNode(ref, ref.key, missingFor(ref))
+          }
+          for (const cell of table.cells ?? []) {
+            const ref = toDataRef(cell.value, table.source || 'items')
+            if (ref) addNode(ref, ref.key, missingFor(ref))
+          }
+        }
       }
     }
 
@@ -1436,8 +1284,6 @@ export function App() {
                   graphMapNodes={graphNodes}
                   graphConnections={graphConnections}
                   tableEditTargetIndex={graphEditTableIndex}
-                  onBindMetaPairsFromSelection={handleBindMetaPairs}
-                  onBindMetaPairSelection={handleBindMetaPair}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
                   onCreateTableFromSelection={(_rect, hitElements) => {
                     if (!template || !selectedPageId) return
