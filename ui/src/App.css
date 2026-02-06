@@ -103,8 +103,31 @@
 }
 
 .graph-connector-layer line {
-  stroke: rgba(52, 152, 219, 0.7);
   stroke-width: 1.5px;
+}
+
+.graph-connector-line-meta {
+  stroke: #3498db;
+}
+
+.graph-connector-line-items {
+  stroke: #27ae60;
+}
+
+.graph-connector-line-static {
+  stroke: #c0392b;
+}
+
+.graph-connector-solid {
+  stroke-dasharray: none;
+}
+
+.graph-connector-dashed {
+  stroke-dasharray: 6 4;
+}
+
+.graph-connector-dotted {
+  stroke-dasharray: 2 4;
 }
 
 .btn-primary,
@@ -516,6 +539,7 @@
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .svg-preview-actions .btn-secondary {
@@ -525,6 +549,21 @@
   background: #95a5a6;
   color: #fff;
   cursor: pointer;
+}
+
+.svg-preview-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #556;
+}
+
+.svg-preview-select select {
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 4px;
+  background: #fff;
 }
 
 .svg-container {
@@ -589,6 +628,33 @@
   vector-effect: non-scaling-stroke;
   pointer-events: all;
   cursor: pointer;
+}
+
+.svg-overlay-rect-meta {
+  fill: rgba(52, 152, 219, 0.18);
+  stroke: #3498db;
+}
+
+.svg-overlay-rect-items {
+  fill: rgba(46, 204, 113, 0.18);
+  stroke: #27ae60;
+}
+
+.svg-overlay-rect-static {
+  fill: rgba(231, 76, 60, 0.15);
+  stroke: #c0392b;
+}
+
+.svg-overlay-label-meta {
+  fill: #1d4f91;
+}
+
+.svg-overlay-label-items {
+  fill: #1e7e34;
+}
+
+.svg-overlay-label-static {
+  fill: #c0392b;
 }
 
 .svg-overlay-rect-linked {
@@ -1235,7 +1301,7 @@
   border: 1px solid #e3e7ed;
   border-radius: 8px;
   padding: 0.45rem 0.6rem;
-  background: #f9fafc;
+  background: #fff;
   margin-bottom: 0.45rem;
   cursor: default;
 }
@@ -1244,6 +1310,24 @@
   border-style: dashed;
   color: #b94a48;
   background: #fff5f5;
+}
+
+.graph-map-node-meta {
+  border-color: #c5e1ff;
+  box-shadow: inset 4px 0 0 #3498db;
+  color: #1d4f91;
+}
+
+.graph-map-node-items {
+  border-color: #d9f2df;
+  box-shadow: inset 4px 0 0 #27ae60;
+  color: #1e7e34;
+}
+
+.graph-map-node-static {
+  border-color: #f8d7da;
+  box-shadow: inset 4px 0 0 #c0392b;
+  color: #c0392b;
 }
 
 .graph-map-node-header {

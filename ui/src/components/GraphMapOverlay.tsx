@@ -71,7 +71,7 @@ export function GraphMapOverlay({ nodes, onAnchorsChange }: GraphMapOverlayProps
             <div
               key={node.key}
               ref={setNodeRef(node.key)}
-              className={`graph-map-node ${node.missing ? 'missing' : ''}`}
+              className={`graph-map-node graph-map-node-${node.type} ${node.missing ? 'missing' : ''}`}
             >
               <div className="graph-map-node-header">
                 <span className="graph-map-node-label">{node.label}</span>

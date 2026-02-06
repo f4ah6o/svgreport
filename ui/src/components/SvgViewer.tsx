@@ -59,6 +59,7 @@ export function SvgViewer({
   const showElementMap = true
   const showBindingElements = true
   const showNoBindingElements = true
+  const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid')
   const [showGraphLines, setShowGraphLines] = useState(true)
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
@@ -159,6 +160,21 @@ export function SvgViewer({
     }))
   }, [elements, resolvedBBoxByIndex])
 
+  const bindingTypeBySvgId = useMemo(() => {
+    const map = new Map<string, DataKeyRef['source']>()
+    if (!graphConnections) return map
+    const priority: Record<DataKeyRef['source'], number> = { items: 3, meta: 2, static: 1 }
+    for (const connection of graphConnections) {
+      const ref = decodeDataKeyRef(connection.key)
+      const type = ref?.source || 'meta'
+      const current = map.get(connection.svgId)
+      if (!current || priority[type] > priority[current]) {
+        map.set(connection.svgId, type)
+      }
+    }
+    return map
+  }, [graphConnections])
+
   const getDropPadding = useCallback((bbox: { w: number; h: number }) => {
     const base = Math.min(bbox.w, bbox.h)
     return Math.max(6, Math.min(16, base * 0.2))
@@ -169,10 +185,11 @@ export function SvgViewer({
       const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
       const listIndex = indexByElementIndex.get(element.index)
       const isBound = Boolean(element.id && bindingSet.has(element.id))
+      const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
       const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
-      return { element, bbox, listIndex, isBound, isHighlighted }
+      return { element, bbox, listIndex, isBound, isHighlighted, bindingType }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId])
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId])
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
@@ -348,20 +365,24 @@ export function SvgViewer({
   const graphLines = useMemo(() => {
     if (!graphConnections || graphConnections.length === 0) return []
     if (!graphContainerRect.width || !graphContainerRect.height) return []
-    const lines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
+    const lines: Array<{ x1: number; y1: number; x2: number; y2: number; type: DataKeyRef['source'] }> = []
     for (const connection of graphConnections) {
       const start = graphDataAnchors.get(connection.key)
       const end = graphSvgAnchors.get(connection.svgId)
       if (!start || !end) continue
+      const ref = decodeDataKeyRef(connection.key)
+      const type = ref?.source || 'meta'
       lines.push({
         x1: start.x - graphContainerRect.left,
         y1: start.y - graphContainerRect.top,
         x2: end.x - graphContainerRect.left,
         y2: end.y - graphContainerRect.top,
+        type,
       })
     }
     return lines
   }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect])
+
 
   const updateContainerRect = useCallback(() => {
     const container = svgContainerRef.current
@@ -474,9 +495,19 @@ export function SvgViewer({
         <div className="svg-path">{svgPath}</div>
         <div className="svg-preview-actions">
           {graphConnections && graphConnections.length > 0 && (
-            <button className="btn-secondary" onClick={() => setShowGraphLines(v => !v)}>
-              {showGraphLines ? 'Hide Lines' : 'Show Lines'}
-            </button>
+            <>
+              <button className="btn-secondary" onClick={() => setShowGraphLines(v => !v)}>
+                {showGraphLines ? 'Hide Lines' : 'Show Lines'}
+              </button>
+              <label className="svg-preview-select">
+                Line Style
+                <select value={lineStyle} onChange={(e) => setLineStyle((e.target as HTMLSelectElement).value as typeof lineStyle)}>
+                  <option value="solid">Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                </select>
+              </label>
+            </>
           )}
         </div>
 
@@ -505,7 +536,7 @@ export function SvgViewer({
                     preserveAspectRatio={overlayPreserveAspectRatio}
                     ref={overlaySvgRef}
                   >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted }) => (
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
                         className="svg-overlay-drop-zone"
@@ -520,13 +551,14 @@ export function SvgViewer({
                         onDrop={handleDrop(element)}
                       />
                       <rect
-                        className={
+                        className={[
                           isHighlighted
                             ? 'svg-overlay-rect-linked'
                             : isBound
                               ? 'svg-overlay-rect-bound'
-                              : 'svg-overlay-rect-dim'
-                        }
+                              : 'svg-overlay-rect-dim',
+                          isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
+                        ].join(' ')}
                         x={bbox.x}
                         y={bbox.y}
                         width={Math.max(bbox.w, 6)}
@@ -538,7 +570,10 @@ export function SvgViewer({
                         onDrop={handleDrop(element)}
                       />
                       <text
-                        className={isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label'}
+                        className={[
+                          isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label',
+                          isBound && bindingType ? `svg-overlay-label-${bindingType}` : '',
+                        ].join(' ')}
                         x={bbox.x + 1}
                         y={bbox.y - 1}
                         style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
@@ -644,6 +679,7 @@ export function SvgViewer({
                 {graphLines.map((line, idx) => (
                   <line
                     key={idx}
+                    className={`graph-connector-line graph-connector-line-${line.type} graph-connector-${lineStyle}`}
                     x1={line.x1}
                     y1={line.y1}
                     x2={line.x2}
