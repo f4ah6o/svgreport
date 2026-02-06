@@ -52,6 +52,7 @@ export function App() {
   const [graphMetaScope, setGraphMetaScope] = useState<'page' | 'global'>('page')
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
   const [graphTableIndex, setGraphTableIndex] = useState(0)
+  const [graphEditTableIndex, setGraphEditTableIndex] = useState<number | null>(null)
   const [focusTarget, setFocusTarget] = useState<{ tab: 'pages' | 'fields' | 'formatters'; path: string } | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
   const [validationGroupsOpen, setValidationGroupsOpen] = useState<Record<'pages' | 'fields' | 'formatters' | 'other', boolean>>({
@@ -96,7 +97,10 @@ export function App() {
     if (graphTableIndex >= page.tables.length) {
       setGraphTableIndex(0)
     }
-  }, [template, selectedPageId, graphTableIndex])
+    if (graphEditTableIndex !== null && graphEditTableIndex >= page.tables.length) {
+      setGraphEditTableIndex(null)
+    }
+  }, [template, selectedPageId, graphTableIndex, graphEditTableIndex])
 
   const loadTemplateByPath = useCallback(async (path: string) => {
     setIsLoading(true)
@@ -582,6 +586,26 @@ export function App() {
     })
   }, [])
 
+  const handleDeleteTableGraph = useCallback((pageId: string, tableIndex: number) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => {
+        if (page.id !== pageId) return page
+        const tables = page.tables.filter((_, idx) => idx !== tableIndex)
+        return { ...page, tables }
+      })
+      return { ...prev, pages }
+    })
+    setGraphEditTableIndex((prev) => (prev === tableIndex ? null : prev))
+    setGraphTableIndex((prev) => (prev > 0 ? Math.max(0, prev - 1) : 0))
+    setNotification(`Deleted Table #${tableIndex + 1}`)
+  }, [])
+
+  const handleEditTableCells = useCallback((tableIndex: number) => {
+    setGraphEditTableIndex(tableIndex)
+    setNotification(`Draw to update Table #${tableIndex + 1}`)
+  }, [])
+
   const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static'; key: string }, element: TextElement) => {
     if (!template || !selectedPageId) return
     const svgId = await ensureSvgIdForElement(element)
@@ -759,11 +783,11 @@ export function App() {
       return svgIdSet.has(svgId)
     }
 
-    const connections: Array<{ key: string; svgId: string }> = []
+    const connections: Array<{ key: string; svgId: string; tableIndex?: number }> = []
 
-    const addConnection = (ref: DataKeyRef | null, svgId?: string) => {
+    const addConnection = (ref: DataKeyRef | null, svgId?: string, tableIndex?: number) => {
       if (!ref || !includeSvgId(svgId)) return
-      connections.push({ key: encodeDataKeyRef(ref), svgId: svgId! })
+      connections.push({ key: encodeDataKeyRef(ref), svgId: svgId!, tableIndex })
     }
 
     const toDataRef = (
@@ -791,12 +815,12 @@ export function App() {
       addConnection(toDataRef(field.value), field.svg_id)
     }
 
-    for (const table of page.tables) {
+    for (const [tableIndex, table] of page.tables.entries()) {
       for (const cell of table.header?.cells ?? []) {
-        addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id)
+        addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
       for (const cell of table.cells) {
-        addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id)
+        addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
     }
 
@@ -1116,6 +1140,10 @@ export function App() {
                 onItemsTargetChange={setGraphItemsTarget}
                 activeTableIndex={graphTableIndex}
                 onActiveTableIndexChange={setGraphTableIndex}
+                editTableIndex={graphEditTableIndex}
+                onEditTableCells={handleEditTableCells}
+                onCancelEditTable={() => setGraphEditTableIndex(null)}
+                onDeleteTable={handleDeleteTableGraph}
                 onAddTable={handleAddTableGraph}
                 onUpdateTable={handleUpdateTableGraph}
               />
@@ -1133,6 +1161,67 @@ export function App() {
                   onDropData={handleMapDataToSvg}
                   graphMapNodes={graphNodes}
                   graphConnections={graphConnections}
+                  tableEditTargetIndex={graphEditTableIndex}
+                  onCreateTableFromSelection={(_rect, hitElements) => {
+                    if (!template || !selectedPageId) return
+                    const page = template.pages.find(p => p.id === selectedPageId)
+                    if (!page) return
+                    const filtered = hitElements.filter(el => el.id || el.suggestedId)
+                    if (filtered.length === 0) {
+                      setNotification('No elements found inside selection.')
+                      return
+                    }
+
+                    const headers = itemsData?.headers || []
+                    const guessKey = (el: TextElement) => {
+                      const candidates: string[] = []
+                      if (el.id) candidates.push(el.id)
+                      if (el.suggestedId && el.suggestedId !== el.id) candidates.push(el.suggestedId)
+                      if (el.id?.startsWith('item_')) candidates.push(el.id.replace(/^item_/, ''))
+                      if (el.suggestedId?.startsWith('item_')) candidates.push(el.suggestedId.replace(/^item_/, ''))
+                      const match = headers.find(h => candidates.includes(h))
+                      return match || candidates[0] || `col_${el.index}`
+                    }
+
+                    const sorted = [...filtered].sort((a, b) => {
+                      const ab = (a.bbox.x + a.bbox.w / 2) - (b.bbox.x + b.bbox.w / 2)
+                      if (Math.abs(ab) > 1) return ab
+                      return (a.bbox.y + a.bbox.h / 2) - (b.bbox.y + b.bbox.h / 2)
+                    })
+
+                    const cells = sorted.map((el) => ({
+                      svg_id: (el.id || el.suggestedId || '').trim(),
+                      value: makeDataValue('items', guessKey(el)),
+                    })).filter(cell => cell.svg_id)
+
+                    setTemplate((prev) => {
+                      if (!prev) return prev
+                      const pages = prev.pages.map((p) => {
+                        if (p.id !== selectedPageId) return p
+                        if (graphEditTableIndex !== null && p.tables[graphEditTableIndex]) {
+                          const tables = p.tables.map((table, idx) =>
+                            idx === graphEditTableIndex ? { ...table, cells } : table
+                          )
+                          return { ...p, tables }
+                        }
+                        const nextTable = {
+                          source: 'items',
+                          row_group_id: 'rows',
+                          row_height_mm: 6,
+                          rows_per_page: 10,
+                          cells,
+                        }
+                        return { ...p, tables: [...p.tables, nextTable] }
+                      })
+                      return { ...prev, pages }
+                    })
+                    if (graphEditTableIndex !== null) {
+                      setNotification(`Updated Table #${graphEditTableIndex + 1} with ${cells.length} cells.`)
+                      setGraphEditTableIndex(null)
+                    } else {
+                      setNotification(`Added table from ${cells.length} elements.`)
+                    }
+                  }}
                   pendingId={pendingId}
                   onPendingIdChange={setPendingId}
                   onUseSuggestedId={handleUseSuggestedId}

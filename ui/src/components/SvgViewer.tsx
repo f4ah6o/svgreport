@@ -20,7 +20,9 @@ interface SvgViewerProps {
   onDropBinding: (ref: BindingRef, element: TextElement) => void
   onDropData?: (ref: DataKeyRef, element: TextElement) => void
   graphMapNodes?: GraphMapNode[]
-  graphConnections?: Array<{ key: string; svgId: string }>
+  graphConnections?: Array<{ key: string; svgId: string; tableIndex?: number }>
+  tableEditTargetIndex?: number | null
+  onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
   onUseSuggestedId: () => void
@@ -41,6 +43,8 @@ export function SvgViewer({
   onDropData,
   graphMapNodes,
   graphConnections,
+  tableEditTargetIndex = null,
+  onCreateTableFromSelection,
   pendingId,
   onPendingIdChange,
   onUseSuggestedId,
@@ -61,6 +65,9 @@ export function SvgViewer({
   const showNoBindingElements = true
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid')
   const [showGraphLines, setShowGraphLines] = useState(true)
+  const [tableDrawMode, setTableDrawMode] = useState(false)
+  const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphContainerRect, setGraphContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
@@ -138,6 +145,13 @@ export function SvgViewer({
       return true
     })
   }, [elements, showBindingElements, showNoBindingElements, bindingSet])
+
+  const viewBoxNumbers = useMemo(() => {
+    if (!overlayViewBox) return null
+    const parts = overlayViewBox.split(/\s+/).map((value) => parseFloat(value))
+    if (parts.length < 4 || parts.some((value) => Number.isNaN(value))) return null
+    return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] }
+  }, [overlayViewBox])
 
   const indexByElementIndex = useMemo(() => {
     const map = new Map<number, number>()
@@ -220,6 +234,63 @@ export function SvgViewer({
       event.dataTransfer.dropEffect = 'copy'
     }
   }, [])
+
+  const toSvgPoint = useCallback((event: MouseEvent | DragEvent) => {
+    if (!overlaySvgRef.current) return null
+    const ctm = overlaySvgRef.current.getScreenCTM()
+    if (!ctm) return null
+    return new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
+  }, [])
+
+  const handleTableMouseDown = useCallback((event: MouseEvent) => {
+    if (!tableDrawMode) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    setTableDragStart({ x: point.x, y: point.y })
+    setTableDragRect({ x: point.x, y: point.y, w: 0, h: 0 })
+  }, [tableDrawMode, toSvgPoint])
+
+  const handleTableMouseMove = useCallback((event: MouseEvent) => {
+    if (!tableDrawMode || !tableDragStart) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    const x = Math.min(tableDragStart.x, point.x)
+    const y = Math.min(tableDragStart.y, point.y)
+    const w = Math.abs(point.x - tableDragStart.x)
+    const h = Math.abs(point.y - tableDragStart.y)
+    setTableDragRect({ x, y, w, h })
+  }, [tableDrawMode, tableDragStart, toSvgPoint])
+
+  const handleTableMouseUp = useCallback((event: MouseEvent) => {
+    if (!tableDrawMode || !tableDragStart || !tableDragRect) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    const x = Math.min(tableDragStart.x, point.x)
+    const y = Math.min(tableDragStart.y, point.y)
+    const w = Math.abs(point.x - tableDragStart.x)
+    const h = Math.abs(point.y - tableDragStart.y)
+    const rect = { x, y, w, h }
+    const hits = elements.filter((element) => {
+      const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+      const intersects = bbox.x < rect.x + rect.w
+        && bbox.x + bbox.w > rect.x
+        && bbox.y < rect.y + rect.h
+        && bbox.y + bbox.h > rect.y
+      return intersects
+    })
+    if (onCreateTableFromSelection) {
+      onCreateTableFromSelection(rect, hits)
+    }
+    setTableDragStart(null)
+    setTableDragRect(null)
+    setTableDrawMode(false)
+  }, [tableDrawMode, tableDragStart, tableDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onCreateTableFromSelection])
 
   const updateAnchors = useCallback(() => {
     if (!overlaySvgRef.current) return
@@ -361,6 +432,67 @@ export function SvgViewer({
       return (indexByKey.get(a.key) ?? 0) - (indexByKey.get(b.key) ?? 0)
     })
   }, [graphMapNodes, graphConnections, graphSvgAnchors])
+
+  const graphMapGroups = useMemo(() => {
+    if (!graphMapNodes || graphMapNodes.length === 0) return []
+    const byKey = new Map(graphMapNodes.map(node => [node.key, node]))
+    const orderIndex = new Map(orderedGraphNodes.map((node, idx) => [node.key, idx]))
+
+    const itemGroups = new Map<number, Set<string>>()
+    const itemUnassigned = new Set<string>()
+    for (const node of graphMapNodes) {
+      if (node.type !== 'items') continue
+      itemUnassigned.add(node.key)
+    }
+
+    if (graphConnections) {
+      for (const connection of graphConnections) {
+        const ref = decodeDataKeyRef(connection.key)
+        if (ref?.source !== 'items') continue
+        if (connection.tableIndex === undefined || connection.tableIndex === null) {
+          itemUnassigned.add(connection.key)
+          continue
+        }
+        const set = itemGroups.get(connection.tableIndex) || new Set<string>()
+        set.add(connection.key)
+        itemGroups.set(connection.tableIndex, set)
+        itemUnassigned.delete(connection.key)
+      }
+    }
+
+    const toNodes = (keys: Set<string>) => {
+      return Array.from(keys)
+        .map(key => byKey.get(key))
+        .filter((node): node is GraphMapNode => Boolean(node))
+        .sort((a, b) => (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0))
+    }
+
+    const groups: Array<{ id: string; title: string; nodes: GraphMapNode[] }> = []
+    const tableIndices = Array.from(itemGroups.keys()).sort((a, b) => a - b)
+    for (const tableIndex of tableIndices) {
+      const nodes = toNodes(itemGroups.get(tableIndex) || new Set())
+      if (nodes.length > 0) {
+        groups.push({ id: `table-${tableIndex}`, title: `Table ${tableIndex + 1}`, nodes })
+      }
+    }
+    if (itemUnassigned.size > 0) {
+      groups.push({ id: 'table-unassigned', title: 'Items (Unassigned)', nodes: toNodes(itemUnassigned) })
+    }
+
+    const metaNodes = graphMapNodes.filter(node => node.type === 'meta')
+      .sort((a, b) => (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0))
+    if (metaNodes.length > 0) {
+      groups.push({ id: 'meta', title: 'Meta', nodes: metaNodes })
+    }
+
+    const staticNodes = graphMapNodes.filter(node => node.type === 'static')
+      .sort((a, b) => (orderIndex.get(a.key) ?? 0) - (orderIndex.get(b.key) ?? 0))
+    if (staticNodes.length > 0) {
+      groups.push({ id: 'static', title: 'Static', nodes: staticNodes })
+    }
+
+    return groups
+  }, [graphMapNodes, graphConnections, orderedGraphNodes])
 
   const graphLines = useMemo(() => {
     if (!graphConnections || graphConnections.length === 0) return []
@@ -509,6 +641,20 @@ export function SvgViewer({
               </label>
             </>
           )}
+          {onCreateTableFromSelection && (
+            <button
+              className={`btn-secondary ${tableDrawMode ? 'active' : ''}`}
+              onClick={() => {
+                setTableDrawMode((prev) => !prev)
+                setTableDragRect(null)
+                setTableDragStart(null)
+              }}
+            >
+              {tableEditTargetIndex !== null
+                ? (tableDrawMode ? 'Cancel Table Update' : `Update Table #${tableEditTargetIndex + 1}`)
+                : (tableDrawMode ? 'Cancel Table' : 'Add Table')}
+            </button>
+          )}
         </div>
 
         {loading && <div className="loading">Loading SVG...</div>}
@@ -520,6 +666,7 @@ export function SvgViewer({
               {graphMapNodes && (
                 <GraphMapOverlay
                   nodes={orderedGraphNodes}
+                  groups={graphMapGroups}
                   onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
                 />
               )}
@@ -665,6 +812,28 @@ export function SvgViewer({
                       </text>
                     </g>
                   ))}
+                  {/* capture + selection are rendered last to stay on top while drawing */}
+                  {tableDrawMode && viewBoxNumbers && (
+                    <rect
+                      className="svg-overlay-table-capture"
+                      x={viewBoxNumbers.x}
+                      y={viewBoxNumbers.y}
+                      width={viewBoxNumbers.w}
+                      height={viewBoxNumbers.h}
+                      onMouseDown={handleTableMouseDown}
+                      onMouseMove={handleTableMouseMove}
+                      onMouseUp={handleTableMouseUp}
+                    />
+                  )}
+                  {tableDragRect && (
+                    <rect
+                      className="svg-overlay-table-select"
+                      x={tableDragRect.x}
+                      y={tableDragRect.y}
+                      width={tableDragRect.w}
+                      height={tableDragRect.h}
+                    />
+                  )}
                   </svg>
                 )}
               </div>

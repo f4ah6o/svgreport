@@ -11,10 +11,11 @@ export type GraphMapNode = {
 
 interface GraphMapOverlayProps {
   nodes: GraphMapNode[]
+  groups?: Array<{ id: string; title: string; nodes: GraphMapNode[] }>
   onAnchorsChange: (anchors: Map<string, { x: number; y: number }>) => void
 }
 
-export function GraphMapOverlay({ nodes, onAnchorsChange }: GraphMapOverlayProps) {
+export function GraphMapOverlay({ nodes, groups, onAnchorsChange }: GraphMapOverlayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const nodeRefs = useRef(new Map<string, HTMLElement>())
 
@@ -60,22 +61,33 @@ export function GraphMapOverlay({ nodes, onAnchorsChange }: GraphMapOverlayProps
     }
   }, [updateAnchors])
 
+  const groupList = groups && groups.length > 0
+    ? groups.filter(group => group.nodes.length > 0)
+    : [{ id: 'all', title: 'Data', nodes }]
+
   return (
     <div className="graph-map-overlay" ref={containerRef}>
       <div className="graph-map-title">Graph Map</div>
       {nodes.length === 0 ? (
         <p className="empty">No data nodes.</p>
       ) : (
-        <div className="graph-map-list">
-          {nodes.map((node) => (
-            <div
-              key={node.key}
-              ref={setNodeRef(node.key)}
-              className={`graph-map-node graph-map-node-${node.type} ${node.missing ? 'missing' : ''}`}
-            >
-              <div className="graph-map-node-header">
-                <span className="graph-map-node-label">{node.label}</span>
-                <span className="graph-map-node-type">{node.type}</span>
+        <div className="graph-map-groups">
+          {groupList.map((group) => (
+            <div key={group.id} className={`graph-map-group ${group.id.startsWith('table') ? 'graph-map-group-table' : ''}`}>
+              <div className="graph-map-group-title">{group.title}</div>
+              <div className="graph-map-list">
+                {group.nodes.map((node) => (
+                  <div
+                    key={node.key}
+                    ref={setNodeRef(node.key)}
+                    className={`graph-map-node graph-map-node-${node.type} ${node.missing ? 'missing' : ''}`}
+                  >
+                    <div className="graph-map-node-header">
+                      <span className="graph-map-node-label">{node.label}</span>
+                      <span className="graph-map-node-type">{node.type}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}

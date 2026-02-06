@@ -17,6 +17,10 @@ interface GraphEditorProps {
   onItemsTargetChange: (target: 'body' | 'header') => void
   activeTableIndex: number
   onActiveTableIndexChange: (index: number) => void
+  editTableIndex: number | null
+  onEditTableCells: (tableIndex: number) => void
+  onCancelEditTable: () => void
+  onDeleteTable: (pageId: string, tableIndex: number) => void
   onAddTable: (pageId: string) => void
   onUpdateTable: (pageId: string, tableIndex: number, patch: Partial<TableBinding>) => void
 }
@@ -35,6 +39,10 @@ export function GraphEditor({
   onItemsTargetChange,
   activeTableIndex,
   onActiveTableIndexChange,
+  editTableIndex,
+  onEditTableCells,
+  onCancelEditTable,
+  onDeleteTable,
   onAddTable,
   onUpdateTable,
 }: GraphEditorProps) {
@@ -230,9 +238,37 @@ export function GraphEditor({
                 ))}
               </select>
 
+              <div className="graph-table-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={() => onEditTableCells(tableIndex)}
+                  disabled={editTableIndex === tableIndex}
+                >
+                  {editTableIndex === tableIndex ? 'Editing…' : 'Edit Cells'}
+                </button>
+                {editTableIndex !== null && (
+                  <button className="btn-secondary" onClick={onCancelEditTable}>
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  className="btn-danger"
+                  onClick={() => {
+                    if (confirm(`Delete Table #${tableIndex + 1}?`)) {
+                      onDeleteTable(page.id, tableIndex)
+                    }
+                  }}
+                >
+                  Delete Table
+                </button>
+                <button className="btn-primary" onClick={() => onAddTable(page.id)}>
+                  + Add Table
+                </button>
+              </div>
+
               {page.tables[tableIndex] && (
                 <div className="graph-table-fields">
-                  <label>Rows Per Page</label>
+                  <label>Rows Per Page (per page)</label>
                   <input
                     type="number"
                     value={page.tables[tableIndex].rows_per_page}
