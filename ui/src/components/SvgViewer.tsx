@@ -69,6 +69,7 @@ export function SvgViewer({
   const showNoBindingElements = true
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid')
   const [showGraphLines, setShowGraphLines] = useState(true)
+  const [lineEditMode, setLineEditMode] = useState(false)
   const [tableDrawMode, setTableDrawMode] = useState(false)
   const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
   const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
@@ -709,8 +710,24 @@ export function SvgViewer({
         <div className="svg-preview-actions">
           {graphConnections && graphConnections.length > 0 && (
             <>
-              <button className="btn-secondary" onClick={() => setShowGraphLines(v => !v)}>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setShowGraphLines((prev) => {
+                    const next = !prev
+                    if (!next) setLineEditMode(false)
+                    return next
+                  })
+                }}
+              >
                 {showGraphLines ? 'Hide Lines' : 'Show Lines'}
+              </button>
+              <button
+                className={`btn-secondary ${lineEditMode ? 'active' : ''}`}
+                onClick={() => setLineEditMode((prev) => !prev)}
+                disabled={!showGraphLines}
+              >
+                {lineEditMode ? 'Done Editing' : 'Edit Lines'}
               </button>
               <label className="svg-preview-select">
                 Line Style
@@ -960,26 +977,36 @@ export function SvgViewer({
             </div>
             {showGraphLines && graphLines.length > 0 && (
               <svg
-                className="graph-connector-layer"
+                className={`graph-connector-layer ${lineEditMode ? 'editing' : ''}`}
                 width={graphContainerRect.width}
                 height={graphContainerRect.height}
                 aria-hidden="true"
               >
                 {graphLines.map((line, idx) => (
-                  <line
-                    key={`${line.key}-${line.svgId}-${idx}`}
-                    className={`graph-connector-line graph-connector-line-${line.type} graph-connector-${lineStyle}`}
-                    x1={line.x1}
-                    y1={line.y1}
-                    x2={line.x2}
-                    y2={line.y2}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      if (onRemoveGraphBinding) {
-                        onRemoveGraphBinding({ key: line.key, svgId: line.svgId })
-                      }
-                    }}
-                  />
+                  <g key={`${line.key}-${line.svgId}-${idx}`}>
+                    {lineEditMode && (
+                      <line
+                        className="graph-connector-hit"
+                        x1={line.x1}
+                        y1={line.y1}
+                        x2={line.x2}
+                        y2={line.y2}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          if (onRemoveGraphBinding) {
+                            onRemoveGraphBinding({ key: line.key, svgId: line.svgId })
+                          }
+                        }}
+                      />
+                    )}
+                    <line
+                      className={`graph-connector-line graph-connector-visible graph-connector-line-${line.type} graph-connector-${lineStyle}`}
+                      x1={line.x1}
+                      y1={line.y1}
+                      x2={line.x2}
+                      y2={line.y2}
+                    />
+                  </g>
                 ))}
               </svg>
             )}

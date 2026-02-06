@@ -102,10 +102,24 @@
   z-index: 4;
 }
 
+.graph-connector-layer.editing {
+  pointer-events: auto;
+}
+
 .graph-connector-layer line {
   stroke-width: 1.5px;
+  pointer-events: none;
+}
+
+.graph-connector-hit {
+  stroke: transparent;
+  stroke-width: 10px;
   pointer-events: stroke;
   cursor: pointer;
+}
+
+.graph-connector-visible {
+  pointer-events: none;
 }
 
 .graph-connector-line-meta {
