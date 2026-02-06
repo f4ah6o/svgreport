@@ -63,6 +63,50 @@
   position: relative;
 }
 
+.graph-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  gap: 1rem;
+  padding: 1rem;
+  position: relative;
+}
+
+.graph-preview-pane {
+  border: 1px solid #e6ebf0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.75rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.graph-preview-pane .selected-element-panel {
+  display: none;
+}
+
+.graph-preview-pane .svg-viewer {
+  position: relative;
+  z-index: 1;
+}
+
+.graph-connector-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.graph-connector-layer line {
+  stroke: rgba(52, 152, 219, 0.7);
+  stroke-width: 1.5px;
+}
+
 .btn-primary,
 .btn-secondary {
   padding: 0.45rem 0.9rem;
@@ -366,6 +410,17 @@
   gap: 0.4rem;
 }
 
+.editor-mode-toggle {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: 0.5rem;
+}
+
+.editor-mode-toggle .btn-secondary.active {
+  background: #1d4f91;
+  color: #fff;
+}
+
 .btn-reset {
   padding: 0.3rem 0.6rem;
   border: 1px solid #ccc;
@@ -476,10 +531,19 @@
   border: 1px solid #ddd;
   background: white;
   padding: 0.5rem;
+  position: relative;
+}
+
+.svg-layout {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
 }
 
 .svg-stage {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .svg-content svg {
@@ -952,6 +1016,279 @@
   font-size: 0.75rem;
   max-height: 240px;
   overflow: auto;
+}
+
+.graph-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  overflow: hidden;
+  flex: 0 0 clamp(320px, 32vw, 480px);
+  min-height: 100%;
+  min-width: 0;
+}
+
+.graph-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: auto;
+  padding-right: 0.5rem;
+  min-height: 0;
+}
+
+.graph-section {
+  border: 1px solid #e6ebf0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.graph-demo-button {
+  margin-bottom: 0.5rem;
+}
+
+.graph-subsection + .graph-subsection {
+  margin-top: 0.75rem;
+}
+
+.graph-subsection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.graph-pages {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.graph-page {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #dfe6ee;
+  border-radius: 6px;
+  background: #f7f9fb;
+  cursor: pointer;
+}
+
+.graph-page.active {
+  border-color: #9fc4f5;
+  background: #e7f1ff;
+  color: #1d4f91;
+}
+
+.graph-page-kind {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: #5c6b7a;
+}
+
+.graph-node-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.graph-node {
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid #d6e0ea;
+  background: #fff;
+  cursor: grab;
+  user-select: none;
+}
+
+.graph-node:active {
+  cursor: grabbing;
+}
+
+.graph-node-meta {
+  border-color: #c5e1ff;
+  background: #eef6ff;
+  color: #1d4f91;
+}
+
+.graph-node-items {
+  border-color: #d9f2df;
+  background: #f2fbf4;
+  color: #1e7e34;
+}
+
+.graph-node-static {
+  border-color: #f8d7da;
+  background: #fff5f5;
+  color: #c0392b;
+}
+
+.graph-static-input {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.graph-static-input input {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 6px;
+}
+
+.graph-canvas {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e6ebf0;
+  border-radius: 8px;
+  background: #fff;
+  min-height: 0;
+}
+
+.graph-canvas-header {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #e6ebf0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.graph-canvas-sub {
+  font-size: 0.75rem;
+  color: #6b7785;
+}
+
+.graph-elements {
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.graph-elements ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.graph-element {
+  border: 1px solid #e3e7ed;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  background: #f9fafc;
+  cursor: pointer;
+}
+
+.graph-element.selected {
+  border-color: #9fc4f5;
+  background: #eef5ff;
+}
+
+.graph-element-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.graph-element-text {
+  font-size: 0.78rem;
+  color: #556;
+  margin-top: 0.25rem;
+}
+
+.graph-map-overlay {
+  position: relative;
+  width: 220px;
+  flex: 0 0 220px;
+  height: 100%;
+  overflow: auto;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #e6ebf0;
+  border-radius: 8px;
+  z-index: 3;
+}
+
+.graph-map-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7785;
+  margin-bottom: 0.5rem;
+}
+
+.graph-map-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.graph-map-node {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e3e7ed;
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  background: #f9fafc;
+  margin-bottom: 0.45rem;
+  cursor: default;
+}
+
+.graph-map-node.missing {
+  border-style: dashed;
+  color: #b94a48;
+  background: #fff5f5;
+}
+
+.graph-map-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.graph-map-node-type {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6b7785;
+}
+
+.graph-map-node-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.graph-table-config {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.graph-table-fields {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.graph-table-fields input,
+.graph-table-config select,
+.graph-subsection-header select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 6px;
+}
+
+.graph-loading {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #556;
 }
 
 .binding-list {

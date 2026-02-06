@@ -516,9 +516,12 @@ export function TemplateEditor({
       || null
     const dataRef = decodeDataKeyRef(payload)
     if (!dataRef) return
+    const nextValue = dataRef.source === 'static'
+      ? makeStaticValue(dataRef.key)
+      : makeDataValue(dataRef.source, dataRef.key)
     applyBindingUpdateByRef(ref, (binding) => ({
       ...binding,
-      value: makeDataValue(dataRef.source, dataRef.key),
+      value: nextValue,
     }))
     onSelectBindingRef(ref)
     onSelectBindingSvgId((() => {
@@ -537,7 +540,8 @@ export function TemplateEditor({
       }
       return null
     })())
-    onNotify(`Mapped ${dataRef.source}.${dataRef.key}`)
+    const label = dataRef.source === 'static' ? `static:${dataRef.key}` : `${dataRef.source}.${dataRef.key}`
+    onNotify(`Mapped ${label}`)
   }
 
   const removeSelectedBinding = () => {

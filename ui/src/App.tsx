@@ -7,13 +7,20 @@ import type {
   TemplateListItem,
   KVData,
   TableData,
+  TableBinding,
 } from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
 import { TemplateEditor } from './components/TemplateEditor'
 import { SvgViewer } from './components/SvgViewer'
+import { GraphEditor } from './components/GraphEditor'
 import { StatusBar } from './components/StatusBar'
+import type { DataKeyRef } from './types/data-key'
+import { encodeDataKeyRef, decodeDataKeyRef } from './types/data-key'
 import './App.css'
+
+const makeDataValue = (source: string, key: string) => ({ type: 'data' as const, source, key })
+const makeStaticValue = (text: string) => ({ type: 'static' as const, text })
 
 export function App() {
   const [templateDir, setTemplateDir] = useState('test-templates/delivery-slip/v1')
@@ -41,6 +48,10 @@ export function App() {
   const [itemsFileName, setItemsFileName] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
+  const [editorMode, setEditorMode] = useState<'graph' | 'legacy'>('graph')
+  const [graphMetaScope, setGraphMetaScope] = useState<'page' | 'global'>('page')
+  const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
+  const [graphTableIndex, setGraphTableIndex] = useState(0)
   const [focusTarget, setFocusTarget] = useState<{ tab: 'pages' | 'fields' | 'formatters'; path: string } | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
   const [validationGroupsOpen, setValidationGroupsOpen] = useState<Record<'pages' | 'fields' | 'formatters' | 'other', boolean>>({
@@ -75,6 +86,17 @@ export function App() {
     if (saved.templatesBaseDir) setTemplatesBaseDir(saved.templatesBaseDir)
     if (saved.selectedPageId) setSelectedPageId(saved.selectedPageId)
   }, [])
+
+
+
+  useEffect(() => {
+    if (!template || !selectedPageId) return
+    const page = template.pages.find(p => p.id === selectedPageId)
+    if (!page) return
+    if (graphTableIndex >= page.tables.length) {
+      setGraphTableIndex(0)
+    }
+  }, [template, selectedPageId, graphTableIndex])
 
   const loadTemplateByPath = useCallback(async (path: string) => {
     setIsLoading(true)
@@ -261,6 +283,14 @@ export function App() {
     setItemsFileName(null)
   }, [])
 
+  const handleLoadDemoData = useCallback(async () => {
+    const origin = typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'http://127.0.0.1:8788'
+    await handleMetaUrlLoad(`${origin}/mock/meta.json`)
+    await handleItemsUrlLoad(`${origin}/mock/items.csv`)
+  }, [handleMetaUrlLoad, handleItemsUrlLoad])
+
   const handleTemplateChange = useCallback((newTemplate: TemplateConfig) => {
     setTemplate(newTemplate)
   }, [])
@@ -344,6 +374,7 @@ export function App() {
     setPendingId(element.suggestedId || element.id || '')
   }, [svgElements])
 
+
   const resolveBindingSvgId = useCallback((ref: BindingRef | null, templateRef: TemplateConfig | null): string | null => {
     if (!ref || !templateRef) return null
     if (ref.kind === 'global-field') {
@@ -412,34 +443,41 @@ export function App() {
     })
   }, [])
 
-  const handleDropBindingOnElement = useCallback(async (ref: BindingRef, element: TextElement) => {
-    if (!template || !selectedSvg) return
-    let targetId = element.id || ''
-    const svgPath = `${templateDir}/${selectedSvg}`
-
-    if (!targetId) {
-      if (!element.suggestedId) {
-        setNotification('Target element has no ID. Assign an ID first.')
-        return
-      }
-      try {
-        await rpc.setSvgIds(svgPath, [
-          { selector: { byIndex: element.index }, id: element.suggestedId },
-        ])
-        const inspectResult = await rpc.inspectText(svgPath)
-        setSvgElements(inspectResult.texts)
-        targetId = element.suggestedId
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to assign ID'
-        setNotification(message)
-        return
-      }
+  const ensureSvgIdForElement = useCallback(async (element: TextElement): Promise<string | null> => {
+    if (!selectedSvg) return null
+    if (element.id) return element.id
+    if (!element.suggestedId) {
+      setNotification('Target element has no ID. Assign an ID first.')
+      return null
     }
+    const svgPath = `${templateDir}/${selectedSvg}`
+    try {
+      await rpc.setSvgIds(svgPath, [
+        { selector: { byIndex: element.index }, id: element.suggestedId },
+      ])
+      const inspectResult = await rpc.inspectText(svgPath)
+      setSvgElements(inspectResult.texts)
+      const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
+      if (nextIndex >= 0) {
+        setSelectedTextIndex(nextIndex)
+        setSelectedText(inspectResult.texts[nextIndex])
+      }
+      return element.suggestedId
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to assign ID'
+      setNotification(message)
+      return null
+    }
+  }, [selectedSvg, templateDir])
 
+  const handleDropBindingOnElement = useCallback(async (ref: BindingRef, element: TextElement) => {
+    if (!template) return
+    const targetId = await ensureSvgIdForElement(element)
+    if (!targetId) return
     updateBindingSvgId(ref, targetId)
     setSelectedBindingRef(ref)
     setSelectedBindingSvgId(targetId)
-  }, [template, selectedSvg, templateDir, updateBindingSvgId])
+  }, [template, ensureSvgIdForElement, updateBindingSvgId])
 
   const handleUseSuggestedId = useCallback(() => {
     if (!selectedText) return
@@ -514,6 +552,113 @@ export function App() {
 
     return Array.from(ids)
   }, [template, selectedPageId])
+
+  const handleAddTableGraph = useCallback((pageId: string) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const newTable = {
+        source: 'items',
+        row_group_id: 'rows',
+        row_height_mm: 6,
+        rows_per_page: 10,
+        cells: [],
+      }
+      const pages = prev.pages.map((page) =>
+        page.id === pageId ? { ...page, tables: [...page.tables, newTable] } : page
+      )
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleUpdateTableGraph = useCallback((pageId: string, tableIndex: number, patch: Partial<TableBinding>) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => {
+        if (page.id !== pageId) return page
+        const tables = page.tables.map((table, idx) => idx === tableIndex ? { ...table, ...patch } : table)
+        return { ...page, tables }
+      })
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static'; key: string }, element: TextElement) => {
+    if (!template || !selectedPageId) return
+    const svgId = await ensureSvgIdForElement(element)
+    if (!svgId) return
+
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => {
+        if (page.id !== selectedPageId) return page
+        if (dataRef.source === 'items') {
+          const tableIndex = graphTableIndex
+          if (!page.tables[tableIndex]) return page
+          const table = page.tables[tableIndex]
+          const value = makeDataValue(table.source || 'items', dataRef.key)
+          if (graphItemsTarget === 'header') {
+            const headerCells = table.header?.cells ? [...table.header.cells] : []
+            const existing = headerCells.findIndex(cell => cell.svg_id === svgId)
+            const nextCell = existing >= 0
+              ? { ...headerCells[existing], svg_id: svgId, value }
+              : { svg_id: svgId, value }
+            if (existing >= 0) headerCells[existing] = nextCell
+            else headerCells.push(nextCell)
+            const nextTable = { ...table, header: { cells: headerCells } }
+            const tables = page.tables.map((t, idx) => idx === tableIndex ? nextTable : t)
+            return { ...page, tables }
+          }
+
+          const cells = [...table.cells]
+          const existing = cells.findIndex(cell => cell.svg_id === svgId)
+          const nextCell = existing >= 0
+            ? { ...cells[existing], svg_id: svgId, value }
+            : { svg_id: svgId, value }
+          if (existing >= 0) cells[existing] = nextCell
+          else cells.push(nextCell)
+          const nextTable = { ...table, cells }
+          const tables = page.tables.map((t, idx) => idx === tableIndex ? nextTable : t)
+          return { ...page, tables }
+        }
+
+        const value = dataRef.source === 'static'
+          ? makeStaticValue(dataRef.key)
+          : makeDataValue('meta', dataRef.key)
+
+        if (graphMetaScope === 'global') {
+          return page
+        }
+
+        const fields = [...(page.fields ?? [])]
+        const existing = fields.findIndex(field => field.svg_id === svgId)
+        const nextField = existing >= 0
+          ? { ...fields[existing], svg_id: svgId, value }
+          : { svg_id: svgId, value }
+        if (existing >= 0) fields[existing] = nextField
+        else fields.push(nextField)
+        return { ...page, fields }
+      })
+
+      if (dataRef.source !== 'items' && graphMetaScope === 'global') {
+        const value = dataRef.source === 'static'
+          ? makeStaticValue(dataRef.key)
+          : makeDataValue('meta', dataRef.key)
+        const fields = [...prev.fields]
+        const existing = fields.findIndex(field => field.svg_id === svgId)
+        const nextField = existing >= 0
+          ? { ...fields[existing], svg_id: svgId, value }
+          : { svg_id: svgId, value }
+        if (existing >= 0) fields[existing] = nextField
+        else fields.push(nextField)
+        return { ...prev, fields, pages }
+      }
+
+      return { ...prev, pages }
+    })
+
+    setSelectedBindingSvgId(svgId)
+    setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
+  }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex])
 
   const templateModels = useMemo(() => {
     if (!template) return null
@@ -598,6 +743,128 @@ export function App() {
       cellSvgIds: table.cells.map(cell => cell.svg_id).filter(Boolean),
     }))
   }, [template, selectedPageId])
+
+  const graphConnections = useMemo(() => {
+    if (!template || !selectedPageId) return []
+    const page = template.pages.find(p => p.id === selectedPageId)
+    if (!page) return []
+    const svgIdSet = new Set<string>()
+    for (const el of svgElements) {
+      if (el.id) svgIdSet.add(el.id)
+      if (el.suggestedId) svgIdSet.add(el.suggestedId)
+    }
+    const includeSvgId = (svgId?: string) => {
+      if (!svgId) return false
+      if (svgIdSet.size === 0) return true
+      return svgIdSet.has(svgId)
+    }
+
+    const connections: Array<{ key: string; svgId: string }> = []
+
+    const addConnection = (ref: DataKeyRef | null, svgId?: string) => {
+      if (!ref || !includeSvgId(svgId)) return
+      connections.push({ key: encodeDataKeyRef(ref), svgId: svgId! })
+    }
+
+    const toDataRef = (
+      value: { type: string; source?: string; key?: string; text?: string },
+      fallbackSource?: string
+    ): DataKeyRef | null => {
+      if (value.type === 'data') {
+        if (!value.key) return null
+        const source = value.source || fallbackSource || 'meta'
+        const normalized: DataKeyRef['source'] = source === 'items' ? 'items' : 'meta'
+        return { source: normalized, key: value.key }
+      }
+      if (value.type === 'static') {
+        if (!value.text) return null
+        return { source: 'static', key: value.text }
+      }
+      return null
+    }
+
+    for (const field of template.fields) {
+      addConnection(toDataRef(field.value), field.svg_id)
+    }
+
+    for (const field of page.fields ?? []) {
+      addConnection(toDataRef(field.value), field.svg_id)
+    }
+
+    for (const table of page.tables) {
+      for (const cell of table.header?.cells ?? []) {
+        addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id)
+      }
+      for (const cell of table.cells) {
+        addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id)
+      }
+    }
+
+    return connections
+  }, [template, selectedPageId, svgElements])
+
+  const graphNodes = useMemo(() => {
+    type Node = { key: string; ref: DataKeyRef; label: string; type: DataKeyRef['source']; missing: boolean }
+    const nodes = new Map<string, Node>()
+
+    const addNode = (ref: DataKeyRef, label: string, missing: boolean) => {
+      const key = encodeDataKeyRef(ref)
+      if (!nodes.has(key)) {
+        nodes.set(key, { key, ref, label, type: ref.source, missing })
+      }
+    }
+
+    if (metaData) {
+      for (const key of Object.keys(metaData)) {
+        addNode({ source: 'meta', key }, key, false)
+      }
+    }
+
+    if (itemsData?.headers) {
+      for (const key of itemsData.headers) {
+        addNode({ source: 'items', key }, key, false)
+      }
+    }
+
+    const staticValues = new Set<string>()
+    if (template) {
+      for (const field of template.fields) {
+        if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
+      }
+      const page = template.pages.find(p => p.id === selectedPageId)
+      if (page) {
+        for (const field of page.fields ?? []) {
+          if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
+        }
+        for (const table of page.tables ?? []) {
+          for (const cell of table.header?.cells ?? []) {
+            if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
+          }
+          for (const cell of table.cells ?? []) {
+            if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
+          }
+        }
+      }
+    }
+    for (const text of staticValues) {
+      addNode({ source: 'static', key: text }, text, false)
+    }
+
+    for (const connection of graphConnections) {
+      if (nodes.has(connection.key)) continue
+      const ref = decodeDataKeyRef(connection.key) || { source: 'meta', key: connection.key }
+      addNode(ref, ref.key, true)
+    }
+
+    const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2 }
+    return Array.from(nodes.values()).sort((a, b) => {
+      const typeDelta = typeOrder[a.type] - typeOrder[b.type]
+      if (typeDelta !== 0) return typeDelta
+      return a.label.localeCompare(b.label)
+    })
+  }, [metaData, itemsData, template, selectedPageId, graphConnections])
+
+
 
   const focusFromValidationPath = useCallback((path: string) => {
     if (!path) {
@@ -805,6 +1072,20 @@ export function App() {
             >
               Preview
             </button>
+            <div className="editor-mode-toggle">
+              <button
+                className={`btn-secondary ${editorMode === 'graph' ? 'active' : ''}`}
+                onClick={() => setEditorMode('graph')}
+              >
+                Graph
+              </button>
+              <button
+                className={`btn-secondary ${editorMode === 'legacy' ? 'active' : ''}`}
+                onClick={() => setEditorMode('legacy')}
+              >
+                Legacy
+              </button>
+            </div>
           </div>
           {templatesError ? <span className="templates-error">{templatesError}</span> : null}
         </div>
@@ -819,6 +1100,48 @@ export function App() {
         )}
 
         {template ? (
+          editorMode === 'graph' ? (
+            <div className="graph-pane">
+              <GraphEditor
+                template={template}
+                selectedPageId={selectedPageId}
+                onSelectPageId={handlePageSelect}
+                metaData={metaData}
+                itemsData={itemsData}
+                dataLoading={dataLoading}
+                onLoadDemoData={handleLoadDemoData}
+                metaScope={graphMetaScope}
+                onMetaScopeChange={setGraphMetaScope}
+                itemsTarget={graphItemsTarget}
+                onItemsTargetChange={setGraphItemsTarget}
+                activeTableIndex={graphTableIndex}
+                onActiveTableIndexChange={setGraphTableIndex}
+                onAddTable={handleAddTableGraph}
+                onUpdateTable={handleUpdateTableGraph}
+              />
+              <div className="graph-preview-pane">
+                <SvgViewer
+                  svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
+                  elements={svgElements}
+                  templateDir={templateDir}
+                  bindingSvgIds={bindingSvgIds}
+                  tableBindingGroups={tableBindingGroups}
+                  selectedElementIndex={selectedTextIndex}
+                  highlightedBindingSvgId={selectedBindingSvgId}
+                  onSelectElement={handleSelectTextElement}
+                  onDropBinding={handleDropBindingOnElement}
+                  onDropData={handleMapDataToSvg}
+                  graphMapNodes={graphNodes}
+                  graphConnections={graphConnections}
+                  pendingId={pendingId}
+                  onPendingIdChange={setPendingId}
+                  onUseSuggestedId={handleUseSuggestedId}
+                  onApplyId={handleApplyId}
+                  isLoading={isLoading}
+                />
+              </div>
+            </div>
+          ) : (
           <>
             <div className="editor-pane" style={{ width: `${editorPaneWidth}%` }}>
               <div className="templates-panel">
@@ -898,6 +1221,7 @@ export function App() {
               />
             </div>
           </>
+          )
         ) : (
           <div className="welcome">
             <h2>Welcome to SVG Paper Template Editor</h2>

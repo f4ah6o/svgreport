@@ -3,6 +3,10 @@ import type { TextElement } from '../types/api'
 import { rpc } from '../lib/rpc'
 import type { BindingRef } from '../types/binding'
 import { decodeBindingRef, BINDING_MIME } from '../types/binding'
+import type { DataKeyRef } from '../types/data-key'
+import { decodeDataKeyRef, DATA_KEY_MIME } from '../types/data-key'
+import type { GraphMapNode } from './GraphMapOverlay'
+import { GraphMapOverlay } from './GraphMapOverlay'
 
 interface SvgViewerProps {
   svgPath: string | null
@@ -14,6 +18,9 @@ interface SvgViewerProps {
   highlightedBindingSvgId: string | null
   onSelectElement: (index: number) => void
   onDropBinding: (ref: BindingRef, element: TextElement) => void
+  onDropData?: (ref: DataKeyRef, element: TextElement) => void
+  graphMapNodes?: GraphMapNode[]
+  graphConnections?: Array<{ key: string; svgId: string }>
   pendingId: string
   onPendingIdChange: (value: string) => void
   onUseSuggestedId: () => void
@@ -31,6 +38,9 @@ export function SvgViewer({
   highlightedBindingSvgId,
   onSelectElement,
   onDropBinding,
+  onDropData,
+  graphMapNodes,
+  graphConnections,
   pendingId,
   onPendingIdChange,
   onUseSuggestedId,
@@ -38,15 +48,21 @@ export function SvgViewer({
   isLoading,
 }: SvgViewerProps) {
   const svgContentRef = useRef<HTMLDivElement | null>(null)
+  const svgContainerRef = useRef<HTMLDivElement | null>(null)
+  const overlaySvgRef = useRef<SVGSVGElement | null>(null)
   const [svgContent, setSvgContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
   const [overlayPreserveAspectRatio, setOverlayPreserveAspectRatio] = useState('xMidYMid meet')
   const [measuredBBoxes, setMeasuredBBoxes] = useState<Map<number, { x: number; y: number; w: number; h: number }>>(new Map())
-  const [showElementMap, setShowElementMap] = useState(true)
-  const [showBindingElements, setShowBindingElements] = useState(true)
-  const [showNoBindingElements, setShowNoBindingElements] = useState(true)
+  const showElementMap = true
+  const showBindingElements = true
+  const showNoBindingElements = true
+  const [showGraphLines, setShowGraphLines] = useState(true)
+  const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const [graphContainerRect, setGraphContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
 
   useEffect(() => {
     if (!svgPath) {
@@ -136,6 +152,13 @@ export function SvgViewer({
     return map
   }, [elements, measuredBBoxes])
 
+  const anchorCandidates = useMemo(() => {
+    return elements.map((element) => ({
+      element,
+      bbox: resolvedBBoxByIndex.get(element.index) || element.bbox,
+    }))
+  }, [elements, resolvedBBoxByIndex])
+
   const getDropPadding = useCallback((bbox: { w: number; h: number }) => {
     const base = Math.min(bbox.w, bbox.h)
     return Math.max(6, Math.min(16, base * 0.2))
@@ -153,6 +176,17 @@ export function SvgViewer({
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
+    const dataPayload =
+      event.dataTransfer?.getData(DATA_KEY_MIME)
+      || event.dataTransfer?.getData('application/json')
+      || event.dataTransfer?.getData('text/plain')
+      || null
+    const dataRef = decodeDataKeyRef(dataPayload)
+    if (dataRef && onDropData) {
+      onDropData(dataRef, element)
+      return
+    }
+
     const payload =
       event.dataTransfer?.getData(BINDING_MIME)
       || event.dataTransfer?.getData('application/json')
@@ -161,7 +195,7 @@ export function SvgViewer({
     const ref = decodeBindingRef(payload)
     if (!ref) return
     onDropBinding(ref, element)
-  }, [onDropBinding])
+  }, [onDropBinding, onDropData])
 
   const handleDragOver = useCallback((event: DragEvent) => {
     event.preventDefault()
@@ -169,6 +203,25 @@ export function SvgViewer({
       event.dataTransfer.dropEffect = 'copy'
     }
   }, [])
+
+  const updateAnchors = useCallback(() => {
+    if (!overlaySvgRef.current) return
+    const ctm = overlaySvgRef.current.getScreenCTM()
+    if (!ctm) return
+    const anchors = new Map<string, { x: number; y: number }>()
+    for (const { element, bbox } of anchorCandidates) {
+      const point = new DOMPoint(bbox.x + bbox.w / 2, bbox.y + bbox.h / 2).matrixTransform(ctm)
+      const addAnchor = (key?: string | null) => {
+        if (!key) return
+        if (!anchors.has(key)) {
+          anchors.set(key, { x: point.x, y: point.y })
+        }
+      }
+      addAnchor(element.id)
+      addAnchor(element.suggestedId)
+    }
+    setGraphSvgAnchors(anchors)
+  }, [anchorCandidates])
 
   const highlightedOverlayItems = useMemo(() => {
     if (!highlightedBindingSvgId) return []
@@ -261,6 +314,97 @@ export function SvgViewer({
     return overlays
   }, [tableBindingGroups, elementsById, resolvedBBoxByIndex])
 
+  const orderedGraphNodes = useMemo(() => {
+    if (!graphMapNodes || graphMapNodes.length === 0) return graphMapNodes || []
+    if (!graphConnections || graphConnections.length === 0) return graphMapNodes
+    if (graphSvgAnchors.size === 0) return graphMapNodes
+
+    const indexByKey = new Map<string, number>()
+    graphMapNodes.forEach((node, idx) => indexByKey.set(node.key, idx))
+
+    const scores = new Map<string, { sum: number; count: number }>()
+    for (const connection of graphConnections) {
+      const anchor = graphSvgAnchors.get(connection.svgId)
+      if (!anchor) continue
+      const score = scores.get(connection.key) || { sum: 0, count: 0 }
+      score.sum += anchor.y
+      score.count += 1
+      scores.set(connection.key, score)
+    }
+
+    return [...graphMapNodes].sort((a, b) => {
+      const scoreA = scores.get(a.key)
+      const scoreB = scores.get(b.key)
+      if (!scoreA && !scoreB) return (indexByKey.get(a.key) ?? 0) - (indexByKey.get(b.key) ?? 0)
+      if (!scoreA) return 1
+      if (!scoreB) return -1
+      const avgA = scoreA.sum / scoreA.count
+      const avgB = scoreB.sum / scoreB.count
+      if (avgA !== avgB) return avgA - avgB
+      return (indexByKey.get(a.key) ?? 0) - (indexByKey.get(b.key) ?? 0)
+    })
+  }, [graphMapNodes, graphConnections, graphSvgAnchors])
+
+  const graphLines = useMemo(() => {
+    if (!graphConnections || graphConnections.length === 0) return []
+    if (!graphContainerRect.width || !graphContainerRect.height) return []
+    const lines: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
+    for (const connection of graphConnections) {
+      const start = graphDataAnchors.get(connection.key)
+      const end = graphSvgAnchors.get(connection.svgId)
+      if (!start || !end) continue
+      lines.push({
+        x1: start.x - graphContainerRect.left,
+        y1: start.y - graphContainerRect.top,
+        x2: end.x - graphContainerRect.left,
+        y2: end.y - graphContainerRect.top,
+      })
+    }
+    return lines
+  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect])
+
+  const updateContainerRect = useCallback(() => {
+    const container = svgContainerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    setGraphContainerRect({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    })
+  }, [])
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => updateAnchors())
+    return () => cancelAnimationFrame(frame)
+  }, [updateAnchors, svgContent, overlayViewBox])
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => updateContainerRect())
+    return () => cancelAnimationFrame(frame)
+  }, [updateContainerRect, svgContent])
+
+  useEffect(() => {
+    const container = svgContainerRef.current
+    if (!container) return
+    const handle = () => {
+      updateAnchors()
+      updateContainerRect()
+    }
+    container.addEventListener('scroll', handle)
+    window.addEventListener('resize', handle)
+    window.addEventListener('scroll', handle, true)
+    const observer = new ResizeObserver(handle)
+    observer.observe(container)
+    return () => {
+      container.removeEventListener('scroll', handle)
+      window.removeEventListener('resize', handle)
+      window.removeEventListener('scroll', handle, true)
+      observer.disconnect()
+    }
+  }, [updateAnchors, updateContainerRect])
+
   useEffect(() => {
     if (!svgContent || elements.length === 0) {
       setMeasuredBBoxes(new Map())
@@ -329,34 +473,38 @@ export function SvgViewer({
         <h3>SVG Preview</h3>
         <div className="svg-path">{svgPath}</div>
         <div className="svg-preview-actions">
-          <button className="btn-secondary" onClick={() => setShowElementMap(v => !v)}>
-            Show/Hide Element Map
-          </button>
-          <button className="btn-secondary" onClick={() => setShowBindingElements(v => !v)}>
-            Show/Hide Binding elements only
-          </button>
-          <button className="btn-secondary" onClick={() => setShowNoBindingElements(v => !v)}>
-            Show/Hide no-Bindding elements only
-          </button>
+          {graphConnections && graphConnections.length > 0 && (
+            <button className="btn-secondary" onClick={() => setShowGraphLines(v => !v)}>
+              {showGraphLines ? 'Hide Lines' : 'Show Lines'}
+            </button>
+          )}
         </div>
 
         {loading && <div className="loading">Loading SVG...</div>}
         {error && <div className="error">{error}</div>}
 
         {svgContent && (
-          <div className="svg-container">
-            <div className="svg-stage">
-              <div
-                className="svg-content"
-                ref={svgContentRef}
-                dangerouslySetInnerHTML={{ __html: svgContent }}
-              />
-              {overlayViewBox && (showElementMap || selectedElement || highlightedOverlayItems.length > 0) && (
-                <svg
-                  className="svg-overlay"
-                  viewBox={overlayViewBox}
-                  preserveAspectRatio={overlayPreserveAspectRatio}
-                >
+          <div className="svg-container" ref={svgContainerRef}>
+            <div className="svg-layout">
+              {graphMapNodes && (
+                <GraphMapOverlay
+                  nodes={orderedGraphNodes}
+                  onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
+                />
+              )}
+              <div className="svg-stage">
+                <div
+                  className="svg-content"
+                  ref={svgContentRef}
+                  dangerouslySetInnerHTML={{ __html: svgContent }}
+                />
+                {overlayViewBox && (
+                  <svg
+                    className="svg-overlay"
+                    viewBox={overlayViewBox}
+                    preserveAspectRatio={overlayPreserveAspectRatio}
+                    ref={overlaySvgRef}
+                  >
                   {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
@@ -482,9 +630,28 @@ export function SvgViewer({
                       </text>
                     </g>
                   ))}
-                </svg>
-              )}
+                  </svg>
+                )}
+              </div>
             </div>
+            {showGraphLines && graphLines.length > 0 && (
+              <svg
+                className="graph-connector-layer"
+                width={graphContainerRect.width}
+                height={graphContainerRect.height}
+                aria-hidden="true"
+              >
+                {graphLines.map((line, idx) => (
+                  <line
+                    key={idx}
+                    x1={line.x1}
+                    y1={line.y1}
+                    x2={line.x2}
+                    y2={line.y2}
+                  />
+                ))}
+              </svg>
+            )}
           </div>
         )}
 
