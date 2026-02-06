@@ -8,6 +8,7 @@ import type {
   KVData,
   TableData,
   TableBinding,
+  FieldBinding,
 } from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
@@ -684,6 +685,153 @@ export function App() {
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
   }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex])
 
+  const handleBindMetaPairs = useCallback(async (hitElements: TextElement[]) => {
+    if (!template || !selectedPageId) return
+    if (!metaData) {
+      setNotification('Load meta data first.')
+      return
+    }
+    const entries = Object.entries(metaData)
+    if (entries.length === 0) {
+      setNotification('Meta data is empty.')
+      return
+    }
+    if (!selectedSvg) {
+      setNotification('Select a page before binding meta.')
+      return
+    }
+
+    const candidates = hitElements.filter(el => el.id || el.suggestedId)
+    if (candidates.length < 2) {
+      setNotification('Select at least two elements (key and value).')
+      return
+    }
+
+    const sorted = [...candidates].sort((a, b) => {
+      const dy = a.bbox.y - b.bbox.y
+      if (Math.abs(dy) > 1) return dy
+      return a.bbox.x - b.bbox.x
+    })
+    const heights = sorted.map(el => el.bbox.h).filter(h => h > 0)
+    const medianHeight = (() => {
+      if (heights.length === 0) return 10
+      const copy = [...heights].sort((a, b) => a - b)
+      const mid = Math.floor(copy.length / 2)
+      if (copy.length % 2 === 1) return copy[mid]
+      return (copy[mid - 1] + copy[mid]) / 2
+    })()
+    const rowGap = Math.max(6, medianHeight * 0.9)
+
+    const rows: TextElement[][] = []
+    for (const el of sorted) {
+      const current = rows[rows.length - 1]
+      if (!current) {
+        rows.push([el])
+        continue
+      }
+      const currentY = current.reduce((sum, item) => sum + item.bbox.y, 0) / current.length
+      if (Math.abs(el.bbox.y - currentY) <= rowGap) {
+        current.push(el)
+      } else {
+        rows.push([el])
+      }
+    }
+
+    const pairs = rows.map((row) => {
+      const rowSorted = [...row].sort((a, b) => a.bbox.x - b.bbox.x)
+      if (rowSorted.length < 2) return null
+      return { keyEl: rowSorted[0], valueEl: rowSorted[rowSorted.length - 1] }
+    }).filter((pair): pair is { keyEl: TextElement; valueEl: TextElement } => Boolean(pair))
+
+    if (pairs.length === 0) {
+      setNotification('No key/value pairs found in selection.')
+      return
+    }
+
+    const maxPairs = Math.min(pairs.length, entries.length)
+    const assignments = new Map<number, string>()
+    const resolveId = (el: TextElement) => {
+      if (el.id) return el.id
+      if (el.suggestedId) {
+        assignments.set(el.index, el.suggestedId)
+        return el.suggestedId
+      }
+      return null
+    }
+
+    const bindings: Array<{ key: string; keySvgId: string; valueSvgId: string }> = []
+    let skipped = 0
+    for (let i = 0; i < maxPairs; i += 1) {
+      const [metaKey] = entries[i]
+      const { keyEl, valueEl } = pairs[i]
+      const keyId = resolveId(keyEl)
+      const valueId = resolveId(valueEl)
+      if (!keyId || !valueId) {
+        skipped += 1
+        continue
+      }
+      bindings.push({ key: metaKey, keySvgId: keyId, valueSvgId: valueId })
+    }
+
+    if (bindings.length === 0) {
+      setNotification('No bindable pairs (missing IDs).')
+      return
+    }
+
+    const svgPath = `${templateDir}/${selectedSvg}`
+    if (assignments.size > 0) {
+      const assignmentList = Array.from(assignments.entries()).map(([index, id]) => ({
+        selector: { byIndex: index },
+        id,
+      }))
+      try {
+        await rpc.setSvgIds(svgPath, assignmentList)
+        await loadInspectText(svgPath)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to assign IDs'
+        setNotification(message)
+        return
+      }
+    }
+
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const applyField = (fields: FieldBinding[], svg_id: string, value: FieldBinding['value']) => {
+        const idx = fields.findIndex(field => field.svg_id === svg_id)
+        if (idx >= 0) {
+          fields[idx] = { ...fields[idx], svg_id, value }
+        } else {
+          fields.push({ svg_id, value })
+        }
+      }
+
+      const pages = prev.pages.map((page) => {
+        if (page.id !== selectedPageId) return page
+        if (graphMetaScope !== 'page') return page
+        const fields = [...(page.fields ?? [])]
+        for (const binding of bindings) {
+          applyField(fields, binding.keySvgId, { type: 'static', text: binding.key })
+          applyField(fields, binding.valueSvgId, { type: 'data', source: 'meta', key: binding.key })
+        }
+        return { ...page, fields }
+      })
+
+      if (graphMetaScope === 'global') {
+        const fields = [...prev.fields]
+        for (const binding of bindings) {
+          applyField(fields, binding.keySvgId, { type: 'static', text: binding.key })
+          applyField(fields, binding.valueSvgId, { type: 'data', source: 'meta', key: binding.key })
+        }
+        return { ...prev, fields, pages }
+      }
+
+      return { ...prev, pages }
+    })
+
+    const extra = skipped > 0 ? ` (${skipped} skipped)` : ''
+    setNotification(`Bound ${bindings.length} meta pairs.${extra}`)
+  }, [template, selectedPageId, metaData, selectedSvg, templateDir, graphMetaScope, loadInspectText])
+
   const templateModels = useMemo(() => {
     if (!template) return null
 
@@ -1162,6 +1310,7 @@ export function App() {
                   graphMapNodes={graphNodes}
                   graphConnections={graphConnections}
                   tableEditTargetIndex={graphEditTableIndex}
+                  onBindMetaPairsFromSelection={handleBindMetaPairs}
                   onCreateTableFromSelection={(_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)

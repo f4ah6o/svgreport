@@ -23,6 +23,7 @@ interface SvgViewerProps {
   graphConnections?: Array<{ key: string; svgId: string; tableIndex?: number }>
   tableEditTargetIndex?: number | null
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
+  onBindMetaPairsFromSelection?: (elements: TextElement[]) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
   onUseSuggestedId: () => void
@@ -45,6 +46,7 @@ export function SvgViewer({
   graphConnections,
   tableEditTargetIndex = null,
   onCreateTableFromSelection,
+  onBindMetaPairsFromSelection,
   pendingId,
   onPendingIdChange,
   onUseSuggestedId,
@@ -68,6 +70,9 @@ export function SvgViewer({
   const [tableDrawMode, setTableDrawMode] = useState(false)
   const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
   const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [metaDrawMode, setMetaDrawMode] = useState(false)
+  const [metaDragStart, setMetaDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [metaDragRect, setMetaDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphContainerRect, setGraphContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
@@ -291,6 +296,56 @@ export function SvgViewer({
     setTableDragRect(null)
     setTableDrawMode(false)
   }, [tableDrawMode, tableDragStart, tableDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onCreateTableFromSelection])
+
+  const handleMetaMouseDown = useCallback((event: MouseEvent) => {
+    if (!metaDrawMode) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    setMetaDragStart({ x: point.x, y: point.y })
+    setMetaDragRect({ x: point.x, y: point.y, w: 0, h: 0 })
+  }, [metaDrawMode, toSvgPoint])
+
+  const handleMetaMouseMove = useCallback((event: MouseEvent) => {
+    if (!metaDrawMode || !metaDragStart) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    const x = Math.min(metaDragStart.x, point.x)
+    const y = Math.min(metaDragStart.y, point.y)
+    const w = Math.abs(point.x - metaDragStart.x)
+    const h = Math.abs(point.y - metaDragStart.y)
+    setMetaDragRect({ x, y, w, h })
+  }, [metaDrawMode, metaDragStart, toSvgPoint])
+
+  const handleMetaMouseUp = useCallback((event: MouseEvent) => {
+    if (!metaDrawMode || !metaDragStart || !metaDragRect) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    const x = Math.min(metaDragStart.x, point.x)
+    const y = Math.min(metaDragStart.y, point.y)
+    const w = Math.abs(point.x - metaDragStart.x)
+    const h = Math.abs(point.y - metaDragStart.y)
+    const rect = { x, y, w, h }
+    const hits = elements.filter((element) => {
+      const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+      const intersects = bbox.x < rect.x + rect.w
+        && bbox.x + bbox.w > rect.x
+        && bbox.y < rect.y + rect.h
+        && bbox.y + bbox.h > rect.y
+      return intersects
+    })
+    if (onBindMetaPairsFromSelection) {
+      onBindMetaPairsFromSelection(hits)
+    }
+    setMetaDragStart(null)
+    setMetaDragRect(null)
+    setMetaDrawMode(false)
+  }, [metaDrawMode, metaDragStart, metaDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onBindMetaPairsFromSelection])
 
   const updateAnchors = useCallback(() => {
     if (!overlaySvgRef.current) return
@@ -670,11 +725,29 @@ export function SvgViewer({
                 setTableDrawMode((prev) => !prev)
                 setTableDragRect(null)
                 setTableDragStart(null)
+                setMetaDrawMode(false)
+                setMetaDragRect(null)
+                setMetaDragStart(null)
               }}
             >
               {tableEditTargetIndex !== null
                 ? (tableDrawMode ? 'Cancel Table Update' : `Update Table #${tableEditTargetIndex + 1}`)
                 : (tableDrawMode ? 'Cancel Table' : 'Add Table')}
+            </button>
+          )}
+          {onBindMetaPairsFromSelection && (
+            <button
+              className={`btn-secondary ${metaDrawMode ? 'active' : ''}`}
+              onClick={() => {
+                setMetaDrawMode((prev) => !prev)
+                setMetaDragRect(null)
+                setMetaDragStart(null)
+                setTableDrawMode(false)
+                setTableDragRect(null)
+                setTableDragStart(null)
+              }}
+            >
+              {metaDrawMode ? 'Cancel Meta Bind' : 'Bind Meta List'}
             </button>
           )}
         </div>
@@ -854,6 +927,27 @@ export function SvgViewer({
                       y={tableDragRect.y}
                       width={tableDragRect.w}
                       height={tableDragRect.h}
+                    />
+                  )}
+                  {metaDrawMode && viewBoxNumbers && (
+                    <rect
+                      className="svg-overlay-meta-capture"
+                      x={viewBoxNumbers.x}
+                      y={viewBoxNumbers.y}
+                      width={viewBoxNumbers.w}
+                      height={viewBoxNumbers.h}
+                      onMouseDown={handleMetaMouseDown}
+                      onMouseMove={handleMetaMouseMove}
+                      onMouseUp={handleMetaMouseUp}
+                    />
+                  )}
+                  {metaDragRect && (
+                    <rect
+                      className="svg-overlay-meta-select"
+                      x={metaDragRect.x}
+                      y={metaDragRect.y}
+                      width={metaDragRect.w}
+                      height={metaDragRect.h}
                     />
                   )}
                   </svg>

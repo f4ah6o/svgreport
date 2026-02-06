@@ -725,6 +725,21 @@
   cursor: crosshair;
 }
 
+.svg-overlay-meta-select {
+  fill: rgba(142, 68, 173, 0.12);
+  stroke: #8e44ad;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.svg-overlay-meta-capture {
+  fill: rgba(0, 0, 0, 0.001);
+  pointer-events: all;
+  cursor: crosshair;
+}
+
 .svg-overlay-table-label {
   fill: #8a6d00;
   font-size: 6px;
