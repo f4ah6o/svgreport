@@ -227,7 +227,7 @@ export function SvgViewer({
     if (!ctm) return
     const anchors = new Map<string, { x: number; y: number }>()
     for (const { element, bbox } of anchorCandidates) {
-      const point = new DOMPoint(bbox.x + bbox.w / 2, bbox.y + bbox.h / 2).matrixTransform(ctm)
+      const point = new DOMPoint(bbox.x, bbox.y).matrixTransform(ctm)
       const addAnchor = (key?: string | null) => {
         if (!key) return
         if (!anchors.has(key)) {
