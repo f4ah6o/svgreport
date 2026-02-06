@@ -692,6 +692,16 @@
   cursor: pointer;
 }
 
+.svg-overlay-rect-meta-pick {
+  fill: rgba(142, 68, 173, 0.12);
+  stroke: #8e44ad;
+  stroke-width: 1.4;
+}
+
+.svg-overlay-label-meta-pick {
+  fill: #8e44ad;
+}
+
 .svg-overlay-label {
   fill: #1f4f8f;
   font-weight: 700;

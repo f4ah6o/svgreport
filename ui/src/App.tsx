@@ -49,6 +49,7 @@ export function App() {
   const [itemsFileName, setItemsFileName] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
+  const [metaBindCursor, setMetaBindCursor] = useState(0)
   const [editorMode, setEditorMode] = useState<'graph' | 'legacy'>('graph')
   const [graphMetaScope, setGraphMetaScope] = useState<'page' | 'global'>('page')
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
@@ -88,6 +89,10 @@ export function App() {
     if (saved.templatesBaseDir) setTemplatesBaseDir(saved.templatesBaseDir)
     if (saved.selectedPageId) setSelectedPageId(saved.selectedPageId)
   }, [])
+
+  useEffect(() => {
+    setMetaBindCursor(0)
+  }, [metaData, templateDir])
 
 
 
@@ -750,6 +755,11 @@ export function App() {
       setNotification('Meta data is empty.')
       return
     }
+    const startIndex = metaBindCursor
+    if (startIndex >= entries.length) {
+      setNotification('No remaining meta keys to bind.')
+      return
+    }
     if (!selectedSvg) {
       setNotification('Select a page before binding meta.')
       return
@@ -802,7 +812,8 @@ export function App() {
       return
     }
 
-    const maxPairs = Math.min(pairs.length, entries.length)
+    const remainingEntries = entries.slice(startIndex)
+    const maxPairs = Math.min(pairs.length, remainingEntries.length)
     const assignments = new Map<number, string>()
     const resolveId = (el: TextElement) => {
       if (el.id) return el.id
@@ -816,7 +827,7 @@ export function App() {
     const bindings: Array<{ key: string; keySvgId: string; valueSvgId: string }> = []
     let skipped = 0
     for (let i = 0; i < maxPairs; i += 1) {
-      const [metaKey] = entries[i]
+      const [metaKey] = remainingEntries[i]
       const { keyEl, valueEl } = pairs[i]
       const keyId = resolveId(keyEl)
       const valueId = resolveId(valueEl)
@@ -882,9 +893,70 @@ export function App() {
       return { ...prev, pages }
     })
 
+    setMetaBindCursor(startIndex + maxPairs)
     const extra = skipped > 0 ? ` (${skipped} skipped)` : ''
     setNotification(`Bound ${bindings.length} meta pairs.${extra}`)
-  }, [template, selectedPageId, metaData, selectedSvg, templateDir, graphMetaScope, loadInspectText])
+  }, [template, selectedPageId, metaData, selectedSvg, templateDir, graphMetaScope, loadInspectText, metaBindCursor])
+
+  const handleBindMetaPair = useCallback(async (pair: [TextElement, TextElement]) => {
+    if (!template || !selectedPageId) return
+    if (!metaData) {
+      setNotification('Load meta data first.')
+      return
+    }
+    const entries = Object.entries(metaData)
+    if (entries.length === 0) {
+      setNotification('Meta data is empty.')
+      return
+    }
+    if (metaBindCursor >= entries.length) {
+      setNotification('No remaining meta keys to bind.')
+      return
+    }
+
+    const [metaKey] = entries[metaBindCursor]
+    const sorted = [...pair].sort((a, b) => a.bbox.x - b.bbox.x)
+    const keyEl = sorted[0]
+    const valueEl = sorted[1]
+
+    const keyId = await ensureSvgIdForElement(keyEl)
+    if (!keyId) return
+    const valueId = await ensureSvgIdForElement(valueEl)
+    if (!valueId) return
+
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const applyField = (fields: FieldBinding[], svg_id: string, value: FieldBinding['value']) => {
+        const idx = fields.findIndex(field => field.svg_id === svg_id)
+        if (idx >= 0) {
+          fields[idx] = { ...fields[idx], svg_id, value }
+        } else {
+          fields.push({ svg_id, value })
+        }
+      }
+
+      const pages = prev.pages.map((page) => {
+        if (page.id !== selectedPageId) return page
+        if (graphMetaScope !== 'page') return page
+        const fields = [...(page.fields ?? [])]
+        applyField(fields, keyId, { type: 'static', text: metaKey })
+        applyField(fields, valueId, { type: 'data', source: 'meta', key: metaKey })
+        return { ...page, fields }
+      })
+
+      if (graphMetaScope === 'global') {
+        const fields = [...prev.fields]
+        applyField(fields, keyId, { type: 'static', text: metaKey })
+        applyField(fields, valueId, { type: 'data', source: 'meta', key: metaKey })
+        return { ...prev, fields, pages }
+      }
+
+      return { ...prev, pages }
+    })
+
+    setMetaBindCursor((prev) => prev + 1)
+    setNotification(`Bound ${metaKey}`)
+  }, [template, selectedPageId, metaData, metaBindCursor, graphMetaScope, ensureSvgIdForElement])
 
   const templateModels = useMemo(() => {
     if (!template) return null
@@ -1365,6 +1437,7 @@ export function App() {
                   graphConnections={graphConnections}
                   tableEditTargetIndex={graphEditTableIndex}
                   onBindMetaPairsFromSelection={handleBindMetaPairs}
+                  onBindMetaPairSelection={handleBindMetaPair}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
                   onCreateTableFromSelection={(_rect, hitElements) => {
                     if (!template || !selectedPageId) return

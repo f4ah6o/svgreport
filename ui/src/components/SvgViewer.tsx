@@ -24,6 +24,7 @@ interface SvgViewerProps {
   tableEditTargetIndex?: number | null
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onBindMetaPairsFromSelection?: (elements: TextElement[]) => void
+  onBindMetaPairSelection?: (elements: [TextElement, TextElement]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   pendingId: string
   onPendingIdChange: (value: string) => void
@@ -48,6 +49,7 @@ export function SvgViewer({
   tableEditTargetIndex = null,
   onCreateTableFromSelection,
   onBindMetaPairsFromSelection,
+  onBindMetaPairSelection,
   onRemoveGraphBinding,
   pendingId,
   onPendingIdChange,
@@ -76,6 +78,7 @@ export function SvgViewer({
   const [metaDrawMode, setMetaDrawMode] = useState(false)
   const [metaDragStart, setMetaDragStart] = useState<{ x: number; y: number } | null>(null)
   const [metaDragRect, setMetaDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [metaClickSelection, setMetaClickSelection] = useState<TextElement[]>([])
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphContainerRect, setGraphContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
@@ -209,9 +212,10 @@ export function SvgViewer({
       const isBound = Boolean(element.id && bindingSet.has(element.id))
       const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
       const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
-      return { element, bbox, listIndex, isBound, isHighlighted, bindingType }
+      const isMetaPick = metaClickSelection.some((item) => item.index === element.index)
+      return { element, bbox, listIndex, isBound, isHighlighted, bindingType, isMetaPick }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId])
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId, metaClickSelection])
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
@@ -349,6 +353,21 @@ export function SvgViewer({
     setMetaDragRect(null)
     setMetaDrawMode(false)
   }, [metaDrawMode, metaDragStart, metaDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onBindMetaPairsFromSelection])
+
+  const handleElementClick = useCallback((element: TextElement, listIndex?: number) => {
+    if (metaDrawMode && onBindMetaPairSelection) {
+      setMetaClickSelection((prev) => {
+        const exists = prev.some(item => item.index === element.index)
+        const next = exists ? prev : [...prev, element]
+        if (next.length >= 2) {
+          onBindMetaPairSelection(next.slice(0, 2) as [TextElement, TextElement])
+          return []
+        }
+        return next
+      })
+    }
+    if (listIndex !== undefined) onSelectElement(listIndex)
+  }, [metaDrawMode, onBindMetaPairSelection, onSelectElement])
 
   const updateAnchors = useCallback(() => {
     if (!overlaySvgRef.current) return
@@ -734,6 +753,7 @@ export function SvgViewer({
                       setMetaDrawMode(false)
                       setMetaDragRect(null)
                       setMetaDragStart(null)
+                      setMetaClickSelection([])
                     }
                     return next
                   })
@@ -762,6 +782,8 @@ export function SvgViewer({
                 setMetaDrawMode(false)
                 setMetaDragRect(null)
                 setMetaDragStart(null)
+                setMetaClickSelection([])
+                setLineEditMode(false)
               }}
             >
               {tableEditTargetIndex !== null
@@ -776,6 +798,7 @@ export function SvgViewer({
                 setMetaDrawMode((prev) => !prev)
                 setMetaDragRect(null)
                 setMetaDragStart(null)
+                setMetaClickSelection([])
                 setTableDrawMode(false)
                 setTableDragRect(null)
                 setTableDragStart(null)
@@ -813,7 +836,7 @@ export function SvgViewer({
                     preserveAspectRatio={overlayPreserveAspectRatio}
                     ref={overlaySvgRef}
                   >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType }) => (
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isMetaPick }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
                         className="svg-overlay-drop-zone"
@@ -822,7 +845,7 @@ export function SvgViewer({
                         width={Math.max(bbox.w, 6) + getDropPadding(bbox) * 2}
                         height={Math.max(bbox.h, 6) + getDropPadding(bbox) * 2}
                         onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
+                          handleElementClick(element, listIndex)
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
@@ -835,13 +858,14 @@ export function SvgViewer({
                               ? 'svg-overlay-rect-bound'
                               : 'svg-overlay-rect-dim',
                           isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
+                          isMetaPick ? 'svg-overlay-rect-meta-pick' : '',
                         ].join(' ')}
                         x={bbox.x}
                         y={bbox.y}
                         width={Math.max(bbox.w, 6)}
                         height={Math.max(bbox.h, 6)}
                         onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
+                          handleElementClick(element, listIndex)
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
@@ -850,12 +874,13 @@ export function SvgViewer({
                         className={[
                           isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label',
                           isBound && bindingType ? `svg-overlay-label-${bindingType}` : '',
+                          isMetaPick ? 'svg-overlay-label-meta-pick' : '',
                         ].join(' ')}
                         x={bbox.x + 1}
                         y={bbox.y - 1}
                         style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
                         onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
+                          handleElementClick(element, listIndex)
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
@@ -910,7 +935,7 @@ export function SvgViewer({
                         width={Math.max(bbox.w, 6) + getDropPadding(bbox) * 2}
                         height={Math.max(bbox.h, 6) + getDropPadding(bbox) * 2}
                         onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
+                          handleElementClick(element, listIndex)
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
@@ -922,7 +947,7 @@ export function SvgViewer({
                         width={Math.max(bbox.w, 6)}
                         height={Math.max(bbox.h, 6)}
                         onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
+                          handleElementClick(element, listIndex)
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
@@ -933,7 +958,7 @@ export function SvgViewer({
                         y={bbox.y - 1}
                         style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
                         onClick={() => {
-                          if (listIndex !== undefined) onSelectElement(listIndex)
+                          handleElementClick(element, listIndex)
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
