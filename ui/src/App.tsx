@@ -448,12 +448,44 @@ export function App() {
     })
   }, [])
 
-  const ensureSvgIdForElement = useCallback(async (element: TextElement): Promise<string | null> => {
+  const ensureSvgIdForElement = useCallback(async (element: TextElement, preferredBase?: string): Promise<string | null> => {
     if (!selectedSvg) return null
     if (element.id) return element.id
     if (!element.suggestedId) {
-      setNotification('Target element has no ID. Assign an ID first.')
-      return null
+      const existingIds = new Set<string>()
+      for (const el of svgElements) {
+        if (el.id) existingIds.add(el.id)
+        if (el.suggestedId) existingIds.add(el.suggestedId)
+      }
+      const sanitize = (value: string) => value
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+      const base = sanitize(preferredBase || 'auto') || 'auto'
+      let candidate = `${base}_${element.index}`
+      let counter = 1
+      while (existingIds.has(candidate)) {
+        candidate = `${base}_${element.index}_${counter}`
+        counter += 1
+      }
+      const svgPath = `${templateDir}/${selectedSvg}`
+      try {
+        await rpc.setSvgIds(svgPath, [
+          { selector: { byIndex: element.index }, id: candidate },
+        ])
+        const inspectResult = await rpc.inspectText(svgPath)
+        setSvgElements(inspectResult.texts)
+        const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
+        if (nextIndex >= 0) {
+          setSelectedTextIndex(nextIndex)
+          setSelectedText(inspectResult.texts[nextIndex])
+        }
+        return candidate
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to assign ID'
+        setNotification(message)
+        return null
+      }
     }
     const svgPath = `${templateDir}/${selectedSvg}`
     try {
@@ -473,7 +505,7 @@ export function App() {
       setNotification(message)
       return null
     }
-  }, [selectedSvg, templateDir])
+  }, [selectedSvg, templateDir, svgElements])
 
   const handleDropBindingOnElement = useCallback(async (ref: BindingRef, element: TextElement) => {
     if (!template) return
@@ -609,7 +641,10 @@ export function App() {
 
   const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static'; key: string }, element: TextElement) => {
     if (!template || !selectedPageId) return
-    const svgId = await ensureSvgIdForElement(element)
+    const base = dataRef.source === 'static'
+      ? `static_${dataRef.key}`
+      : `${dataRef.source}_${dataRef.key}`
+    const svgId = await ensureSvgIdForElement(element, base)
     if (!svgId) return
 
     setTemplate((prev) => {
