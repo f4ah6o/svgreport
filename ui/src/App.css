@@ -133,6 +133,10 @@
   stroke: #c0392b;
 }
 
+.graph-connector-line-unbound {
+  stroke: #7f8c8d;
+}
+
 .graph-connector-solid {
   stroke-dasharray: none;
 }
