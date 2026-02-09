@@ -536,26 +536,53 @@ export function App() {
 
   const clearBindingsBySvgId = useCallback((svgId: string) => {
     if (!svgId) return
+    let found = false
     setTemplate((prev) => {
       if (!prev) return prev
-      const fields = prev.fields.map((field) =>
-        field.svg_id === svgId ? { ...field, enabled: false } : field
-      )
+      const fields = prev.fields.map((field) => {
+        if (field.svg_id === svgId) {
+          found = true
+          return { ...field, enabled: false }
+        }
+        return field
+      })
       const pages = prev.pages.map((page) => {
-        const pageFields = (page.fields ?? []).map((field) =>
-          field.svg_id === svgId ? { ...field, enabled: false } : field
-        )
+        let pageFound = false
+        const pageFields = (page.fields ?? []).map((field) => {
+          if (field.svg_id === svgId) {
+            pageFound = true
+            found = true
+            return { ...field, enabled: false }
+          }
+          return field
+        })
         const tables = page.tables.map((table) => {
           const headerCells = table.header?.cells
-            ? table.header.cells.map((cell) =>
-              cell.svg_id === svgId ? { ...cell, enabled: false } : cell
-            )
+            ? table.header.cells.map((cell) => {
+              if (cell.svg_id === svgId) {
+                found = true
+                return { ...cell, enabled: false }
+              }
+              return cell
+            })
             : undefined
-          const cells = table.cells.map((cell) =>
-            cell.svg_id === svgId ? { ...cell, enabled: false } : cell
-          )
+          const cells = table.cells.map((cell) => {
+            if (cell.svg_id === svgId) {
+              found = true
+              return { ...cell, enabled: false }
+            }
+            return cell
+          })
           return { ...table, header: headerCells ? { cells: headerCells } : table.header, cells }
         })
+
+        if (!found && selectedPageId && page.id === selectedPageId && !pageFound) {
+          if (!pageFields.some((field) => field.svg_id === svgId)) {
+            pageFields.push({ svg_id: svgId, value: makeStaticValue(''), enabled: false })
+            found = true
+          }
+        }
+
         return { ...page, fields: pageFields, tables }
       })
       return { ...prev, fields, pages }
@@ -564,7 +591,7 @@ export function App() {
       setSelectedBindingSvgId(null)
     }
     setNotification('Binding set to unbound.')
-  }, [selectedBindingSvgId])
+  }, [selectedBindingSvgId, selectedPageId])
 
   const updateBindingSvgId = useCallback((ref: BindingRef, svgId: string) => {
     setTemplate((prev) => {
