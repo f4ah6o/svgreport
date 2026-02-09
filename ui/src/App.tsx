@@ -659,9 +659,38 @@ export function App() {
     return candidate
   }, [svgElements])
 
-  const ensureSvgIdForElement = useCallback(async (element: TextElement, preferredBase?: string): Promise<string | null> => {
+  const ensureSvgIdForElement = useCallback(async (
+    element: TextElement,
+    preferredBase?: string,
+    forceUnique: boolean = false,
+  ): Promise<string | null> => {
     if (!selectedSvg) return null
-    if (element.id) return element.id
+    if (element.id) {
+      if (!forceUnique) return element.id
+      const duplicated = svgElements.some((el) => el.id === element.id && el.index !== element.index)
+      if (!duplicated) return element.id
+      const base = preferredBase || element.id
+      const candidate = getUniqueSvgId(base, element.index)
+      const svgPath = `${templateDir}/${selectedSvg}`
+      try {
+        await rpc.setSvgIds(svgPath, [
+          { selector: { byIndex: element.index }, id: candidate },
+        ])
+        const inspectResult = await rpc.inspectText(svgPath)
+        setSvgElements(inspectResult.texts)
+        const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
+        if (nextIndex >= 0) {
+          setSelectedTextIndex(nextIndex)
+          setSelectedText(inspectResult.texts[nextIndex])
+        }
+        setNotification(`ID duplicated. Using ${candidate}.`)
+        return candidate
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to assign ID'
+        setNotification(message)
+        return null
+      }
+    }
     if (!element.suggestedId) {
       const sanitize = (value: string) => value
         .toLowerCase()
@@ -1013,7 +1042,7 @@ export function App() {
   const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static' | 'unbound'; key: string }, element: TextElement) => {
     if (!template || !selectedPageId) return
     if (dataRef.source === 'unbound') {
-      const svgId = element.id || await ensureSvgIdForElement(element, 'unbound')
+      const svgId = await ensureSvgIdForElement(element, 'unbound', true)
       if (!svgId) {
         setNotification('Selected element has no id to unbind.')
         return
@@ -1189,9 +1218,11 @@ export function App() {
 
   const handleUnbindSvgId = useCallback(async (svgId: string) => {
     if (!svgId) return
-    const element = svgElements.find((el) => el.id === svgId || el.suggestedId === svgId) || null
-    if (element && !element.id) {
-      const ensured = await ensureSvgIdForElement(element, 'unbound')
+    const element = (selectedText && (selectedText.id === svgId || selectedText.suggestedId === svgId))
+      ? selectedText
+      : (svgElements.find((el) => el.id === svgId || el.suggestedId === svgId) || null)
+    if (element) {
+      const ensured = await ensureSvgIdForElement(element, 'unbound', true)
       if (ensured) {
         clearBindingsBySvgId(ensured)
         setSelectedBindingSvgId(ensured)
@@ -1199,7 +1230,7 @@ export function App() {
       }
     }
     clearBindingsBySvgId(svgId)
-  }, [svgElements, ensureSvgIdForElement, clearBindingsBySvgId])
+  }, [svgElements, selectedText, ensureSvgIdForElement, clearBindingsBySvgId])
 
   const handleRemoveGraphBinding = useCallback((connection: { key: string; svgId: string }) => {
     const ref = decodeDataKeyRef(connection.key)
