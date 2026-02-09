@@ -3,6 +3,7 @@ import type {
   TemplateConfig,
   TextElement,
   ValidationResponse,
+  ValidationError,
   PreviewResponse,
   TemplateListItem,
   KVData,
@@ -1367,9 +1368,7 @@ export function App() {
     if (validationResult) {
       for (const err of validationResult.errors) {
         if (selectedSvg && err.file && err.file !== selectedSvg) continue
-        const ref =
-          resolveDataKeyFromPathForTemplate(template, selectedPageId, err.path || '')
-          || resolveDataKeyFromSvgId(template, selectedPageId, err.path || '')
+        const ref = resolveDataKeyFromValidationError(template, selectedPageId, err)
         if (ref) errorKeys.add(encodeDataKeyRef(ref))
       }
       for (const warn of validationResult.warnings) {
@@ -1565,15 +1564,16 @@ export function App() {
     if (!validationResult || !template) return []
     return validationResult.errors.filter((err) => {
       const path = err.path || ''
-      if (!path) return true
-      const normalized = normalizeValidationPath(path)
+      const normalized = path ? normalizeValidationPath(path) : ''
       const hasMapping =
-        Boolean(resolveSvgIdFromPathForTemplate(template, null, path))
-        || Boolean(resolveDataKeyFromPathForTemplate(template, null, path))
-        || Boolean(resolveDataKeyFromSvgId(template, null, path))
-      return !normalized && !hasMapping
+        Boolean(path && resolveSvgIdFromPathForTemplate(template, null, path))
+        || Boolean(path && resolveDataKeyFromPathForTemplate(template, null, path))
+        || Boolean(path && resolveDataKeyFromSvgId(template, null, path))
+        || Boolean(resolveDataKeyFromValidationError(template, selectedPageId, err))
+      if (hasMapping) return false
+      return !normalized
     })
-  }, [validationResult, template])
+  }, [validationResult, template, selectedPageId])
 
   const validationSvgIds = useMemo(() => {
     if (!validationResult || !template) return []
@@ -2365,6 +2365,31 @@ function resolveDataKeyFromSvgId(
     }
   }
 
+  return null
+}
+
+function resolveDataKeyFromValidationError(
+  template: TemplateConfig | null,
+  selectedPageId: string | null,
+  err: ValidationError
+): DataKeyRef | null {
+  if (!err) return null
+  const fromPath = resolveDataKeyFromPathForTemplate(template, selectedPageId, err.path || '')
+  if (fromPath) return fromPath
+  const fromSvgId = resolveDataKeyFromSvgId(template, selectedPageId, err.path || '')
+  if (fromSvgId) return fromSvgId
+
+  const message = err.message || ''
+  const match = message.match(/value:\s*([a-zA-Z_]+)\s*:\s*([^)\\s]+)/)
+  if (!match) return null
+  const source = match[1].toLowerCase()
+  const key = match[2]
+  if (source === 'meta' || source === 'items') {
+    return { source: source as DataKeyRef['source'], key }
+  }
+  if (source === 'static') {
+    return { source: 'static', key }
+  }
   return null
 }
 
