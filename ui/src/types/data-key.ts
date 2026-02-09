@@ -1,5 +1,5 @@
 export type DataKeyRef = {
-  source: 'meta' | 'items' | 'static';
+  source: 'meta' | 'items' | 'static' | 'unbound';
   key: string;
 };
 
@@ -14,7 +14,13 @@ export function decodeDataKeyRef(payload: string | null): DataKeyRef | null {
   try {
     const parsed = JSON.parse(payload) as DataKeyRef;
     if (!parsed || typeof parsed !== 'object') return null;
-    if ((parsed.source === 'meta' || parsed.source === 'items' || parsed.source === 'static') && typeof parsed.key === 'string') {
+    if (
+      (parsed.source === 'meta'
+        || parsed.source === 'items'
+        || parsed.source === 'static'
+        || parsed.source === 'unbound')
+      && typeof parsed.key === 'string'
+    ) {
       return parsed;
     }
     return null;

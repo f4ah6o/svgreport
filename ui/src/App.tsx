@@ -534,6 +534,38 @@ export function App() {
     setSelectedBindingSvgId(resolveBindingSvgId(ref, template))
   }, [resolveBindingSvgId, template])
 
+  const clearBindingsBySvgId = useCallback((svgId: string) => {
+    if (!svgId) return
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const fields = prev.fields.map((field) =>
+        field.svg_id === svgId ? { ...field, svg_id: '', enabled: false } : field
+      )
+      const pages = prev.pages.map((page) => {
+        const pageFields = (page.fields ?? []).map((field) =>
+          field.svg_id === svgId ? { ...field, svg_id: '', enabled: false } : field
+        )
+        const tables = page.tables.map((table) => {
+          const headerCells = table.header?.cells
+            ? table.header.cells.map((cell) =>
+              cell.svg_id === svgId ? { ...cell, svg_id: '', enabled: false } : cell
+            )
+            : undefined
+          const cells = table.cells.map((cell) =>
+            cell.svg_id === svgId ? { ...cell, svg_id: '', enabled: false } : cell
+          )
+          return { ...table, header: headerCells ? { cells: headerCells } : table.header, cells }
+        })
+        return { ...page, fields: pageFields, tables }
+      })
+      return { ...prev, fields, pages }
+    })
+    if (selectedBindingSvgId === svgId) {
+      setSelectedBindingSvgId(null)
+    }
+    setNotification('Binding set to unbound.')
+  }, [selectedBindingSvgId])
+
   const updateBindingSvgId = useCallback((ref: BindingRef, svgId: string) => {
     setTemplate((prev) => {
       if (!prev) return prev
@@ -948,8 +980,16 @@ export function App() {
     setNotification(`Draw to update Table #${tableIndex + 1}`)
   }, [])
 
-  const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static'; key: string }, element: TextElement) => {
+  const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static' | 'unbound'; key: string }, element: TextElement) => {
     if (!template || !selectedPageId) return
+    if (dataRef.source === 'unbound') {
+      if (!element.id) {
+        setNotification('Selected element has no id to unbind.')
+        return
+      }
+      clearBindingsBySvgId(element.id)
+      return
+    }
     const base = dataRef.source === 'static'
       ? `static_${dataRef.key}`
       : `${dataRef.source}_${dataRef.key}`
@@ -1052,7 +1092,7 @@ export function App() {
 
     setSelectedBindingSvgId(svgId)
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
-  }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir])
+  }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir, clearBindingsBySvgId])
 
   const handleRemoveGraphBinding = useCallback((connection: { key: string; svgId: string }) => {
     const ref = decodeDataKeyRef(connection.key)
@@ -1415,12 +1455,21 @@ export function App() {
       }
     }
 
-    const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2 }
-    return Array.from(nodes.values()).sort((a, b) => {
+    const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2, unbound: 3 }
+    const sorted = Array.from(nodes.values()).sort((a, b) => {
       const typeDelta = typeOrder[a.type] - typeOrder[b.type]
       if (typeDelta !== 0) return typeDelta
       return a.label.localeCompare(b.label)
     })
+    const unboundRef: DataKeyRef = { source: 'unbound', key: 'unbound' }
+    sorted.push({
+      key: encodeDataKeyRef(unboundRef),
+      ref: unboundRef,
+      label: 'Unbound',
+      type: 'unbound',
+      missing: false,
+    })
+    return sorted
   }, [metaData, itemsData, template, selectedPageId, graphConnections, validationResult, selectedSvg])
 
 
@@ -1725,27 +1774,29 @@ export function App() {
         {template ? (
           editorMode === 'graph' ? (
             <div className="graph-pane">
-              <GraphEditor
-                template={template}
-                selectedPageId={selectedPageId}
-                onSelectPageId={handlePageSelect}
-                metaData={metaData}
-                itemsData={itemsData}
-                dataLoading={dataLoading}
-                onLoadDemoData={handleLoadDemoData}
-                metaScope={graphMetaScope}
-                onMetaScopeChange={setGraphMetaScope}
-                itemsTarget={graphItemsTarget}
-                onItemsTargetChange={setGraphItemsTarget}
-                activeTableIndex={graphTableIndex}
-                onActiveTableIndexChange={setGraphTableIndex}
-                editTableIndex={graphEditTableIndex}
-                onEditTableCells={handleEditTableCells}
-                onCancelEditTable={() => setGraphEditTableIndex(null)}
-                onDeleteTable={handleDeleteTableGraph}
-                onAddTable={handleAddTableGraph}
-                onUpdateTable={handleUpdateTableGraph}
-              />
+                <GraphEditor
+                  template={template}
+                  selectedPageId={selectedPageId}
+                  onSelectPageId={handlePageSelect}
+                  metaData={metaData}
+                  itemsData={itemsData}
+                  dataLoading={dataLoading}
+                  onLoadDemoData={handleLoadDemoData}
+                  metaScope={graphMetaScope}
+                  onMetaScopeChange={setGraphMetaScope}
+                  itemsTarget={graphItemsTarget}
+                  onItemsTargetChange={setGraphItemsTarget}
+                  activeTableIndex={graphTableIndex}
+                  onActiveTableIndexChange={setGraphTableIndex}
+                  editTableIndex={graphEditTableIndex}
+                  onEditTableCells={handleEditTableCells}
+                  onCancelEditTable={() => setGraphEditTableIndex(null)}
+                  onDeleteTable={handleDeleteTableGraph}
+                  onAddTable={handleAddTableGraph}
+                  onUpdateTable={handleUpdateTableGraph}
+                  selectedSvgId={selectedBindingSvgId}
+                  onUnbindSvgId={clearBindingsBySvgId}
+                />
               <div className="graph-preview-pane">
                 <SvgViewer
                   svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}

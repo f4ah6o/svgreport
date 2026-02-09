@@ -23,6 +23,7 @@ interface SvgViewerProps {
   graphConnections?: Array<{ key: string; svgId: string; tableIndex?: number }>
   tableEditTargetIndex?: number | null
   validationSvgIds?: string[]
+  validationWarningSvgIds?: string[]
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   pendingId: string
@@ -47,6 +48,7 @@ export function SvgViewer({
   graphConnections,
   tableEditTargetIndex = null,
   validationSvgIds,
+  validationWarningSvgIds,
   onCreateTableFromSelection,
   onRemoveGraphBinding,
   pendingId,
@@ -143,6 +145,7 @@ export function SvgViewer({
 
   const bindingSet = useMemo(() => new Set(bindingSvgIds), [bindingSvgIds])
   const validationSet = useMemo(() => new Set(validationSvgIds || []), [validationSvgIds])
+  const validationWarningSet = useMemo(() => new Set(validationWarningSvgIds || []), [validationWarningSvgIds])
 
   const overlayElements = useMemo(() => {
     return elements.filter((element) => {
@@ -184,7 +187,7 @@ export function SvgViewer({
   const bindingTypeBySvgId = useMemo(() => {
     const map = new Map<string, DataKeyRef['source']>()
     if (!graphConnections) return map
-    const priority: Record<DataKeyRef['source'], number> = { items: 3, meta: 2, static: 1 }
+    const priority: Record<DataKeyRef['source'], number> = { items: 3, meta: 2, static: 1, unbound: 0 }
     for (const connection of graphConnections) {
       const ref = decodeDataKeyRef(connection.key)
       const type = ref?.source || 'meta'
@@ -209,9 +212,10 @@ export function SvgViewer({
       const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
       const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
       const isValidationError = Boolean(element.id && validationSet.has(element.id))
-      return { element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError }
+      const isValidationWarning = Boolean(element.id && validationWarningSet.has(element.id))
+      return { element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId, validationSet])
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId, validationSet, validationWarningSet])
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
@@ -770,7 +774,7 @@ export function SvgViewer({
                     preserveAspectRatio={overlayPreserveAspectRatio}
                     ref={overlaySvgRef}
                   >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError }) => (
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
                         className="svg-overlay-drop-zone"
@@ -793,6 +797,7 @@ export function SvgViewer({
                               : 'svg-overlay-rect-dim',
                           isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
                           isValidationError ? 'svg-overlay-rect-error' : '',
+                          !isValidationError && isValidationWarning ? 'svg-overlay-rect-warning' : '',
                         ].join(' ')}
                         x={bbox.x}
                         y={bbox.y}

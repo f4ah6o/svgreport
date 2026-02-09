@@ -23,6 +23,8 @@ interface GraphEditorProps {
   onDeleteTable: (pageId: string, tableIndex: number) => void
   onAddTable: (pageId: string) => void
   onUpdateTable: (pageId: string, tableIndex: number, patch: Partial<TableBinding>) => void
+  selectedSvgId: string | null
+  onUnbindSvgId: (svgId: string) => void
 }
 
 export function GraphEditor({
@@ -45,6 +47,8 @@ export function GraphEditor({
   onDeleteTable,
   onAddTable,
   onUpdateTable,
+  selectedSvgId,
+  onUnbindSvgId,
 }: GraphEditorProps) {
   const [staticInput, setStaticInput] = useState('')
   const [customStaticNodes, setCustomStaticNodes] = useState<string[]>([])
@@ -289,6 +293,26 @@ export function GraphEditor({
                   />
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        <div className="graph-section">
+          <h3>Binding Details</h3>
+          {!selectedSvgId ? (
+            <p className="empty">Select an SVG element to manage binding.</p>
+          ) : (
+            <div className="graph-binding-details">
+              <div className="graph-binding-row">
+                <span className="label">Selected SVG ID</span>
+                <span className="value">{selectedSvgId}</span>
+              </div>
+              <button
+                className="btn-secondary"
+                onClick={() => onUnbindSvgId(selectedSvgId)}
+              >
+                Keep unbound
+              </button>
             </div>
           )}
         </div>
