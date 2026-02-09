@@ -10,6 +10,7 @@ import { GraphMapOverlay } from './GraphMapOverlay'
 
 interface SvgViewerProps {
   svgPath: string | null
+  svgReloadToken?: number
   elements: TextElement[]
   templateDir: string
   bindingSvgIds: string[]
@@ -35,6 +36,7 @@ interface SvgViewerProps {
 
 export function SvgViewer({
   svgPath,
+  svgReloadToken = 0,
   elements,
   templateDir,
   bindingSvgIds,
@@ -102,7 +104,7 @@ export function SvgViewer({
     }
 
     loadSvg()
-  }, [svgPath])
+  }, [svgPath, svgReloadToken])
 
   useEffect(() => {
     if (!svgContent) {

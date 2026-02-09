@@ -5,6 +5,7 @@ import type {
   TemplateConfig,
   InspectTextResponse,
   SvgReadResponse,
+  SvgReindexResponse,
   SvgWriteResponse,
   ValidationResponse,
   PreviewResponse,
@@ -72,6 +73,13 @@ class RpcClient {
     return this.request<SvgReadResponse>('/svg/read', {
       method: 'POST',
       body: JSON.stringify({ path }),
+    })
+  }
+
+  async reindexSvgTextIds(path: string, prefix = 'text_'): Promise<SvgReindexResponse> {
+    return this.request<SvgReindexResponse>('/svg/reindex-text-ids', {
+      method: 'POST',
+      body: JSON.stringify({ path, prefix }),
     })
   }
 

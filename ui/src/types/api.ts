@@ -174,6 +174,13 @@ export interface SvgReadResponse {
   svg: string;
 }
 
+export interface SvgReindexResponse {
+  request_id: string;
+  updated: boolean;
+  mapping: Array<{ oldId: string | null; newId: string; domIndex: number }>;
+  duplicateOldIds: string[];
+}
+
 export interface SvgWriteResponse {
   request_id: string;
   saved: boolean;

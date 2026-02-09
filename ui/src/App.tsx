@@ -70,6 +70,7 @@ export function App() {
   const autoFixIdsRef = useRef(false)
   const autoFixTableRef = useRef(false)
   const validationPathLogRef = useRef(new Set<string>())
+  const [svgReloadToken, setSvgReloadToken] = useState(0)
 
   // Check connection on mount
   useEffect(() => {
@@ -321,14 +322,125 @@ export function App() {
     setSelectedPageId(pageId)
   }, [])
 
+  const applyReindexedSvgIds = useCallback((
+    svgFile: string,
+    mapping: Array<{ oldId: string | null; newId: string }>,
+    duplicateOldIds: string[],
+  ) => {
+    if (!template) return
+    const map = new Map<string, string>()
+    for (const entry of mapping) {
+      if (!entry.oldId) continue
+      if (entry.oldId === entry.newId) continue
+      map.set(entry.oldId, entry.newId)
+    }
+    const duplicates = new Set(duplicateOldIds)
+    if (map.size === 0 && duplicates.size === 0) return
+
+    setTemplate((prev) => {
+      if (!prev) return prev
+      let changed = false
+
+      const remapSvgId = (svgId: string) => {
+        if (duplicates.has(svgId)) {
+          return { svgId: '', disabled: true, changed: true }
+        }
+        const next = map.get(svgId)
+        if (next && next !== svgId) {
+          return { svgId: next, disabled: false, changed: true }
+        }
+        return null
+      }
+
+      const updateField = <T extends { svg_id: string; enabled?: boolean }>(field: T): T => {
+        if (!field.svg_id) return field
+        const remap = remapSvgId(field.svg_id)
+        if (!remap) return field
+        changed = true
+        return remap.disabled
+          ? { ...field, svg_id: '', enabled: false }
+          : { ...field, svg_id: remap.svgId }
+      }
+
+      const updatePage = (page: TemplateConfig['pages'][number]) => {
+        if (page.svg !== svgFile) return page
+        let pageChanged = false
+        const fields = (page.fields ?? []).map((field) => {
+          const next = updateField(field)
+          if (next !== field) pageChanged = true
+          return next
+        })
+
+        const tables = page.tables.map((table) => {
+          let tableChanged = false
+          const header = table.header
+            ? {
+                cells: table.header.cells.map((cell) => {
+                  const next = updateField(cell)
+                  if (next !== cell) tableChanged = true
+                  return next
+                }),
+              }
+            : table.header
+          const cells = table.cells.map((cell) => {
+            const next = updateField(cell)
+            if (next !== cell) tableChanged = true
+            return next
+          })
+          if (!tableChanged) return table
+          return { ...table, header, cells }
+        })
+
+        let pageNumber = page.page_number
+        if (page.page_number?.svg_id) {
+          const remap = remapSvgId(page.page_number.svg_id)
+          if (remap) {
+            pageChanged = true
+            pageNumber = remap.disabled
+              ? { ...page.page_number, svg_id: '' }
+              : { ...page.page_number, svg_id: remap.svgId }
+          }
+        }
+
+        if (!pageChanged) return page
+        changed = true
+        return { ...page, fields, tables, page_number: pageNumber }
+      }
+
+      const pages = prev.pages.map(updatePage)
+      const fields = prev.fields.map((field) => updateField(field))
+
+      if (!changed) return prev
+      return { ...prev, pages, fields }
+    })
+  }, [template])
+
   const loadInspectText = useCallback(async (svgPath: string) => {
     try {
+      try {
+        const reindex = await rpc.reindexSvgTextIds(svgPath, 'text_')
+        if (reindex.updated) {
+          setSvgReloadToken((value) => value + 1)
+        }
+        if (reindex.mapping.length > 0) {
+          const relativePath = svgPath.startsWith(`${templateDir}/`)
+            ? svgPath.slice(templateDir.length + 1)
+            : svgPath
+          applyReindexedSvgIds(relativePath, reindex.mapping, reindex.duplicateOldIds)
+        }
+        if (reindex.duplicateOldIds.length > 0) {
+          setNotification(`Duplicate text IDs detected. ${reindex.duplicateOldIds.length} bindings were cleared.`)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to reindex text IDs'
+        setNotification(message)
+      }
       const inspectResult = await rpc.inspectText(svgPath)
       setSvgElements(inspectResult.texts)
     } catch {
       setSvgElements([])
     }
-  }, [])
+  }, [applyReindexedSvgIds, templateDir])
 
   useEffect(() => {
     if (!selectedSvg) {
@@ -676,6 +788,7 @@ export function App() {
         await rpc.setSvgIds(svgPath, [
           { selector: { byIndex: element.index }, id: candidate },
         ])
+        setSvgReloadToken((value) => value + 1)
         const inspectResult = await rpc.inspectText(svgPath)
         setSvgElements(inspectResult.texts)
         const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
@@ -723,6 +836,7 @@ export function App() {
       await rpc.setSvgIds(svgPath, [
         { selector: { byIndex: element.index }, id: uniqueId },
       ])
+      setSvgReloadToken((value) => value + 1)
       const inspectResult = await rpc.inspectText(svgPath)
       setSvgElements(inspectResult.texts)
       const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
@@ -836,6 +950,7 @@ export function App() {
         const serializer = new XMLSerializer()
         const updatedContent = serializer.serializeToString(doc)
         await rpc.writeSvg(svgPath, updatedContent)
+        setSvgReloadToken((value) => value + 1)
       }
 
       return { updatedSvg, rowGroupUpdates }
@@ -1959,6 +2074,7 @@ export function App() {
               <div className="graph-preview-pane">
                 <SvgViewer
                   svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
+                  svgReloadToken={svgReloadToken}
                   elements={svgElements}
                   templateDir={templateDir}
                   bindingSvgIds={bindingSvgIds}
@@ -2157,6 +2273,7 @@ export function App() {
             <div className="preview-pane" style={{ width: `${100 - editorPaneWidth}%` }}>
               <SvgViewer
                 svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
+                svgReloadToken={svgReloadToken}
                 elements={svgElements}
                 templateDir={templateDir}
                 bindingSvgIds={bindingSvgIds}

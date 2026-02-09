@@ -376,6 +376,9 @@ export class RpcServer {
       } else if (pathname === '/rpc/svg/read' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgRead(body);
+      } else if (pathname === '/rpc/svg/reindex-text-ids' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleSvgReindexTextIds(body);
       } else if (pathname === '/rpc/svg/write' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgWrite(body);
@@ -644,6 +647,88 @@ export class RpcServer {
       };
     } catch (error) {
       return { error: { code: 'NOT_FOUND', message: `Cannot read SVG: ${error}` } };
+    }
+  }
+
+  private async handleSvgReindexTextIds(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { path: inputPath, prefix } = body as { path: string; prefix?: string };
+
+    if (!inputPath) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required field: path' } };
+    }
+
+    const idPrefix = typeof prefix === 'string' && prefix.length > 0 ? prefix : 'text_';
+
+    try {
+      const resolvedPath = this.resolvePath(inputPath);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'image/svg+xml');
+      const svg = doc.documentElement;
+
+      if (!svg) {
+        return { error: { code: 'BAD_REQUEST', message: 'Invalid SVG file' } };
+      }
+
+      const allElements = Array.from(svg.getElementsByTagName('*'));
+      const textNodes = Array.from(svg.getElementsByTagName('text'));
+      const textSet = new Set(textNodes);
+      const existingIds = new Set<string>();
+
+      for (const el of allElements) {
+        if (textSet.has(el)) continue;
+        const id = el.getAttribute('id');
+        if (id) existingIds.add(id);
+      }
+
+      const oldIdCounts = new Map<string, number>();
+      for (const text of textNodes) {
+        const id = text.getAttribute('id');
+        if (!id) continue;
+        oldIdCounts.set(id, (oldIdCounts.get(id) || 0) + 1);
+      }
+
+      const duplicateOldIds = Array.from(oldIdCounts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([id]) => id);
+
+      const mapping: Array<{ oldId: string | null; newId: string; domIndex: number }> = [];
+      let updated = false;
+
+      for (let i = 0; i < textNodes.length; i += 1) {
+        const text = textNodes[i];
+        const oldId = text.getAttribute('id');
+        const base = `${idPrefix}${i + 1}`;
+        let candidate = base;
+        let counter = 2;
+        while (existingIds.has(candidate)) {
+          candidate = `${base}_${counter}`;
+          counter += 1;
+        }
+        existingIds.add(candidate);
+        if (!oldId || oldId !== candidate) {
+          text.setAttribute('id', candidate);
+          updated = true;
+        }
+        mapping.push({ oldId: oldId || null, newId: candidate, domIndex: i + 1 });
+      }
+
+      if (updated) {
+        const serializer = new XMLSerializer();
+        const updatedContent = serializer.serializeToString(doc);
+        const tempPath = `${resolvedPath}.tmp`;
+        await fs.writeFile(tempPath, updatedContent, 'utf-8');
+        await fs.rename(tempPath, resolvedPath);
+      }
+
+      return {
+        updated,
+        mapping,
+        duplicateOldIds,
+        writtenPath: inputPath,
+      };
+    } catch (error) {
+      return { error: { code: 'INTERNAL_ERROR', message: `Cannot reindex SVG IDs: ${error}` } };
     }
   }
 
