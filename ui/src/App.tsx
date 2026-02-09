@@ -9,6 +9,9 @@ import type {
   KVData,
   TableData,
   TableBinding,
+  FieldBinding,
+  TableCell,
+  ValueBinding,
 } from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
@@ -1017,6 +1020,44 @@ export function App() {
       clearBindingsBySvgId(element.id)
       return
     }
+    const matchesValue = (
+      value: ValueBinding,
+      ref: { source: 'meta' | 'items' | 'static'; key: string },
+      tableSource?: string
+    ) => {
+      if (ref.source === 'static') {
+        return value.type === 'static' && value.text === ref.key
+      }
+      if (value.type !== 'data') return false
+      if (ref.source === 'items') {
+        if (tableSource) {
+          return value.key === ref.key && value.source === tableSource
+        }
+        return value.key === ref.key && value.source === 'items'
+      }
+      return value.key === ref.key && value.source !== 'items'
+    }
+    const dedupeFields = (
+      fields: FieldBinding[],
+      ref: { source: 'meta' | 'static'; key: string },
+      svgId: string,
+      keepIndex: number
+    ) => fields.filter((field, idx) => {
+      if (idx === keepIndex) return true
+      if (field.svg_id === svgId) return false
+      return !matchesValue(field.value, ref)
+    })
+    const dedupeCells = (
+      cells: TableCell[],
+      ref: { source: 'items'; key: string },
+      tableSource: string | undefined,
+      svgId: string,
+      keepIndex: number
+    ) => cells.filter((cell, idx) => {
+      if (idx === keepIndex) return true
+      if (cell.svg_id === svgId) return false
+      return !matchesValue(cell.value, ref, tableSource)
+    })
     const base = dataRef.source === 'static'
       ? `static_${dataRef.key}`
       : `${dataRef.source}_${dataRef.key}`
@@ -1032,27 +1073,38 @@ export function App() {
           if (!page.tables[tableIndex]) return page
           const table = page.tables[tableIndex]
           const value = makeDataValue(table.source || 'items', dataRef.key)
+          const targetRef = { source: 'items' as const, key: dataRef.key }
           if (graphItemsTarget === 'header') {
             const headerCells = table.header?.cells ? [...table.header.cells] : []
             const existing = headerCells.findIndex(cell => cell.svg_id === svgId)
-          const nextCell = existing >= 0
-            ? { ...headerCells[existing], svg_id: svgId, value, enabled: true }
-            : { svg_id: svgId, value, enabled: true }
-            if (existing >= 0) headerCells[existing] = nextCell
+            const byValue = existing >= 0
+              ? existing
+              : headerCells.findIndex(cell => matchesValue(cell.value, targetRef, table.source))
+            const nextCell = byValue >= 0
+              ? { ...headerCells[byValue], svg_id: svgId, value, enabled: true }
+              : { svg_id: svgId, value, enabled: true }
+            if (byValue >= 0) headerCells[byValue] = nextCell
             else headerCells.push(nextCell)
-            const nextTable = { ...table, header: { cells: headerCells } }
+            const keepIndex = byValue >= 0 ? byValue : headerCells.length - 1
+            const nextHeaderCells = dedupeCells(headerCells, targetRef, table.source, svgId, keepIndex)
+            const nextTable = { ...table, header: { cells: nextHeaderCells } }
             const tables = page.tables.map((t, idx) => idx === tableIndex ? nextTable : t)
             return { ...page, tables }
           }
 
           const cells = [...table.cells]
           const existing = cells.findIndex(cell => cell.svg_id === svgId)
-          const nextCell = existing >= 0
-            ? { ...cells[existing], svg_id: svgId, value, enabled: true }
+          const byValue = existing >= 0
+            ? existing
+            : cells.findIndex(cell => matchesValue(cell.value, targetRef, table.source))
+          const nextCell = byValue >= 0
+            ? { ...cells[byValue], svg_id: svgId, value, enabled: true }
             : { svg_id: svgId, value, enabled: true }
-          if (existing >= 0) cells[existing] = nextCell
+          if (byValue >= 0) cells[byValue] = nextCell
           else cells.push(nextCell)
-          const nextTable = { ...table, cells }
+          const keepIndex = byValue >= 0 ? byValue : cells.length - 1
+          const nextCells = dedupeCells(cells, targetRef, table.source, svgId, keepIndex)
+          const nextTable = { ...table, cells: nextCells }
           const tables = page.tables.map((t, idx) => idx === tableIndex ? nextTable : t)
           return { ...page, tables }
         }
@@ -1060,6 +1112,7 @@ export function App() {
         const value = dataRef.source === 'static'
           ? makeStaticValue(dataRef.key)
           : makeDataValue('meta', dataRef.key)
+        const targetRef = { source: dataRef.source as 'meta' | 'static', key: dataRef.key }
 
         if (graphMetaScope === 'global') {
           return page
@@ -1067,26 +1120,37 @@ export function App() {
 
         const fields = [...(page.fields ?? [])]
         const existing = fields.findIndex(field => field.svg_id === svgId)
-        const nextField = existing >= 0
-          ? { ...fields[existing], svg_id: svgId, value, enabled: true }
+        const byValue = existing >= 0
+          ? existing
+          : fields.findIndex(field => matchesValue(field.value, targetRef))
+        const nextField = byValue >= 0
+          ? { ...fields[byValue], svg_id: svgId, value, enabled: true }
           : { svg_id: svgId, value, enabled: true }
-        if (existing >= 0) fields[existing] = nextField
+        if (byValue >= 0) fields[byValue] = nextField
         else fields.push(nextField)
-        return { ...page, fields }
+        const keepIndex = byValue >= 0 ? byValue : fields.length - 1
+        const nextFields = dedupeFields(fields, targetRef, svgId, keepIndex)
+        return { ...page, fields: nextFields }
       })
 
       if (dataRef.source !== 'items' && graphMetaScope === 'global') {
         const value = dataRef.source === 'static'
           ? makeStaticValue(dataRef.key)
           : makeDataValue('meta', dataRef.key)
+        const targetRef = { source: dataRef.source as 'meta' | 'static', key: dataRef.key }
         const fields = [...prev.fields]
         const existing = fields.findIndex(field => field.svg_id === svgId)
-        const nextField = existing >= 0
-          ? { ...fields[existing], svg_id: svgId, value, enabled: true }
+        const byValue = existing >= 0
+          ? existing
+          : fields.findIndex(field => matchesValue(field.value, targetRef))
+        const nextField = byValue >= 0
+          ? { ...fields[byValue], svg_id: svgId, value, enabled: true }
           : { svg_id: svgId, value, enabled: true }
-        if (existing >= 0) fields[existing] = nextField
+        if (byValue >= 0) fields[byValue] = nextField
         else fields.push(nextField)
-        nextTemplate = { ...prev, fields, pages }
+        const keepIndex = byValue >= 0 ? byValue : fields.length - 1
+        const nextFields = dedupeFields(fields, targetRef, svgId, keepIndex)
+        nextTemplate = { ...prev, fields: nextFields, pages }
         return nextTemplate
       }
 
