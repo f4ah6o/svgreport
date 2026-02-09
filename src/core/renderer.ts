@@ -149,6 +149,9 @@ export class Renderer {
     for (const tableBinding of pageConfig.tables) {
       if (tableBinding.header?.cells?.length) {
         for (const cell of tableBinding.header.cells) {
+          if (cell.enabled === false || !cell.svg_id) {
+            continue;
+          }
           const value = this.resolveValue(cell.value);
           try {
             svgEngine.applyTextBinding(svgDoc, cell, value);
@@ -166,9 +169,14 @@ export class Renderer {
       }
 
       try {
+        const enabledCells = tableBinding.cells.filter(cell => cell.enabled !== false && cell.svg_id);
+        if (enabledCells.length === 0) {
+          continue;
+        }
+        const binding = { ...tableBinding, cells: enabledCells };
         svgEngine.applyTableBinding(
           svgDoc,
-          tableBinding,
+          binding,
           chunk.rows,
           chunk.startIndex,
           tableBinding.start_y_mm ?? 0,
@@ -183,8 +191,9 @@ export class Renderer {
     }
   }
 
-  private applyFieldList(svgDoc: Document, fields: { svg_id: string; value: ValueBinding; fit?: string; align?: string; format?: string }[]): void {
+  private applyFieldList(svgDoc: Document, fields: { svg_id: string; enabled?: boolean; value: ValueBinding; fit?: string; align?: string; format?: string }[]): void {
     for (const field of fields) {
+      if (field.enabled === false || !field.svg_id) continue;
       const value = this.resolveValue(field.value);
       try {
         svgEngine.applyTextBinding(svgDoc, field, value);

@@ -85,6 +85,7 @@ export interface TableBinding {
 
 export interface TableCell {
   svg_id: string;
+  enabled?: boolean;
   value: ValueBinding;
   fit?: 'none' | 'shrink' | 'wrap' | 'clip';
   align?: 'left' | 'center' | 'right';
@@ -93,6 +94,7 @@ export interface TableCell {
 
 export interface FieldBinding {
   svg_id: string;
+  enabled?: boolean;
   value: ValueBinding;
   fit?: 'none' | 'shrink' | 'wrap' | 'clip';
   align?: 'left' | 'center' | 'right';

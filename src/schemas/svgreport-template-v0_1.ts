@@ -56,7 +56,7 @@ export const SVGREPORT_TEMPLATE_V0_1_SCHEMA = {
     pageNumber: {
       type: 'object',
       properties: {
-        svg_id: { type: 'string', minLength: 1, description: 'Target text element id in SVG.' },
+        svg_id: { type: 'string', description: 'Target text element id in SVG.' },
         format: { type: 'string', default: '{current}/{total}' },
       },
       additionalProperties: false,
@@ -83,7 +83,8 @@ export const SVGREPORT_TEMPLATE_V0_1_SCHEMA = {
       type: 'object',
       required: ['svg_id', 'column'],
       properties: {
-        svg_id: { type: 'string', minLength: 1, description: 'Element id inside the row group.' },
+        svg_id: { type: 'string', description: 'Element id inside the row group.' },
+        enabled: { type: 'boolean', default: true },
         column: { type: 'string', minLength: 1, description: 'CSV column name in that table source.' },
         fit: { type: 'string', enum: ['none', 'shrink', 'wrap', 'clip'], default: 'none' },
         align: { type: 'string', enum: ['left', 'center', 'right'], default: 'left' },
@@ -95,7 +96,8 @@ export const SVGREPORT_TEMPLATE_V0_1_SCHEMA = {
       type: 'object',
       required: ['svg_id', 'source', 'key'],
       properties: {
-        svg_id: { type: 'string', minLength: 1, description: 'Target element id in SVG.' },
+        svg_id: { type: 'string', description: 'Target element id in SVG.' },
+        enabled: { type: 'boolean', default: true },
         source: { type: 'string', minLength: 1, description: 'Data source name, typically meta.' },
         key: { type: 'string', minLength: 1, description: 'For meta(kv): key column value. For table: column name (rare in v0.1).' },
         fit: { type: 'string', enum: ['none', 'shrink', 'wrap', 'clip'], default: 'none' },

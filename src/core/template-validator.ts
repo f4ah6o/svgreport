@@ -135,6 +135,21 @@ export async function validateTemplateFull(
     if (page.kind === 'first') {
       for (let fieldIndex = 0; fieldIndex < config.fields.length; fieldIndex += 1) {
         const field = config.fields[fieldIndex];
+        if (field.enabled === false) {
+          continue;
+        }
+        if (!field.svg_id) {
+          result.valid = false;
+          result.svgErrors.push({
+            type: 'missing_id',
+            pageId: page.id,
+            svgFile: page.svg,
+            elementId: field.svg_id,
+            path: `fields[${fieldIndex}].svg_id`,
+            message: `Field binding references missing ID: ${field.svg_id} (value: ${field.value.type === 'data' ? `${field.value.source}:${field.value.key}` : 'static'})`,
+          });
+          continue;
+        }
         if (!allIds.has(field.svg_id)) {
           const valueLabel = field.value.type === 'data'
             ? `${field.value.source}:${field.value.key}`
@@ -155,6 +170,21 @@ export async function validateTemplateFull(
     // Check page field bindings
     for (let fieldIndex = 0; fieldIndex < (page.fields ?? []).length; fieldIndex += 1) {
       const field = page.fields![fieldIndex];
+      if (field.enabled === false) {
+        continue;
+      }
+      if (!field.svg_id) {
+        result.valid = false;
+        result.svgErrors.push({
+          type: 'missing_id',
+          pageId: page.id,
+          svgFile: page.svg,
+          elementId: field.svg_id,
+          path: `pages[${pageIndex}].fields[${fieldIndex}].svg_id`,
+          message: `Page field references missing ID: ${field.svg_id} (value: ${field.value.type === 'data' ? `${field.value.source}:${field.value.key}` : 'static'})`,
+        });
+        continue;
+      }
       if (!allIds.has(field.svg_id)) {
         const valueLabel = field.value.type === 'data'
           ? `${field.value.source}:${field.value.key}`
@@ -209,6 +239,21 @@ export async function validateTemplateFull(
       // Check cell bindings
       for (let cellIndex = 0; cellIndex < table.cells.length; cellIndex += 1) {
         const cell = table.cells[cellIndex];
+        if (cell.enabled === false) {
+          continue;
+        }
+        if (!cell.svg_id) {
+          result.valid = false;
+          result.svgErrors.push({
+            type: 'missing_cell',
+            pageId: page.id,
+            svgFile: page.svg,
+            elementId: cell.svg_id,
+            path: `pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].svg_id`,
+            message: `Table cell references missing ID: ${cell.svg_id} (value: ${cell.value.type === 'data' ? `${cell.value.source}:${cell.value.key}` : 'static'}) - should be inside row group ${table.row_group_id}`,
+          });
+          continue;
+        }
         if (!rowGroupIds.has(cell.svg_id) && !allIds.has(cell.svg_id)) {
           const valueLabel = cell.value.type === 'data'
             ? `${cell.value.source}:${cell.value.key}`
@@ -232,6 +277,21 @@ export async function validateTemplateFull(
       if (!table.header?.cells?.length) continue
       for (let cellIndex = 0; cellIndex < table.header.cells.length; cellIndex += 1) {
         const cell = table.header.cells[cellIndex];
+        if (cell.enabled === false) {
+          continue;
+        }
+        if (!cell.svg_id) {
+          result.valid = false;
+          result.svgErrors.push({
+            type: 'missing_id',
+            pageId: page.id,
+            svgFile: page.svg,
+            elementId: cell.svg_id,
+            path: `pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].svg_id`,
+            message: `Table header references missing ID: ${cell.svg_id} (value: ${cell.value.type === 'data' ? `${cell.value.source}:${cell.value.key}` : 'static'})`,
+          });
+          continue;
+        }
         if (!allIds.has(cell.svg_id)) {
           const valueLabel = cell.value.type === 'data'
             ? `${cell.value.source}:${cell.value.key}`
@@ -274,6 +334,7 @@ export async function validateTemplateFull(
 
     if (page.kind === 'first') {
       for (const field of config.fields) {
+        if (field.enabled === false) continue;
         if (!field.svg_id) continue;
         if (pageSvgIds.has(field.svg_id)) {
           warnDuplicate(field.svg_id, 'in global fields');
@@ -284,6 +345,7 @@ export async function validateTemplateFull(
     }
 
     for (const field of page.fields ?? []) {
+      if (field.enabled === false) continue;
       if (!field.svg_id) continue;
       if (pageSvgIds.has(field.svg_id)) {
         warnDuplicate(field.svg_id, 'across fields');
@@ -303,6 +365,7 @@ export async function validateTemplateFull(
 
       if (table.header?.cells?.length) {
         for (const cell of table.header.cells) {
+          if (cell.enabled === false) continue;
           if (!cell.svg_id) continue;
           if (pageSvgIds.has(cell.svg_id)) {
             warnDuplicate(cell.svg_id, 'in table header');
@@ -313,6 +376,7 @@ export async function validateTemplateFull(
       }
 
       for (const cell of table.cells) {
+        if (cell.enabled === false) continue;
         if (!cell.svg_id) continue;
         if (pageSvgIds.has(cell.svg_id)) {
           warnDuplicate(cell.svg_id, 'in table cells');

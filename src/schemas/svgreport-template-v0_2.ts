@@ -61,7 +61,7 @@ export const SVGREPORT_TEMPLATE_V0_2_SCHEMA = {
     pageNumber: {
       type: 'object',
       properties: {
-        svg_id: { type: 'string', minLength: 1, description: 'Target text element id in SVG.' },
+        svg_id: { type: 'string', description: 'Target text element id in SVG.' },
         format: { type: 'string', default: '{current}/{total}' },
       },
       additionalProperties: false,
@@ -101,7 +101,8 @@ export const SVGREPORT_TEMPLATE_V0_2_SCHEMA = {
       type: 'object',
       required: ['svg_id', 'value'],
       properties: {
-        svg_id: { type: 'string', minLength: 1, description: 'Target element id in SVG.' },
+        svg_id: { type: 'string', description: 'Target element id in SVG.' },
+        enabled: { type: 'boolean', default: true },
         value: { $ref: '#/$defs/valueBinding' },
         fit: { type: 'string', enum: ['none', 'shrink', 'wrap', 'clip'], default: 'none' },
         align: { type: 'string', enum: ['left', 'center', 'right'], default: 'left' },
@@ -113,7 +114,8 @@ export const SVGREPORT_TEMPLATE_V0_2_SCHEMA = {
       type: 'object',
       required: ['svg_id', 'value'],
       properties: {
-        svg_id: { type: 'string', minLength: 1, description: 'Target element id in SVG.' },
+        svg_id: { type: 'string', description: 'Target element id in SVG.' },
+        enabled: { type: 'boolean', default: true },
         value: { $ref: '#/$defs/valueBinding' },
         fit: { type: 'string', enum: ['none', 'shrink', 'wrap', 'clip'], default: 'none' },
         align: { type: 'string', enum: ['left', 'center', 'right'], default: 'left' },

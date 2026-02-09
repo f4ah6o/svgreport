@@ -441,19 +441,19 @@ export function App() {
           const pages = prev.pages.map((page, idx) => {
             if (idx !== pageIndex) return page
             const fields = (page.fields ?? []).map((field) =>
-              missingIds.has(field.svg_id) ? { ...field, svg_id: '' } : field
+              missingIds.has(field.svg_id) ? { ...field, svg_id: '', enabled: false } : field
             )
             const tables = page.tables.map((table) => ({
               ...table,
               header: table.header
                 ? {
                     cells: table.header.cells.map((cell) =>
-                      missingIds.has(cell.svg_id) ? { ...cell, svg_id: '' } : cell
+                      missingIds.has(cell.svg_id) ? { ...cell, svg_id: '', enabled: false } : cell
                     ),
                   }
                 : table.header,
               cells: table.cells.map((cell) =>
-                missingIds.has(cell.svg_id) ? { ...cell, svg_id: '' } : cell
+                missingIds.has(cell.svg_id) ? { ...cell, svg_id: '', enabled: false } : cell
               ),
             }))
             const pageNumber = page.page_number
@@ -539,7 +539,7 @@ export function App() {
       if (!prev) return prev
       if (ref.kind === 'global-field') {
         const fields = prev.fields.map((field, index) =>
-          index === ref.index ? { ...field, svg_id: svgId } : field
+          index === ref.index ? { ...field, svg_id: svgId, enabled: true } : field
         )
         return { ...prev, fields }
       }
@@ -547,7 +547,7 @@ export function App() {
         if (page.id !== ref.pageId) return page
         if (ref.kind === 'page-field') {
           const fields = (page.fields ?? []).map((field, index) =>
-            index === ref.index ? { ...field, svg_id: svgId } : field
+            index === ref.index ? { ...field, svg_id: svgId, enabled: true } : field
           )
           return { ...page, fields }
         }
@@ -556,7 +556,7 @@ export function App() {
             if (tableIndex !== ref.tableIndex) return table
             if (!table.header?.cells) return table
             const cells = table.header.cells.map((cell, cellIndex) =>
-              cellIndex === ref.cellIndex ? { ...cell, svg_id: svgId } : cell
+              cellIndex === ref.cellIndex ? { ...cell, svg_id: svgId, enabled: true } : cell
             )
             return { ...table, header: { cells } }
           })
@@ -566,7 +566,7 @@ export function App() {
           const tables = page.tables.map((table, tableIndex) => {
             if (tableIndex !== ref.tableIndex) return table
             const cells = table.cells.map((cell, cellIndex) =>
-              cellIndex === ref.cellIndex ? { ...cell, svg_id: svgId } : cell
+              cellIndex === ref.cellIndex ? { ...cell, svg_id: svgId, enabled: true } : cell
             )
             return { ...table, cells }
           })
@@ -859,6 +859,7 @@ export function App() {
 
     // Global fields
     for (const field of template.fields) {
+      if (field.enabled === false) continue
       if (field.svg_id) ids.add(field.svg_id)
     }
 
@@ -867,6 +868,7 @@ export function App() {
     if (page?.page_number?.svg_id) ids.add(page.page_number.svg_id)
     if (page?.fields) {
       for (const field of page.fields) {
+        if (field.enabled === false) continue
         if (field.svg_id) ids.add(field.svg_id)
       }
     }
@@ -874,10 +876,12 @@ export function App() {
       for (const table of page.tables) {
         if (table.header?.cells) {
           for (const cell of table.header.cells) {
+            if (cell.enabled === false) continue
             if (cell.svg_id) ids.add(cell.svg_id)
           }
         }
         for (const cell of table.cells) {
+          if (cell.enabled === false) continue
           if (cell.svg_id) ids.add(cell.svg_id)
         }
       }
@@ -964,9 +968,9 @@ export function App() {
           if (graphItemsTarget === 'header') {
             const headerCells = table.header?.cells ? [...table.header.cells] : []
             const existing = headerCells.findIndex(cell => cell.svg_id === svgId)
-            const nextCell = existing >= 0
-              ? { ...headerCells[existing], svg_id: svgId, value }
-              : { svg_id: svgId, value }
+          const nextCell = existing >= 0
+            ? { ...headerCells[existing], svg_id: svgId, value, enabled: true }
+            : { svg_id: svgId, value, enabled: true }
             if (existing >= 0) headerCells[existing] = nextCell
             else headerCells.push(nextCell)
             const nextTable = { ...table, header: { cells: headerCells } }
@@ -977,8 +981,8 @@ export function App() {
           const cells = [...table.cells]
           const existing = cells.findIndex(cell => cell.svg_id === svgId)
           const nextCell = existing >= 0
-            ? { ...cells[existing], svg_id: svgId, value }
-            : { svg_id: svgId, value }
+            ? { ...cells[existing], svg_id: svgId, value, enabled: true }
+            : { svg_id: svgId, value, enabled: true }
           if (existing >= 0) cells[existing] = nextCell
           else cells.push(nextCell)
           const nextTable = { ...table, cells }
@@ -997,8 +1001,8 @@ export function App() {
         const fields = [...(page.fields ?? [])]
         const existing = fields.findIndex(field => field.svg_id === svgId)
         const nextField = existing >= 0
-          ? { ...fields[existing], svg_id: svgId, value }
-          : { svg_id: svgId, value }
+          ? { ...fields[existing], svg_id: svgId, value, enabled: true }
+          : { svg_id: svgId, value, enabled: true }
         if (existing >= 0) fields[existing] = nextField
         else fields.push(nextField)
         return { ...page, fields }
@@ -1011,8 +1015,8 @@ export function App() {
         const fields = [...prev.fields]
         const existing = fields.findIndex(field => field.svg_id === svgId)
         const nextField = existing >= 0
-          ? { ...fields[existing], svg_id: svgId, value }
-          : { svg_id: svgId, value }
+          ? { ...fields[existing], svg_id: svgId, value, enabled: true }
+          : { svg_id: svgId, value, enabled: true }
         if (existing >= 0) fields[existing] = nextField
         else fields.push(nextField)
         nextTemplate = { ...prev, fields, pages }
@@ -1075,18 +1079,18 @@ export function App() {
       if (!prev) return prev
       const svgId = connection.svgId
 
-      const fields = prev.fields.map((field) => {
-        if (field.svg_id === svgId && matchesValue(field.value)) {
-          return { ...field, svg_id: '' }
-        }
-        return field
-      })
+    const fields = prev.fields.map((field) => {
+      if (field.svg_id === svgId && matchesValue(field.value)) {
+        return { ...field, svg_id: '', enabled: false }
+      }
+      return field
+    })
 
       const pages = prev.pages.map((page) => {
         if (page.id !== selectedPageId) return page
         const pageFields = (page.fields ?? []).map((field) => {
           if (field.svg_id === svgId && matchesValue(field.value)) {
-            return { ...field, svg_id: '' }
+            return { ...field, svg_id: '', enabled: false }
           }
           return field
         })
@@ -1095,14 +1099,14 @@ export function App() {
           const headerCells = table.header?.cells
             ? table.header.cells.map((cell) => {
               if (cell.svg_id === svgId && matchesValue(cell.value, table.source)) {
-                return { ...cell, svg_id: '' }
+                return { ...cell, svg_id: '', enabled: false }
               }
               return cell
             })
             : undefined
           const cells = table.cells.map((cell) => {
             if (cell.svg_id === svgId && matchesValue(cell.value, table.source)) {
-              return { ...cell, svg_id: '' }
+              return { ...cell, svg_id: '', enabled: false }
             }
             return cell
           })
@@ -1205,7 +1209,10 @@ export function App() {
     if (!page) return []
     return page.tables.map((table, index) => ({
       id: `table-${index + 1}`,
-      cellSvgIds: table.cells.map(cell => cell.svg_id).filter(Boolean),
+      cellSvgIds: table.cells
+        .filter(cell => cell.enabled !== false)
+        .map(cell => cell.svg_id)
+        .filter(Boolean),
     }))
   }, [template, selectedPageId])
 
@@ -1249,18 +1256,22 @@ export function App() {
     }
 
     for (const field of template.fields) {
+      if (field.enabled === false) continue
       addConnection(toDataRef(field.value), field.svg_id)
     }
 
     for (const field of page.fields ?? []) {
+      if (field.enabled === false) continue
       addConnection(toDataRef(field.value), field.svg_id)
     }
 
     for (const [tableIndex, table] of page.tables.entries()) {
       for (const cell of table.header?.cells ?? []) {
+        if (cell.enabled === false) continue
         addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
       for (const cell of table.cells) {
+        if (cell.enabled === false) continue
         addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
     }
@@ -1316,6 +1327,7 @@ export function App() {
       }
 
       for (const field of template.fields) {
+        if (field.enabled === false) continue
         const ref = toDataRef(field.value)
         if (ref) addNode(ref, ref.key, missingFor(ref))
       }
@@ -1323,15 +1335,18 @@ export function App() {
       const page = template.pages.find(p => p.id === selectedPageId)
       if (page) {
         for (const field of page.fields ?? []) {
+          if (field.enabled === false) continue
           const ref = toDataRef(field.value)
           if (ref) addNode(ref, ref.key, missingFor(ref))
         }
         for (const table of page.tables ?? []) {
           for (const cell of table.header?.cells ?? []) {
+            if (cell.enabled === false) continue
             const ref = toDataRef(cell.value, table.source || 'items')
             if (ref) addNode(ref, ref.key, missingFor(ref))
           }
           for (const cell of table.cells ?? []) {
+            if (cell.enabled === false) continue
             const ref = toDataRef(cell.value, table.source || 'items')
             if (ref) addNode(ref, ref.key, missingFor(ref))
           }
@@ -1342,18 +1357,22 @@ export function App() {
     const staticValues = new Set<string>()
     if (template) {
       for (const field of template.fields) {
+        if (field.enabled === false) continue
         if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
       }
       const page = template.pages.find(p => p.id === selectedPageId)
       if (page) {
         for (const field of page.fields ?? []) {
+          if (field.enabled === false) continue
           if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
         }
         for (const table of page.tables ?? []) {
           for (const cell of table.header?.cells ?? []) {
+            if (cell.enabled === false) continue
             if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
           }
           for (const cell of table.cells ?? []) {
+            if (cell.enabled === false) continue
             if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
           }
         }

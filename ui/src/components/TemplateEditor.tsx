@@ -560,7 +560,7 @@ export function TemplateEditor({
 
   const clearSelectedBindingSvgId = () => {
     if (!selectedBinding) return
-    applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: '' }))
+    applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: '', enabled: false }))
     onSelectBindingSvgId(null)
   }
 
@@ -1349,10 +1349,33 @@ export function TemplateEditor({
                 value={selectedBinding.binding.svg_id}
                 onChange={(e) => {
                   const nextSvgId = (e.target as HTMLInputElement).value
-                  applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: nextSvgId }))
+                  applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: nextSvgId, enabled: true }))
                   onSelectBindingSvgId(nextSvgId || null)
                 }}
+                disabled={selectedBinding.binding.enabled === false}
               />
+            </div>
+
+            <div className="form-row">
+              <label>Binding:</label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={selectedBinding.binding.enabled === false}
+                  onChange={(e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    applySelectedBindingUpdate((binding) => ({
+                      ...binding,
+                      enabled: checked ? false : true,
+                      svg_id: checked ? '' : binding.svg_id,
+                    }))
+                    if (checked) {
+                      onSelectBindingSvgId(null)
+                    }
+                  }}
+                />
+                Keep unbound (skip validation)
+              </label>
             </div>
 
             <div className="form-row">
