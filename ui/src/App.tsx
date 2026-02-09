@@ -64,6 +64,7 @@ export function App() {
   const [editorPaneWidth, setEditorPaneWidth] = useState(44)
   const mainSplitRef = useRef<HTMLDivElement | null>(null)
   const autoFixIdsRef = useRef(false)
+  const validationPathLogRef = useRef(new Set<string>())
 
   // Check connection on mount
   useEffect(() => {
@@ -1085,13 +1086,15 @@ export function App() {
   }, [template, selectedPageId, svgElements])
 
   const graphNodes = useMemo(() => {
-    type Node = { key: string; ref: DataKeyRef; label: string; type: DataKeyRef['source']; missing: boolean }
+    type Node = { key: string; ref: DataKeyRef; label: string; type: DataKeyRef['source']; missing: boolean; status?: 'error' | 'warning' }
     const nodes = new Map<string, Node>()
 
-    const addNode = (ref: DataKeyRef, label: string, missing: boolean) => {
+    const addNode = (ref: DataKeyRef, label: string, missing: boolean, status?: 'error' | 'warning') => {
       const key = encodeDataKeyRef(ref)
       if (!nodes.has(key)) {
-        nodes.set(key, { key, ref, label, type: ref.source, missing })
+        nodes.set(key, { key, ref, label, type: ref.source, missing, status })
+      } else if (status && nodes.get(key)?.status !== 'error') {
+        nodes.set(key, { ...nodes.get(key)!, status })
       }
     }
 
@@ -1177,10 +1180,36 @@ export function App() {
       addNode({ source: 'static', key: text }, text, false)
     }
 
+    const errorKeys = new Set<string>()
+    const warningKeys = new Set<string>()
+    if (validationResult) {
+      for (const err of validationResult.errors) {
+        const ref = resolveDataKeyFromPathForTemplate(template, selectedPageId, err.path || '')
+        if (ref) errorKeys.add(encodeDataKeyRef(ref))
+      }
+      for (const warn of validationResult.warnings) {
+        if (typeof warn !== 'string') continue
+        const ref = resolveDataKeyFromPathForTemplate(template, selectedPageId, warn)
+        if (ref) warningKeys.add(encodeDataKeyRef(ref))
+      }
+    }
+
     for (const connection of graphConnections) {
       if (nodes.has(connection.key)) continue
       const ref = decodeDataKeyRef(connection.key) || { source: 'meta', key: connection.key }
-      addNode(ref, ref.key, true)
+      const status = errorKeys.has(encodeDataKeyRef(ref))
+        ? 'error'
+        : warningKeys.has(encodeDataKeyRef(ref))
+          ? 'warning'
+          : undefined
+      addNode(ref, ref.key, true, status)
+    }
+
+    for (const [key, node] of nodes.entries()) {
+      const status = errorKeys.has(key) ? 'error' : warningKeys.has(key) ? 'warning' : node.status
+      if (status && node.status !== 'error') {
+        nodes.set(key, { ...node, status })
+      }
     }
 
     const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2 }
@@ -1189,74 +1218,9 @@ export function App() {
       if (typeDelta !== 0) return typeDelta
       return a.label.localeCompare(b.label)
     })
-  }, [metaData, itemsData, template, selectedPageId, graphConnections])
+  }, [metaData, itemsData, template, selectedPageId, graphConnections, validationResult])
 
 
-
-  const resolveSvgIdFromPath = useCallback((path: string): string | null => {
-    if (!template) return null
-    const normalized = normalizeValidationPath(path)
-    if (!normalized) return null
-    const tokens = parsePathTokens(normalized)
-    if (!tokens || tokens.length === 0) return null
-
-    const token0 = tokens[0]
-    if (token0.type !== 'key') return null
-
-    const getPageByIndex = (index: number) => template.pages[index]
-
-    if (token0.value === 'fields') {
-      const indexToken = tokens[1]
-      if (!indexToken || indexToken.type !== 'index') return null
-      const field = template.fields[indexToken.value]
-      return field?.svg_id ?? null
-    }
-
-    if (token0.value !== 'pages') return null
-    const pageIndexToken = tokens[1]
-    if (!pageIndexToken || pageIndexToken.type !== 'index') return null
-    const page = getPageByIndex(pageIndexToken.value)
-    if (!page) return null
-    if (selectedPageId && page.id !== selectedPageId) return null
-
-    const section = tokens[2]
-    if (!section || section.type !== 'key') return null
-
-    if (section.value === 'page_number') {
-      return page.page_number?.svg_id ?? null
-    }
-
-    if (section.value === 'fields') {
-      const fieldIndex = tokens[3]
-      if (!fieldIndex || fieldIndex.type !== 'index') return null
-      return page.fields?.[fieldIndex.value]?.svg_id ?? null
-    }
-
-    if (section.value !== 'tables') return null
-    const tableIndex = tokens[3]
-    if (!tableIndex || tableIndex.type !== 'index') return null
-    const table = page.tables[tableIndex.value]
-    if (!table) return null
-
-    const next = tokens[4]
-    if (!next || next.type !== 'key') return null
-
-    if (next.value === 'cells') {
-      const cellIndex = tokens[5]
-      if (!cellIndex || cellIndex.type !== 'index') return null
-      return table.cells[cellIndex.value]?.svg_id ?? null
-    }
-
-    if (next.value === 'header') {
-      const headerCellsKey = tokens[5]
-      const cellIndex = tokens[6]
-      if (!headerCellsKey || headerCellsKey.type !== 'key' || headerCellsKey.value !== 'cells') return null
-      if (!cellIndex || cellIndex.type !== 'index') return null
-      return table.header?.cells?.[cellIndex.value]?.svg_id ?? null
-    }
-
-    return null
-  }, [template, selectedPageId])
 
   const focusFromValidationPath = useCallback((path: string) => {
     if (!path) {
@@ -1276,10 +1240,10 @@ export function App() {
         ? 'formatters'
         : 'pages'
 
-    const svgId = resolveSvgIdFromPath(path)
+    const svgId = resolveSvgIdFromPathForTemplate(template, selectedPageId, path)
     if (svgId) setSelectedBindingSvgId(svgId)
     setFocusTarget({ tab, path: normalized })
-  }, [resolveSvgIdFromPath])
+  }, [template, selectedPageId])
 
   const handleCopyValidation = useCallback(async (payload: { code: string; path: string; file: string; message: string }) => {
     const lines = [
@@ -1404,15 +1368,39 @@ export function App() {
     return groups
   }, [validationResult])
 
+  const unmappedValidationErrors = useMemo(() => {
+    if (!validationResult || !template) return []
+    return validationResult.errors.filter((err) => {
+      const path = err.path || ''
+      if (!path) return true
+      const normalized = normalizeValidationPath(path)
+      const hasMapping =
+        Boolean(resolveSvgIdFromPathForTemplate(template, null, path))
+        || Boolean(resolveDataKeyFromPathForTemplate(template, null, path))
+      return !normalized || !hasMapping
+    })
+  }, [validationResult, template])
+
   const validationSvgIds = useMemo(() => {
     if (!validationResult || !template) return []
     const ids = new Set<string>()
     for (const err of validationResult.errors) {
-      const svgId = resolveSvgIdFromPath(err.path || '')
+      const svgId = resolveSvgIdFromPathForTemplate(template, selectedPageId, err.path || '')
       if (svgId) ids.add(svgId)
     }
     return Array.from(ids)
-  }, [validationResult, template, resolveSvgIdFromPath])
+  }, [validationResult, template, selectedPageId])
+
+  const validationWarningSvgIds = useMemo(() => {
+    if (!validationResult || !template) return []
+    const ids = new Set<string>()
+    for (const warn of validationResult.warnings) {
+      if (typeof warn !== 'string') continue
+      const svgId = resolveSvgIdFromPathForTemplate(template, selectedPageId, warn)
+      if (svgId) ids.add(svgId)
+    }
+    return Array.from(ids)
+  }, [validationResult, template, selectedPageId])
 
   useEffect(() => {
     if (!validationResult) return
@@ -1423,6 +1411,22 @@ export function App() {
       other: groupedValidationErrors.other.length > 0,
     })
   }, [validationResult, groupedValidationErrors])
+
+  useEffect(() => {
+    if (!validationResult || !template) return
+    for (const err of unmappedValidationErrors) {
+      const path = err.path || '(missing path)'
+      const logKey = `${err.code}:${path}`
+      if (validationPathLogRef.current.has(logKey)) continue
+      validationPathLogRef.current.add(logKey)
+      console.warn('[validation] Unmapped path', {
+        code: err.code,
+        path,
+        file: err.file,
+        message: err.message,
+      })
+    }
+  }, [validationResult, template, unmappedValidationErrors])
 
   return (
     <div className="app">
@@ -1543,6 +1547,7 @@ export function App() {
                   graphConnections={graphConnections}
                   tableEditTargetIndex={graphEditTableIndex}
                   validationSvgIds={validationSvgIds}
+                  validationWarningSvgIds={validationWarningSvgIds}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
                   onCreateTableFromSelection={(_rect, hitElements) => {
                     if (!template || !selectedPageId) return
@@ -1683,6 +1688,7 @@ export function App() {
                 selectedElementIndex={selectedTextIndex}
                 highlightedBindingSvgId={selectedBindingSvgId}
                 validationSvgIds={validationSvgIds}
+                validationWarningSvgIds={validationWarningSvgIds}
                 onSelectElement={handleSelectTextElement}
                 onDropBinding={handleDropBindingOnElement}
                 pendingId={pendingId}
@@ -1773,6 +1779,20 @@ export function App() {
                   onCopy: handleCopyValidation,
                 })}
               </div>
+              {unmappedValidationErrors.length > 0 && (
+                <div className="validation-unmapped">
+                  <p className="warning">
+                    ⚠ {unmappedValidationErrors.length} unmapped paths (see console)
+                  </p>
+                  <ul>
+                    {unmappedValidationErrors.map((err, i) => (
+                      <li key={`unmapped-${i}`}>
+                        <code>{err.path || '(missing path)'}</code> — {err.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
           {validationResult.warnings.length > 0 && (
@@ -1850,6 +1870,158 @@ function renderValidationGroup(args: {
       )}
     </div>
   )
+}
+
+function resolveSvgIdFromPathForTemplate(
+  template: TemplateConfig | null,
+  selectedPageId: string | null,
+  path: string
+): string | null {
+  if (!template) return null
+  const normalized = normalizeValidationPath(path)
+  if (!normalized) return null
+  const tokens = parsePathTokens(normalized)
+  if (!tokens || tokens.length === 0) return null
+
+  const token0 = tokens[0]
+  if (token0.type !== 'key') return null
+
+  const getPageByIndex = (index: number) => template.pages[index]
+
+  if (token0.value === 'fields') {
+    const indexToken = tokens[1]
+    if (!indexToken || indexToken.type !== 'index') return null
+    const field = template.fields[indexToken.value]
+    return field?.svg_id ?? null
+  }
+
+  if (token0.value !== 'pages') return null
+  const pageIndexToken = tokens[1]
+  if (!pageIndexToken || pageIndexToken.type !== 'index') return null
+  const page = getPageByIndex(pageIndexToken.value)
+  if (!page) return null
+  if (selectedPageId && page.id !== selectedPageId) return null
+
+  const section = tokens[2]
+  if (!section || section.type !== 'key') return null
+
+  if (section.value === 'page_number') {
+    return page.page_number?.svg_id ?? null
+  }
+
+  if (section.value === 'fields') {
+    const fieldIndex = tokens[3]
+    if (!fieldIndex || fieldIndex.type !== 'index') return null
+    return page.fields?.[fieldIndex.value]?.svg_id ?? null
+  }
+
+  if (section.value !== 'tables') return null
+  const tableIndex = tokens[3]
+  if (!tableIndex || tableIndex.type !== 'index') return null
+  const table = page.tables[tableIndex.value]
+  if (!table) return null
+
+  const next = tokens[4]
+  if (!next || next.type !== 'key') return null
+
+  if (next.value === 'cells') {
+    const cellIndex = tokens[5]
+    if (!cellIndex || cellIndex.type !== 'index') return null
+    return table.cells[cellIndex.value]?.svg_id ?? null
+  }
+
+  if (next.value === 'header') {
+    const headerCellsKey = tokens[5]
+    const cellIndex = tokens[6]
+    if (!headerCellsKey || headerCellsKey.type !== 'key' || headerCellsKey.value !== 'cells') return null
+    if (!cellIndex || cellIndex.type !== 'index') return null
+    return table.header?.cells?.[cellIndex.value]?.svg_id ?? null
+  }
+
+  return null
+}
+
+function resolveDataKeyFromPathForTemplate(
+  template: TemplateConfig | null,
+  selectedPageId: string | null,
+  path: string
+): { source: 'meta' | 'items' | 'static'; key: string } | null {
+  if (!template) return null
+  const normalized = normalizeValidationPath(path)
+  if (!normalized) return null
+  const tokens = parsePathTokens(normalized)
+  if (!tokens || tokens.length === 0) return null
+
+  const token0 = tokens[0]
+  if (token0.type !== 'key') return null
+
+  const getValueBinding = (
+    value?: { type: string; source?: string; key?: string; text?: string }
+  ): { source: 'meta' | 'items' | 'static'; key: string } | null => {
+    if (!value) return null
+    if (value.type === 'data' && value.key) {
+      const source: 'meta' | 'items' = value.source === 'items' ? 'items' : 'meta'
+      return { source, key: value.key }
+    }
+    if (value.type === 'static' && value.text) {
+      return { source: 'static', key: value.text }
+    }
+    return null
+  }
+
+  const getPageByIndex = (index: number) => template.pages[index]
+
+  if (token0.value === 'fields') {
+    const indexToken = tokens[1]
+    if (!indexToken || indexToken.type !== 'index') return null
+    const field = template.fields[indexToken.value]
+    return getValueBinding(field?.value)
+  }
+
+  if (token0.value !== 'pages') return null
+  const pageIndexToken = tokens[1]
+  if (!pageIndexToken || pageIndexToken.type !== 'index') return null
+  const page = getPageByIndex(pageIndexToken.value)
+  if (!page) return null
+  if (selectedPageId && page.id !== selectedPageId) return null
+
+  const section = tokens[2]
+  if (!section || section.type !== 'key') return null
+
+  if (section.value === 'page_number') {
+    return null
+  }
+
+  if (section.value === 'fields') {
+    const fieldIndex = tokens[3]
+    if (!fieldIndex || fieldIndex.type !== 'index') return null
+    return getValueBinding(page.fields?.[fieldIndex.value]?.value)
+  }
+
+  if (section.value !== 'tables') return null
+  const tableIndex = tokens[3]
+  if (!tableIndex || tableIndex.type !== 'index') return null
+  const table = page.tables[tableIndex.value]
+  if (!table) return null
+
+  const next = tokens[4]
+  if (!next || next.type !== 'key') return null
+
+  if (next.value === 'cells') {
+    const cellIndex = tokens[5]
+    if (!cellIndex || cellIndex.type !== 'index') return null
+    return getValueBinding(table.cells[cellIndex.value]?.value)
+  }
+
+  if (next.value === 'header') {
+    const headerCellsKey = tokens[5]
+    const cellIndex = tokens[6]
+    if (!headerCellsKey || headerCellsKey.type !== 'key' || headerCellsKey.value !== 'cells') return null
+    if (!cellIndex || cellIndex.type !== 'index') return null
+    return getValueBinding(table.header?.cells?.[cellIndex.value]?.value)
+  }
+
+  return null
 }
 
 function normalizeValidationPath(path: string): string {
