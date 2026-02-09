@@ -904,7 +904,7 @@ export class RpcServer {
         errors: result.svgErrors.map(e => ({
           code: this.mapValidationErrorType(e.type),
           file: e.svgFile,
-          path: e.elementId,
+          path: e.path || e.elementId,
           message: e.message,
         })),
         warnings: result.warnings,

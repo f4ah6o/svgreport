@@ -25,6 +25,7 @@ export interface ValidationResult {
     svgFile: string;
     elementId: string;
     message: string;
+    path?: string;
   }>;
   warnings: string[];
 }
@@ -81,7 +82,8 @@ export async function validateTemplateFull(
   }
 
   // Step 3: SVG reference integrity checks
-  for (const page of config.pages) {
+  for (let pageIndex = 0; pageIndex < config.pages.length; pageIndex += 1) {
+    const page = config.pages[pageIndex];
     const svgPath = path.join(templateDir, page.svg);
 
     // Check SVG file exists
@@ -94,6 +96,7 @@ export async function validateTemplateFull(
         pageId: page.id,
         svgFile: page.svg,
         elementId: '',
+        path: `pages[${pageIndex}].svg`,
         message: `SVG file not found: ${page.svg}`,
       });
       continue;
@@ -112,6 +115,7 @@ export async function validateTemplateFull(
         pageId: page.id,
         svgFile: page.svg,
         elementId: '',
+        path: `pages[${pageIndex}].svg`,
         message: 'Failed to parse SVG file',
       });
       continue;
@@ -129,7 +133,8 @@ export async function validateTemplateFull(
 
     // Check global field bindings (only required on first pages)
     if (page.kind === 'first') {
-      for (const field of config.fields) {
+      for (let fieldIndex = 0; fieldIndex < config.fields.length; fieldIndex += 1) {
+        const field = config.fields[fieldIndex];
         if (!allIds.has(field.svg_id)) {
           const valueLabel = field.value.type === 'data'
             ? `${field.value.source}:${field.value.key}`
@@ -140,6 +145,7 @@ export async function validateTemplateFull(
             pageId: page.id,
             svgFile: page.svg,
             elementId: field.svg_id,
+            path: `fields[${fieldIndex}].svg_id`,
             message: `Field binding references missing ID: ${field.svg_id} (value: ${valueLabel})`,
           });
         }
@@ -147,7 +153,8 @@ export async function validateTemplateFull(
     }
 
     // Check page field bindings
-    for (const field of page.fields ?? []) {
+    for (let fieldIndex = 0; fieldIndex < (page.fields ?? []).length; fieldIndex += 1) {
+      const field = page.fields![fieldIndex];
       if (!allIds.has(field.svg_id)) {
         const valueLabel = field.value.type === 'data'
           ? `${field.value.source}:${field.value.key}`
@@ -158,13 +165,15 @@ export async function validateTemplateFull(
           pageId: page.id,
           svgFile: page.svg,
           elementId: field.svg_id,
+          path: `pages[${pageIndex}].fields[${fieldIndex}].svg_id`,
           message: `Page field references missing ID: ${field.svg_id} (value: ${valueLabel})`,
         });
       }
     }
 
     // Check table bindings
-    for (const table of page.tables) {
+    for (let tableIndex = 0; tableIndex < page.tables.length; tableIndex += 1) {
+      const table = page.tables[tableIndex];
       // Check row_group_id
       if (!allIds.has(table.row_group_id)) {
         result.valid = false;
@@ -173,6 +182,7 @@ export async function validateTemplateFull(
           pageId: page.id,
           svgFile: page.svg,
           elementId: table.row_group_id,
+          path: `pages[${pageIndex}].tables[${tableIndex}].row_group_id`,
           message: `Table references missing row group ID: ${table.row_group_id}`,
         });
         continue;
@@ -197,7 +207,8 @@ export async function validateTemplateFull(
       }
 
       // Check cell bindings
-      for (const cell of table.cells) {
+      for (let cellIndex = 0; cellIndex < table.cells.length; cellIndex += 1) {
+        const cell = table.cells[cellIndex];
         if (!rowGroupIds.has(cell.svg_id) && !allIds.has(cell.svg_id)) {
           const valueLabel = cell.value.type === 'data'
             ? `${cell.value.source}:${cell.value.key}`
@@ -208,6 +219,7 @@ export async function validateTemplateFull(
             pageId: page.id,
             svgFile: page.svg,
             elementId: cell.svg_id,
+            path: `pages[${pageIndex}].tables[${tableIndex}].cells[${cellIndex}].svg_id`,
             message: `Table cell references missing ID: ${cell.svg_id} (value: ${valueLabel}) - should be inside row group ${table.row_group_id}`,
           });
         }
@@ -215,9 +227,11 @@ export async function validateTemplateFull(
     }
 
     // Check table header bindings
-    for (const table of page.tables) {
+    for (let tableIndex = 0; tableIndex < page.tables.length; tableIndex += 1) {
+      const table = page.tables[tableIndex];
       if (!table.header?.cells?.length) continue
-      for (const cell of table.header.cells) {
+      for (let cellIndex = 0; cellIndex < table.header.cells.length; cellIndex += 1) {
+        const cell = table.header.cells[cellIndex];
         if (!allIds.has(cell.svg_id)) {
           const valueLabel = cell.value.type === 'data'
             ? `${cell.value.source}:${cell.value.key}`
@@ -228,6 +242,7 @@ export async function validateTemplateFull(
             pageId: page.id,
             svgFile: page.svg,
             elementId: cell.svg_id,
+            path: `pages[${pageIndex}].tables[${tableIndex}].header.cells[${cellIndex}].svg_id`,
             message: `Table header references missing ID: ${cell.svg_id} (value: ${valueLabel})`,
           });
         }
@@ -243,6 +258,7 @@ export async function validateTemplateFull(
           pageId: page.id,
           svgFile: page.svg,
           elementId: page.page_number.svg_id,
+          path: `pages[${pageIndex}].page_number.svg_id`,
           message: `Page number references missing ID: ${page.page_number.svg_id}`,
         });
       }
