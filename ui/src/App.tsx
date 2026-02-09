@@ -63,6 +63,7 @@ export function App() {
   })
   const [editorPaneWidth, setEditorPaneWidth] = useState(44)
   const mainSplitRef = useRef<HTMLDivElement | null>(null)
+  const autoFixIdsRef = useRef(false)
 
   // Check connection on mount
   useEffect(() => {
@@ -356,6 +357,132 @@ export function App() {
     }
     setSelectedPageId(template.pages[0]?.id ?? null)
   }, [template, selectedPageId, selectedSvg])
+
+  useEffect(() => {
+    if (!template || !selectedSvg) return
+    if (svgElements.length === 0) return
+    if (autoFixIdsRef.current) return
+
+    const svgPath = `${templateDir}/${selectedSvg}`
+    const idToElements = new Map<string, TextElement[]>()
+    const existingIds = new Set<string>()
+
+    for (const element of svgElements) {
+      if (!element.id) continue
+      existingIds.add(element.id)
+      const list = idToElements.get(element.id) || []
+      list.push(element)
+      idToElements.set(element.id, list)
+    }
+
+    const assignments: Array<{ selector: { byIndex: number }; id: string }> = []
+    const usedIds = new Set(existingIds)
+    const makeUnique = (base: string) => {
+      let counter = 2
+      let candidate = `${base}_${counter}`
+      while (usedIds.has(candidate)) {
+        counter += 1
+        candidate = `${base}_${counter}`
+      }
+      usedIds.add(candidate)
+      return candidate
+    }
+
+    for (const [id, list] of idToElements.entries()) {
+      if (list.length <= 1) continue
+      const sorted = [...list].sort((a, b) => {
+        const aIndex = a.domIndex ?? a.index
+        const bIndex = b.domIndex ?? b.index
+        return aIndex - bIndex
+      })
+      for (let i = 1; i < sorted.length; i += 1) {
+        const nextId = makeUnique(id)
+        assignments.push({ selector: { byIndex: sorted[i].index }, id: nextId })
+      }
+    }
+
+    const missingIds = new Set<string>()
+    const currentPage = selectedPageId ? template.pages.find(p => p.id === selectedPageId) : null
+    const hasId = (value?: string | null) => Boolean(value && existingIds.has(value))
+
+    if (currentPage) {
+      if (currentPage.page_number?.svg_id && !hasId(currentPage.page_number.svg_id)) {
+        missingIds.add(currentPage.page_number.svg_id)
+      }
+      for (const field of currentPage.fields ?? []) {
+        if (field.svg_id && !hasId(field.svg_id)) missingIds.add(field.svg_id)
+      }
+      for (const table of currentPage.tables) {
+        for (const cell of table.header?.cells ?? []) {
+          if (cell.svg_id && !hasId(cell.svg_id)) missingIds.add(cell.svg_id)
+        }
+        for (const cell of table.cells) {
+          if (cell.svg_id && !hasId(cell.svg_id)) missingIds.add(cell.svg_id)
+        }
+      }
+    }
+
+    if (assignments.length === 0 && missingIds.size === 0) return
+
+    autoFixIdsRef.current = true
+    const run = async () => {
+      if (assignments.length > 0) {
+        await rpc.setSvgIds(svgPath, assignments)
+      }
+
+      if (missingIds.size > 0) {
+        setTemplate((prev) => {
+          if (!prev) return prev
+          const pageIndex = prev.pages.findIndex(p => p.id === selectedPageId)
+          if (pageIndex < 0) return prev
+          const pages = prev.pages.map((page, idx) => {
+            if (idx !== pageIndex) return page
+            const fields = (page.fields ?? []).map((field) =>
+              missingIds.has(field.svg_id) ? { ...field, svg_id: '' } : field
+            )
+            const tables = page.tables.map((table) => ({
+              ...table,
+              header: table.header
+                ? {
+                    cells: table.header.cells.map((cell) =>
+                      missingIds.has(cell.svg_id) ? { ...cell, svg_id: '' } : cell
+                    ),
+                  }
+                : table.header,
+              cells: table.cells.map((cell) =>
+                missingIds.has(cell.svg_id) ? { ...cell, svg_id: '' } : cell
+              ),
+            }))
+            const pageNumber = page.page_number
+              ? {
+                  ...page.page_number,
+                  svg_id: missingIds.has(page.page_number.svg_id) ? '' : page.page_number.svg_id,
+                }
+              : page.page_number
+            return { ...page, fields, tables, page_number: pageNumber }
+          })
+          return { ...prev, pages }
+        })
+      }
+
+      const inspectResult = await rpc.inspectText(svgPath)
+      setSvgElements(inspectResult.texts)
+
+      const parts: string[] = []
+      if (assignments.length > 0) parts.push(`${assignments.length} duplicate IDs renamed`)
+      if (missingIds.size > 0) parts.push(`${missingIds.size} missing bindings cleared`)
+      if (parts.length > 0) setNotification(`Auto-fixed IDs: ${parts.join(', ')}`)
+    }
+
+    run()
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : 'Failed to auto-fix IDs'
+        setNotification(message)
+      })
+      .finally(() => {
+        autoFixIdsRef.current = false
+      })
+  }, [template, selectedSvg, selectedPageId, svgElements, templateDir])
 
   useEffect(() => {
     if (!template || !selectedPageId) return
