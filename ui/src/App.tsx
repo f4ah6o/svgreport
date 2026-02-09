@@ -1013,11 +1013,13 @@ export function App() {
   const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static' | 'unbound'; key: string }, element: TextElement) => {
     if (!template || !selectedPageId) return
     if (dataRef.source === 'unbound') {
-      if (!element.id) {
+      const svgId = element.id || await ensureSvgIdForElement(element, 'unbound')
+      if (!svgId) {
         setNotification('Selected element has no id to unbind.')
         return
       }
-      clearBindingsBySvgId(element.id)
+      clearBindingsBySvgId(svgId)
+      setSelectedBindingSvgId(svgId)
       return
     }
     const matchesValue = (
@@ -1184,6 +1186,20 @@ export function App() {
     setSelectedBindingSvgId(svgId)
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
   }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir, clearBindingsBySvgId])
+
+  const handleUnbindSvgId = useCallback(async (svgId: string) => {
+    if (!svgId) return
+    const element = svgElements.find((el) => el.id === svgId || el.suggestedId === svgId) || null
+    if (element && !element.id) {
+      const ensured = await ensureSvgIdForElement(element, 'unbound')
+      if (ensured) {
+        clearBindingsBySvgId(ensured)
+        setSelectedBindingSvgId(ensured)
+        return
+      }
+    }
+    clearBindingsBySvgId(svgId)
+  }, [svgElements, ensureSvgIdForElement, clearBindingsBySvgId])
 
   const handleRemoveGraphBinding = useCallback((connection: { key: string; svgId: string }) => {
     const ref = decodeDataKeyRef(connection.key)
@@ -1907,7 +1923,7 @@ export function App() {
                   onAddTable={handleAddTableGraph}
                   onUpdateTable={handleUpdateTableGraph}
                   selectedSvgId={selectedBindingSvgId}
-                  onUnbindSvgId={clearBindingsBySvgId}
+                  onUnbindSvgId={handleUnbindSvgId}
                 />
               <div className="graph-preview-pane">
                 <SvgViewer
