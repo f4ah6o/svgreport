@@ -560,7 +560,7 @@ export function TemplateEditor({
 
   const clearSelectedBindingSvgId = () => {
     if (!selectedBinding) return
-    applySelectedBindingUpdate((binding) => ({ ...binding, svg_id: '', enabled: false }))
+    applySelectedBindingUpdate((binding) => ({ ...binding, enabled: false }))
     onSelectBindingSvgId(null)
   }
 
@@ -1364,11 +1364,10 @@ export function TemplateEditor({
                   checked={selectedBinding.binding.enabled === false}
                   onChange={(e) => {
                     const checked = (e.target as HTMLInputElement).checked
-                    applySelectedBindingUpdate((binding) => ({
-                      ...binding,
-                      enabled: checked ? false : true,
-                      svg_id: checked ? '' : binding.svg_id,
-                    }))
+                  applySelectedBindingUpdate((binding) => ({
+                    ...binding,
+                    enabled: checked ? false : true,
+                  }))
                     if (checked) {
                       onSelectBindingSvgId(null)
                     }

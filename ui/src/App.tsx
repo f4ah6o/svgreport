@@ -539,20 +539,20 @@ export function App() {
     setTemplate((prev) => {
       if (!prev) return prev
       const fields = prev.fields.map((field) =>
-        field.svg_id === svgId ? { ...field, svg_id: '', enabled: false } : field
+        field.svg_id === svgId ? { ...field, enabled: false } : field
       )
       const pages = prev.pages.map((page) => {
         const pageFields = (page.fields ?? []).map((field) =>
-          field.svg_id === svgId ? { ...field, svg_id: '', enabled: false } : field
+          field.svg_id === svgId ? { ...field, enabled: false } : field
         )
         const tables = page.tables.map((table) => {
           const headerCells = table.header?.cells
             ? table.header.cells.map((cell) =>
-              cell.svg_id === svgId ? { ...cell, svg_id: '', enabled: false } : cell
+              cell.svg_id === svgId ? { ...cell, enabled: false } : cell
             )
             : undefined
           const cells = table.cells.map((cell) =>
-            cell.svg_id === svgId ? { ...cell, svg_id: '', enabled: false } : cell
+            cell.svg_id === svgId ? { ...cell, enabled: false } : cell
           )
           return { ...table, header: headerCells ? { cells: headerCells } : table.header, cells }
         })
@@ -1273,9 +1273,15 @@ export function App() {
 
     const connections: Array<{ key: string; svgId: string; tableIndex?: number }> = []
 
-    const addConnection = (ref: DataKeyRef | null, svgId?: string, tableIndex?: number) => {
-      if (!ref || !includeSvgId(svgId)) return
-      connections.push({ key: encodeDataKeyRef(ref), svgId: svgId!, tableIndex })
+    const addConnection = (
+      ref: DataKeyRef | null,
+      svgId?: string,
+      tableIndex?: number,
+      overrideSvgId?: string
+    ) => {
+      const targetId = overrideSvgId ?? svgId
+      if (!ref || !includeSvgId(targetId)) return
+      connections.push({ key: encodeDataKeyRef(ref), svgId: targetId!, tableIndex })
     }
 
     const toDataRef = (
@@ -1296,22 +1302,34 @@ export function App() {
     }
 
     for (const field of template.fields) {
-      if (field.enabled === false) continue
+      if (field.enabled === false) {
+        addConnection({ source: 'unbound', key: 'unbound' }, field.svg_id, undefined, field.svg_id)
+        continue
+      }
       addConnection(toDataRef(field.value), field.svg_id)
     }
 
     for (const field of page.fields ?? []) {
-      if (field.enabled === false) continue
+      if (field.enabled === false) {
+        addConnection({ source: 'unbound', key: 'unbound' }, field.svg_id, undefined, field.svg_id)
+        continue
+      }
       addConnection(toDataRef(field.value), field.svg_id)
     }
 
     for (const [tableIndex, table] of page.tables.entries()) {
       for (const cell of table.header?.cells ?? []) {
-        if (cell.enabled === false) continue
+        if (cell.enabled === false) {
+          addConnection({ source: 'unbound', key: 'unbound' }, cell.svg_id, tableIndex, cell.svg_id)
+          continue
+        }
         addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
       for (const cell of table.cells) {
-        if (cell.enabled === false) continue
+        if (cell.enabled === false) {
+          addConnection({ source: 'unbound', key: 'unbound' }, cell.svg_id, tableIndex, cell.svg_id)
+          continue
+        }
         addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
     }
