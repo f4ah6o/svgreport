@@ -68,6 +68,7 @@ export function SvgViewer({
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid')
   const [showGraphLines, setShowGraphLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
+  const [bindMode, setBindMode] = useState(false)
   const [tableDrawMode, setTableDrawMode] = useState(false)
   const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
   const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
@@ -669,7 +670,10 @@ export function SvgViewer({
                 onClick={() => {
                   setShowGraphLines((prev) => {
                     const next = !prev
-                    if (!next) setLineEditMode(false)
+                    if (!next) {
+                      setLineEditMode(false)
+                      setBindMode(false)
+                    }
                     return next
                   })
                 }}
@@ -685,6 +689,7 @@ export function SvgViewer({
                       setTableDrawMode(false)
                       setTableDragRect(null)
                       setTableDragStart(null)
+                      setBindMode(false)
                     }
                     return next
                   })
@@ -692,6 +697,23 @@ export function SvgViewer({
                 disabled={!showGraphLines}
               >
                 {lineEditMode ? 'Done Editing' : 'Edit Lines'}
+              </button>
+              <button
+                className={`btn-secondary ${bindMode ? 'active' : ''}`}
+                onClick={() => {
+                  setBindMode((prev) => {
+                    const next = !prev
+                    if (next) {
+                      setLineEditMode(false)
+                      setTableDrawMode(false)
+                      setTableDragRect(null)
+                      setTableDragStart(null)
+                    }
+                    return next
+                  })
+                }}
+              >
+                {bindMode ? 'Done Binding' : 'Bind Mode'}
               </button>
               <label className="svg-preview-select">
                 Line Style
@@ -711,6 +733,7 @@ export function SvgViewer({
                 setTableDragRect(null)
                 setTableDragStart(null)
                 setLineEditMode(false)
+                setBindMode(false)
               }}
             >
               {tableEditTargetIndex !== null
@@ -730,7 +753,7 @@ export function SvgViewer({
                 <GraphMapOverlay
                   nodes={orderedGraphNodes}
                   sections={graphMapSections}
-                  dragEnabled={lineEditMode}
+                  dragEnabled={bindMode}
                   boundKeys={boundGraphKeys}
                   onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
                 />

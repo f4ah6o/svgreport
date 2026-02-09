@@ -108,6 +108,14 @@ export function GraphMapOverlay({
         canDrag ? 'graph-map-node-draggable' : '',
       ].join(' ')}
       draggable={canDrag}
+      onMouseDown={(event) => {
+        if (!canDrag) return
+        event.stopPropagation()
+      }}
+      onMouseUp={(event) => {
+        if (!canDrag) return
+        event.stopPropagation()
+      }}
       onDragStart={(event) => {
         if (!canDrag) return
         const payload = encodeDataKeyRef(node.ref)
@@ -115,6 +123,9 @@ export function GraphMapOverlay({
         event.dataTransfer?.setData('application/json', payload)
         event.dataTransfer?.setData('text/plain', payload)
         if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
+      }}
+      onDragEnd={(event) => {
+        event.stopPropagation()
       }}
     >
       <div className="graph-map-node-header">
