@@ -22,7 +22,6 @@ interface GraphMapOverlayProps {
   groups?: Array<{ id: string; title: string; nodes: GraphMapNode[] }>
   sections?: GraphMapSection[]
   dragEnabled?: boolean
-  boundKeys?: Set<string>
   onAnchorsChange: (anchors: Map<string, { x: number; y: number }>) => void
 }
 
@@ -31,7 +30,6 @@ export function GraphMapOverlay({
   groups,
   sections,
   dragEnabled = false,
-  boundKeys,
   onAnchorsChange,
 }: GraphMapOverlayProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -95,8 +93,7 @@ export function GraphMapOverlay({
   }, [sections, groups, nodes])
 
   const renderNode = (node: GraphMapNode) => {
-    const isBound = boundKeys?.has(node.key) ?? false
-    const canDrag = dragEnabled && !isBound
+    const canDrag = dragEnabled
     return (
     <div
       key={node.key}

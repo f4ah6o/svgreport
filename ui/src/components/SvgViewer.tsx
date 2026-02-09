@@ -547,10 +547,6 @@ export function SvgViewer({
     return lines
   }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect])
 
-  const boundGraphKeys = useMemo(() => {
-    if (!graphConnections) return new Set<string>()
-    return new Set(graphConnections.map(connection => connection.key))
-  }, [graphConnections])
 
 
   const updateContainerRect = useCallback(() => {
@@ -754,7 +750,6 @@ export function SvgViewer({
                   nodes={orderedGraphNodes}
                   sections={graphMapSections}
                   dragEnabled={bindMode}
-                  boundKeys={boundGraphKeys}
                   onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
                 />
               )}
