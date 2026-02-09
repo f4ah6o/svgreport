@@ -22,6 +22,7 @@ interface SvgViewerProps {
   graphMapNodes?: GraphMapNode[]
   graphConnections?: Array<{ key: string; svgId: string; tableIndex?: number }>
   tableEditTargetIndex?: number | null
+  validationSvgIds?: string[]
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   pendingId: string
@@ -45,6 +46,7 @@ export function SvgViewer({
   graphMapNodes,
   graphConnections,
   tableEditTargetIndex = null,
+  validationSvgIds,
   onCreateTableFromSelection,
   onRemoveGraphBinding,
   pendingId,
@@ -140,6 +142,7 @@ export function SvgViewer({
   }, [elements, selectedElementIndex])
 
   const bindingSet = useMemo(() => new Set(bindingSvgIds), [bindingSvgIds])
+  const validationSet = useMemo(() => new Set(validationSvgIds || []), [validationSvgIds])
 
   const overlayElements = useMemo(() => {
     return elements.filter((element) => {
@@ -205,9 +208,10 @@ export function SvgViewer({
       const isBound = Boolean(element.id && bindingSet.has(element.id))
       const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
       const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
-      return { element, bbox, listIndex, isBound, isHighlighted, bindingType }
+      const isValidationError = Boolean(element.id && validationSet.has(element.id))
+      return { element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId])
+  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId, validationSet])
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
@@ -766,7 +770,7 @@ export function SvgViewer({
                     preserveAspectRatio={overlayPreserveAspectRatio}
                     ref={overlaySvgRef}
                   >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType }) => (
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
                         className="svg-overlay-drop-zone"
@@ -788,6 +792,7 @@ export function SvgViewer({
                               ? 'svg-overlay-rect-bound'
                               : 'svg-overlay-rect-dim',
                           isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
+                          isValidationError ? 'svg-overlay-rect-error' : '',
                         ].join(' ')}
                         x={bbox.x}
                         y={bbox.y}

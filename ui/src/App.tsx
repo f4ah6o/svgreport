@@ -1193,6 +1193,71 @@ export function App() {
 
 
 
+  const resolveSvgIdFromPath = useCallback((path: string): string | null => {
+    if (!template) return null
+    const normalized = normalizeValidationPath(path)
+    if (!normalized) return null
+    const tokens = parsePathTokens(normalized)
+    if (!tokens || tokens.length === 0) return null
+
+    const token0 = tokens[0]
+    if (token0.type !== 'key') return null
+
+    const getPageByIndex = (index: number) => template.pages[index]
+
+    if (token0.value === 'fields') {
+      const indexToken = tokens[1]
+      if (!indexToken || indexToken.type !== 'index') return null
+      const field = template.fields[indexToken.value]
+      return field?.svg_id ?? null
+    }
+
+    if (token0.value !== 'pages') return null
+    const pageIndexToken = tokens[1]
+    if (!pageIndexToken || pageIndexToken.type !== 'index') return null
+    const page = getPageByIndex(pageIndexToken.value)
+    if (!page) return null
+    if (selectedPageId && page.id !== selectedPageId) return null
+
+    const section = tokens[2]
+    if (!section || section.type !== 'key') return null
+
+    if (section.value === 'page_number') {
+      return page.page_number?.svg_id ?? null
+    }
+
+    if (section.value === 'fields') {
+      const fieldIndex = tokens[3]
+      if (!fieldIndex || fieldIndex.type !== 'index') return null
+      return page.fields?.[fieldIndex.value]?.svg_id ?? null
+    }
+
+    if (section.value !== 'tables') return null
+    const tableIndex = tokens[3]
+    if (!tableIndex || tableIndex.type !== 'index') return null
+    const table = page.tables[tableIndex.value]
+    if (!table) return null
+
+    const next = tokens[4]
+    if (!next || next.type !== 'key') return null
+
+    if (next.value === 'cells') {
+      const cellIndex = tokens[5]
+      if (!cellIndex || cellIndex.type !== 'index') return null
+      return table.cells[cellIndex.value]?.svg_id ?? null
+    }
+
+    if (next.value === 'header') {
+      const headerCellsKey = tokens[5]
+      const cellIndex = tokens[6]
+      if (!headerCellsKey || headerCellsKey.type !== 'key' || headerCellsKey.value !== 'cells') return null
+      if (!cellIndex || cellIndex.type !== 'index') return null
+      return table.header?.cells?.[cellIndex.value]?.svg_id ?? null
+    }
+
+    return null
+  }, [template, selectedPageId])
+
   const focusFromValidationPath = useCallback((path: string) => {
     if (!path) {
       setNotification('This validation error does not include a jump path. Please read the message.')
@@ -1211,8 +1276,10 @@ export function App() {
         ? 'formatters'
         : 'pages'
 
+    const svgId = resolveSvgIdFromPath(path)
+    if (svgId) setSelectedBindingSvgId(svgId)
     setFocusTarget({ tab, path: normalized })
-  }, [])
+  }, [resolveSvgIdFromPath])
 
   const handleCopyValidation = useCallback(async (payload: { code: string; path: string; file: string; message: string }) => {
     const lines = [
@@ -1336,6 +1403,16 @@ export function App() {
 
     return groups
   }, [validationResult])
+
+  const validationSvgIds = useMemo(() => {
+    if (!validationResult || !template) return []
+    const ids = new Set<string>()
+    for (const err of validationResult.errors) {
+      const svgId = resolveSvgIdFromPath(err.path || '')
+      if (svgId) ids.add(svgId)
+    }
+    return Array.from(ids)
+  }, [validationResult, template, resolveSvgIdFromPath])
 
   useEffect(() => {
     if (!validationResult) return
@@ -1465,6 +1542,7 @@ export function App() {
                   graphMapNodes={graphNodes}
                   graphConnections={graphConnections}
                   tableEditTargetIndex={graphEditTableIndex}
+                  validationSvgIds={validationSvgIds}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
                   onCreateTableFromSelection={(_rect, hitElements) => {
                     if (!template || !selectedPageId) return
@@ -1604,6 +1682,7 @@ export function App() {
                 tableBindingGroups={tableBindingGroups}
                 selectedElementIndex={selectedTextIndex}
                 highlightedBindingSvgId={selectedBindingSvgId}
+                validationSvgIds={validationSvgIds}
                 onSelectElement={handleSelectTextElement}
                 onDropBinding={handleDropBindingOnElement}
                 pendingId={pendingId}

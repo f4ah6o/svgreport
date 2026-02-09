@@ -692,6 +692,13 @@
   cursor: pointer;
 }
 
+.svg-overlay-rect-error {
+  fill: rgba(231, 76, 60, 0.12);
+  stroke: #e74c3c;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
 
 .svg-overlay-label {
   fill: #1f4f8f;
