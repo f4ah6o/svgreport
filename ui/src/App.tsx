@@ -720,7 +720,7 @@ export function App() {
           rowGroupId = nextId
           rowGroupUpdates.set(tableIndex, rowGroupId)
           updatedSvg = true
-        } else if (firstCell && rowGroup?.parentNode !== targetParent) {
+        } else if (firstCell && rowGroup && !rowGroup.contains(firstCell)) {
           const nextId = makeUniqueId(rowGroupId || `table_${tableIndex + 1}_rows`)
           rowGroup = doc.createElementNS('http://www.w3.org/2000/svg', 'g')
           rowGroup.setAttribute('id', nextId)
