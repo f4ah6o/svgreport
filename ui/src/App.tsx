@@ -1501,20 +1501,23 @@ export function App() {
     }
 
     const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2, unbound: 3 }
-    const sorted = Array.from(nodes.values()).sort((a, b) => {
+    const unboundRef: DataKeyRef = { source: 'unbound', key: 'unbound' }
+    const unboundKey = encodeDataKeyRef(unboundRef)
+    if (!nodes.has(unboundKey)) {
+      nodes.set(unboundKey, {
+        key: unboundKey,
+        ref: unboundRef,
+        label: 'Unbound',
+        type: 'unbound',
+        missing: false,
+      })
+    }
+
+    return Array.from(nodes.values()).sort((a, b) => {
       const typeDelta = typeOrder[a.type] - typeOrder[b.type]
       if (typeDelta !== 0) return typeDelta
       return a.label.localeCompare(b.label)
     })
-    const unboundRef: DataKeyRef = { source: 'unbound', key: 'unbound' }
-    sorted.push({
-      key: encodeDataKeyRef(unboundRef),
-      ref: unboundRef,
-      label: 'Unbound',
-      type: 'unbound',
-      missing: false,
-    })
-    return sorted
   }, [metaData, itemsData, template, selectedPageId, graphConnections, validationResult, selectedSvg])
 
 
