@@ -5,6 +5,7 @@ import type {
   TemplateConfig,
   InspectTextResponse,
   SvgReadResponse,
+  SvgWriteResponse,
   ValidationResponse,
   PreviewResponse,
   SaveResponse,
@@ -71,6 +72,13 @@ class RpcClient {
     return this.request<SvgReadResponse>('/svg/read', {
       method: 'POST',
       body: JSON.stringify({ path }),
+    })
+  }
+
+  async writeSvg(path: string, svg: string): Promise<SvgWriteResponse> {
+    return this.request<SvgWriteResponse>('/svg/write', {
+      method: 'POST',
+      body: JSON.stringify({ path, svg }),
     })
   }
 

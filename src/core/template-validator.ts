@@ -127,20 +127,22 @@ export async function validateTemplateFull(
       }
     }
 
-    // Check global field bindings (expected on all pages)
-    for (const field of config.fields) {
-      if (!allIds.has(field.svg_id)) {
-        const valueLabel = field.value.type === 'data'
-          ? `${field.value.source}:${field.value.key}`
-          : 'static';
-        result.valid = false;
-        result.svgErrors.push({
-          type: 'missing_id',
-          pageId: page.id,
-          svgFile: page.svg,
-          elementId: field.svg_id,
-          message: `Field binding references missing ID: ${field.svg_id} (value: ${valueLabel})`,
-        });
+    // Check global field bindings (only required on first pages)
+    if (page.kind === 'first') {
+      for (const field of config.fields) {
+        if (!allIds.has(field.svg_id)) {
+          const valueLabel = field.value.type === 'data'
+            ? `${field.value.source}:${field.value.key}`
+            : 'static';
+          result.valid = false;
+          result.svgErrors.push({
+            type: 'missing_id',
+            pageId: page.id,
+            svgFile: page.svg,
+            elementId: field.svg_id,
+            message: `Field binding references missing ID: ${field.svg_id} (value: ${valueLabel})`,
+          });
+        }
       }
     }
 
@@ -247,21 +249,68 @@ export async function validateTemplateFull(
     }
   }
 
-  // Step 4: Check for duplicate IDs in template
-  const allSvgIds = new Set<string>();
-  for (const field of config.fields) {
-    if (allSvgIds.has(field.svg_id)) {
-      result.warnings.push(`Duplicate svg_id in global fields: ${field.svg_id}`);
-    } else {
-      allSvgIds.add(field.svg_id);
-    }
-  }
+  // Step 4: Check for duplicate IDs within each page
   for (const page of config.pages) {
+    const pageSvgIds = new Set<string>();
+    const warnDuplicate = (id: string, context: string) => {
+      result.warnings.push(`Duplicate svg_id ${context}: ${id} (page: ${page.id})`);
+    };
+
+    if (page.kind === 'first') {
+      for (const field of config.fields) {
+        if (!field.svg_id) continue;
+        if (pageSvgIds.has(field.svg_id)) {
+          warnDuplicate(field.svg_id, 'in global fields');
+        } else {
+          pageSvgIds.add(field.svg_id);
+        }
+      }
+    }
+
     for (const field of page.fields ?? []) {
-      if (allSvgIds.has(field.svg_id)) {
-        result.warnings.push(`Duplicate svg_id across fields: ${field.svg_id} (page: ${page.id})`);
+      if (!field.svg_id) continue;
+      if (pageSvgIds.has(field.svg_id)) {
+        warnDuplicate(field.svg_id, 'across fields');
       } else {
-        allSvgIds.add(field.svg_id);
+        pageSvgIds.add(field.svg_id);
+      }
+    }
+
+    for (const table of page.tables) {
+      if (table.row_group_id) {
+        if (pageSvgIds.has(table.row_group_id)) {
+          warnDuplicate(table.row_group_id, 'row group');
+        } else {
+          pageSvgIds.add(table.row_group_id);
+        }
+      }
+
+      if (table.header?.cells?.length) {
+        for (const cell of table.header.cells) {
+          if (!cell.svg_id) continue;
+          if (pageSvgIds.has(cell.svg_id)) {
+            warnDuplicate(cell.svg_id, 'in table header');
+          } else {
+            pageSvgIds.add(cell.svg_id);
+          }
+        }
+      }
+
+      for (const cell of table.cells) {
+        if (!cell.svg_id) continue;
+        if (pageSvgIds.has(cell.svg_id)) {
+          warnDuplicate(cell.svg_id, 'in table cells');
+        } else {
+          pageSvgIds.add(cell.svg_id);
+        }
+      }
+    }
+
+    if (page.page_number?.svg_id) {
+      if (pageSvgIds.has(page.page_number.svg_id)) {
+        warnDuplicate(page.page_number.svg_id, 'page number');
+      } else {
+        pageSvgIds.add(page.page_number.svg_id);
       }
     }
   }

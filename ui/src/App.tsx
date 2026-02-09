@@ -64,6 +64,7 @@ export function App() {
   const [editorPaneWidth, setEditorPaneWidth] = useState(44)
   const mainSplitRef = useRef<HTMLDivElement | null>(null)
   const autoFixIdsRef = useRef(false)
+  const autoFixTableRef = useRef(false)
   const validationPathLogRef = useRef(new Set<string>())
 
   // Check connection on mount
@@ -648,6 +649,153 @@ export function App() {
     }
   }, [selectedSvg, templateDir, svgElements, getUniqueSvgId])
 
+  const normalizeRowGroupsForPage = useCallback(async (templateSnapshot: TemplateConfig, pageId: string) => {
+    if (!selectedSvg) return null
+    if (autoFixTableRef.current) return null
+
+    const page = templateSnapshot.pages.find(p => p.id === pageId)
+    if (!page) return null
+
+    const svgPath = `${templateDir}/${selectedSvg}`
+    autoFixTableRef.current = true
+    try {
+      const svgResult = await rpc.readSvg(svgPath)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgResult.svg, 'image/svg+xml')
+      const svg = doc.documentElement
+      if (!svg) return null
+
+      const existingIds = new Set<string>()
+      const allElements = Array.from(svg.getElementsByTagName('*'))
+      for (const el of allElements) {
+        const id = el.getAttribute('id')
+        if (id) existingIds.add(id)
+      }
+
+      const makeUniqueId = (base: string) => {
+        let candidate = base
+        let counter = 2
+        while (existingIds.has(candidate)) {
+          candidate = `${base}_${counter}`
+          counter += 1
+        }
+        existingIds.add(candidate)
+        return candidate
+      }
+
+      let updatedSvg = false
+      const rowGroupUpdates = new Map<number, string>()
+
+      for (const [tableIndex, table] of page.tables.entries()) {
+        const cellIds = table.cells.map(cell => cell.svg_id).filter(Boolean)
+
+        let firstCell: Element | null = null
+        if (cellIds.length > 0) {
+          const firstCellId = cellIds.find(id => Boolean(id))
+          if (firstCellId) {
+            const resolved = doc.getElementById(firstCellId)
+            if (resolved && resolved.parentNode) {
+              firstCell = resolved
+            }
+          }
+        }
+
+        const targetParent = (firstCell?.parentNode as Element) || svg
+        let rowGroupId = (table.row_group_id || '').trim()
+        if (!rowGroupId) {
+          rowGroupId = makeUniqueId(`table_${tableIndex + 1}_rows`)
+        }
+
+        let rowGroup = doc.getElementById(rowGroupId) as Element | null
+        const validRowGroup = rowGroup && rowGroup.tagName.toLowerCase() === 'g'
+        if (!validRowGroup) {
+          const nextId = makeUniqueId(rowGroupId || `table_${tableIndex + 1}_rows`)
+          rowGroup = doc.createElementNS('http://www.w3.org/2000/svg', 'g')
+          rowGroup.setAttribute('id', nextId)
+          if (firstCell) {
+            targetParent.insertBefore(rowGroup, firstCell)
+          } else {
+            targetParent.appendChild(rowGroup)
+          }
+          rowGroupId = nextId
+          rowGroupUpdates.set(tableIndex, rowGroupId)
+          updatedSvg = true
+        } else if (firstCell && rowGroup?.parentNode !== targetParent) {
+          const nextId = makeUniqueId(rowGroupId || `table_${tableIndex + 1}_rows`)
+          rowGroup = doc.createElementNS('http://www.w3.org/2000/svg', 'g')
+          rowGroup.setAttribute('id', nextId)
+          targetParent.insertBefore(rowGroup, firstCell)
+          rowGroupId = nextId
+          rowGroupUpdates.set(tableIndex, rowGroupId)
+          updatedSvg = true
+        }
+
+        for (const cellId of cellIds) {
+          const cellEl = doc.getElementById(cellId)
+          if (!cellEl) continue
+          if (cellEl.parentNode !== rowGroup) {
+            rowGroup?.appendChild(cellEl)
+            updatedSvg = true
+          }
+        }
+      }
+
+      if (updatedSvg) {
+        const serializer = new XMLSerializer()
+        const updatedContent = serializer.serializeToString(doc)
+        await rpc.writeSvg(svgPath, updatedContent)
+      }
+
+      return { updatedSvg, rowGroupUpdates }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to normalize table row groups'
+      setNotification(message)
+      return null
+    } finally {
+      autoFixTableRef.current = false
+    }
+  }, [selectedSvg, templateDir])
+
+  useEffect(() => {
+    if (!template || !selectedSvg || !selectedPageId) return
+    if (svgElements.length === 0) return
+    if (autoFixTableRef.current) return
+
+    const page = template.pages.find(p => p.id === selectedPageId)
+    if (!page || page.tables.length === 0) return
+
+    const svgPath = `${templateDir}/${selectedSvg}`
+    const run = async () => {
+      const result = await normalizeRowGroupsForPage(template, selectedPageId)
+      if (!result) return
+      if (result.rowGroupUpdates.size > 0) {
+        setTemplate((prev) => {
+          if (!prev) return prev
+          const pages = prev.pages.map((p) => {
+            if (p.id !== selectedPageId) return p
+            const tables = p.tables.map((table, index) => {
+              const nextId = result.rowGroupUpdates.get(index)
+              if (!nextId || nextId === table.row_group_id) return table
+              return { ...table, row_group_id: nextId }
+            })
+            return { ...p, tables }
+          })
+          return { ...prev, pages }
+        })
+      }
+      if (result.updatedSvg) {
+        const inspectResult = await rpc.inspectText(svgPath)
+        setSvgElements(inspectResult.texts)
+        setNotification('Auto-fixed table row groups.')
+      }
+    }
+
+    run().catch((err) => {
+      const message = err instanceof Error ? err.message : 'Failed to auto-fix table groups'
+      setNotification(message)
+    })
+  }, [template, selectedSvg, selectedPageId, svgElements, templateDir, normalizeRowGroupsForPage])
+
   const handleDropBindingOnElement = useCallback(async (ref: BindingRef, element: TextElement) => {
     if (!template) return
     const targetId = await ensureSvgIdForElement(element)
@@ -740,9 +888,18 @@ export function App() {
   const handleAddTableGraph = useCallback((pageId: string) => {
     setTemplate((prev) => {
       if (!prev) return prev
+      const page = prev.pages.find(p => p.id === pageId)
+      const usedIds = new Set((page?.tables ?? []).map(t => t.row_group_id).filter(Boolean))
+      const base = `table_${(page?.tables.length ?? 0) + 1}_rows`
+      let rowGroupId = base
+      let counter = 2
+      while (usedIds.has(rowGroupId)) {
+        rowGroupId = `${base}_${counter}`
+        counter += 1
+      }
       const newTable = {
         source: 'items',
-        row_group_id: 'rows',
+        row_group_id: rowGroupId,
         row_height_mm: 6,
         rows_per_page: 10,
         cells: [],
@@ -793,7 +950,7 @@ export function App() {
       : `${dataRef.source}_${dataRef.key}`
     const svgId = await ensureSvgIdForElement(element, base)
     if (!svgId) return
-
+    let nextTemplate: TemplateConfig | null = null
     setTemplate((prev) => {
       if (!prev) return prev
       const pages = prev.pages.map((page) => {
@@ -857,15 +1014,40 @@ export function App() {
           : { svg_id: svgId, value }
         if (existing >= 0) fields[existing] = nextField
         else fields.push(nextField)
-        return { ...prev, fields, pages }
+        nextTemplate = { ...prev, fields, pages }
+        return nextTemplate
       }
 
-      return { ...prev, pages }
+      nextTemplate = { ...prev, pages }
+      return nextTemplate
     })
+
+    if (dataRef.source === 'items' && graphItemsTarget !== 'header' && nextTemplate) {
+      const result = await normalizeRowGroupsForPage(nextTemplate, selectedPageId)
+      if (result?.rowGroupUpdates.size) {
+        setTemplate((prev) => {
+          if (!prev) return prev
+          const pages = prev.pages.map((page) => {
+            if (page.id !== selectedPageId) return page
+            const tables = page.tables.map((table, index) => {
+              const nextId = result.rowGroupUpdates.get(index)
+              if (!nextId || nextId === table.row_group_id) return table
+              return { ...table, row_group_id: nextId }
+            })
+            return { ...page, tables }
+          })
+          return { ...prev, pages }
+        })
+      }
+      if (result?.updatedSvg) {
+        const inspectResult = await rpc.inspectText(`${templateDir}/${selectedSvg}`)
+        setSvgElements(inspectResult.texts)
+      }
+    }
 
     setSelectedBindingSvgId(svgId)
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
-  }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex])
+  }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir])
 
   const handleRemoveGraphBinding = useCallback((connection: { key: string; svgId: string }) => {
     const ref = decodeDataKeyRef(connection.key)
@@ -1549,11 +1731,11 @@ export function App() {
                   validationSvgIds={validationSvgIds}
                   validationWarningSvgIds={validationWarningSvgIds}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
-                  onCreateTableFromSelection={(_rect, hitElements) => {
+                  onCreateTableFromSelection={async (_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)
                     if (!page) return
-                    const filtered = hitElements.filter(el => el.id || el.suggestedId)
+                    const filtered = hitElements.filter(el => el)
                     if (filtered.length === 0) {
                       setNotification('No elements found inside selection.')
                       return
@@ -1576,32 +1758,83 @@ export function App() {
                       return (a.bbox.y + a.bbox.h / 2) - (b.bbox.y + b.bbox.h / 2)
                     })
 
-                    const cells = sorted.map((el) => ({
-                      svg_id: (el.id || el.suggestedId || '').trim(),
-                      value: makeDataValue('items', guessKey(el)),
-                    })).filter(cell => cell.svg_id)
+                    const resolved = []
+                    for (const el of sorted) {
+                      const key = guessKey(el)
+                      const svgId = await ensureSvgIdForElement(el, `item_${key}`)
+                      if (svgId) {
+                        resolved.push({ svgId, key })
+                      }
+                    }
 
+                    const cells = resolved.map((entry) => ({
+                      svg_id: entry.svgId,
+                      value: makeDataValue('items', entry.key),
+                    }))
+
+                    if (cells.length === 0) {
+                      setNotification('No SVG IDs resolved for table selection.')
+                      return
+                    }
+
+                    const usedIds = new Set(page.tables.map(t => t.row_group_id).filter(Boolean))
+                    const base = `table_${page.tables.length + 1}_rows`
+                    let rowGroupId = base
+                    let counter = 2
+                    while (usedIds.has(rowGroupId)) {
+                      rowGroupId = `${base}_${counter}`
+                      counter += 1
+                    }
+
+                    let nextTemplate: TemplateConfig | null = null
                     setTemplate((prev) => {
                       if (!prev) return prev
                       const pages = prev.pages.map((p) => {
                         if (p.id !== selectedPageId) return p
                         if (graphEditTableIndex !== null && p.tables[graphEditTableIndex]) {
                           const tables = p.tables.map((table, idx) =>
-                            idx === graphEditTableIndex ? { ...table, cells } : table
+                            idx === graphEditTableIndex
+                              ? { ...table, cells, row_group_id: table.row_group_id || rowGroupId }
+                              : table
                           )
                           return { ...p, tables }
                         }
                         const nextTable = {
                           source: 'items',
-                          row_group_id: 'rows',
+                          row_group_id: rowGroupId,
                           row_height_mm: 6,
                           rows_per_page: 10,
                           cells,
                         }
                         return { ...p, tables: [...p.tables, nextTable] }
                       })
-                      return { ...prev, pages }
+                      nextTemplate = { ...prev, pages }
+                      return nextTemplate
                     })
+
+                    if (nextTemplate) {
+                      const result = await normalizeRowGroupsForPage(nextTemplate, selectedPageId)
+                      if (result?.rowGroupUpdates.size) {
+                        setTemplate((prev) => {
+                          if (!prev) return prev
+                          const pages = prev.pages.map((p) => {
+                            if (p.id !== selectedPageId) return p
+                            const tables = p.tables.map((table, index) => {
+                              const nextId = result.rowGroupUpdates.get(index)
+                              if (!nextId || nextId === table.row_group_id) return table
+                              return { ...table, row_group_id: nextId }
+                            })
+                            return { ...p, tables }
+                          })
+                          return { ...prev, pages }
+                        })
+                      }
+                      if (result?.updatedSvg) {
+                        const inspectResult = await rpc.inspectText(`${templateDir}/${selectedSvg}`)
+                        setSvgElements(inspectResult.texts)
+                      }
+                    }
+
                     if (graphEditTableIndex !== null) {
                       setNotification(`Updated Table #${graphEditTableIndex + 1} with ${cells.length} cells.`)
                       setGraphEditTableIndex(null)

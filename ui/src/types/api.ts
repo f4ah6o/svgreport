@@ -172,6 +172,12 @@ export interface SvgReadResponse {
   svg: string;
 }
 
+export interface SvgWriteResponse {
+  request_id: string;
+  saved: boolean;
+  writtenPath?: string;
+}
+
 export interface ValidationError {
   code: string;
   file: string;

@@ -376,6 +376,9 @@ export class RpcServer {
       } else if (pathname === '/rpc/svg/read' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgRead(body);
+      } else if (pathname === '/rpc/svg/write' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleSvgWrite(body);
       } else if (pathname === '/rpc/svg/set-ids' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgSetIds(body);
@@ -641,6 +644,28 @@ export class RpcServer {
       };
     } catch (error) {
       return { error: { code: 'NOT_FOUND', message: `Cannot read SVG: ${error}` } };
+    }
+  }
+
+  private async handleSvgWrite(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { path: inputPath, svg } = body as { path: string; svg: string };
+
+    if (!inputPath || !svg) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required fields: path, svg' } };
+    }
+
+    if (!inputPath.endsWith('.svg')) {
+      return { error: { code: 'BAD_REQUEST', message: 'Target path must be an .svg file' } };
+    }
+
+    try {
+      const resolvedPath = this.resolvePath(inputPath);
+      const tempPath = `${resolvedPath}.tmp`;
+      await fs.writeFile(tempPath, svg, 'utf-8');
+      await fs.rename(tempPath, resolvedPath);
+      return { saved: true, writtenPath: inputPath };
+    } catch (error) {
+      return { error: { code: 'INTERNAL_ERROR', message: `Cannot write SVG: ${error}` } };
     }
   }
 
