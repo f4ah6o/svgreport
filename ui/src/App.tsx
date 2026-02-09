@@ -1366,7 +1366,10 @@ export function App() {
     const warningKeys = new Set<string>()
     if (validationResult) {
       for (const err of validationResult.errors) {
-        const ref = resolveDataKeyFromPathForTemplate(template, selectedPageId, err.path || '')
+        if (selectedSvg && err.file && err.file !== selectedSvg) continue
+        const ref =
+          resolveDataKeyFromPathForTemplate(template, selectedPageId, err.path || '')
+          || resolveDataKeyFromSvgId(template, selectedPageId, err.path || '')
         if (ref) errorKeys.add(encodeDataKeyRef(ref))
       }
       for (const warn of validationResult.warnings) {
@@ -1400,7 +1403,7 @@ export function App() {
       if (typeDelta !== 0) return typeDelta
       return a.label.localeCompare(b.label)
     })
-  }, [metaData, itemsData, template, selectedPageId, graphConnections, validationResult])
+  }, [metaData, itemsData, template, selectedPageId, graphConnections, validationResult, selectedSvg])
 
 
 
@@ -1412,6 +1415,14 @@ export function App() {
 
     const normalized = normalizeValidationPath(path)
     if (!normalized) {
+      const svgId = path.trim()
+      if (svgId) {
+        const ref = resolveDataKeyFromSvgId(template, selectedPageId, svgId)
+        if (ref) {
+          setSelectedBindingSvgId(svgId)
+          return
+        }
+      }
       const suffix = path ? ` (path: ${path})` : ''
       setNotification(`This validation error is not auto-jumpable. Please read the message.${suffix}`)
       return
@@ -1559,7 +1570,8 @@ export function App() {
       const hasMapping =
         Boolean(resolveSvgIdFromPathForTemplate(template, null, path))
         || Boolean(resolveDataKeyFromPathForTemplate(template, null, path))
-      return !normalized || !hasMapping
+        || Boolean(resolveDataKeyFromSvgId(template, null, path))
+      return !normalized && !hasMapping
     })
   }, [validationResult, template])
 
@@ -1567,11 +1579,13 @@ export function App() {
     if (!validationResult || !template) return []
     const ids = new Set<string>()
     for (const err of validationResult.errors) {
-      const svgId = resolveSvgIdFromPathForTemplate(template, selectedPageId, err.path || '')
+      if (selectedSvg && err.file && err.file !== selectedSvg) continue
+      let svgId = resolveSvgIdFromPathForTemplate(template, selectedPageId, err.path || '')
+      if (!svgId && err.path) svgId = err.path
       if (svgId) ids.add(svgId)
     }
     return Array.from(ids)
-  }, [validationResult, template, selectedPageId])
+  }, [validationResult, template, selectedPageId, selectedSvg])
 
   const validationWarningSvgIds = useMemo(() => {
     if (!validationResult || !template) return []
@@ -2298,6 +2312,60 @@ function normalizeValidationPath(path: string): string {
     }
   }
   return out
+}
+
+function resolveDataKeyFromSvgId(
+  template: TemplateConfig | null,
+  selectedPageId: string | null,
+  svgId: string
+): DataKeyRef | null {
+  if (!template) return null
+  const id = svgId?.trim()
+  if (!id) return null
+
+  const toDataRef = (value: { type: string; source?: string; key?: string; text?: string }, fallbackSource?: string): DataKeyRef | null => {
+    if (value.type === 'data') {
+      if (!value.key) return null
+      const source = value.source || fallbackSource || 'meta'
+      const normalized: DataKeyRef['source'] = source === 'items' ? 'items' : 'meta'
+      return { source: normalized, key: value.key }
+    }
+    if (value.type === 'static') {
+      if (!value.text) return null
+      return { source: 'static', key: value.text }
+    }
+    return null
+  }
+
+  for (const field of template.fields) {
+    if (field.svg_id === id) {
+      return toDataRef(field.value)
+    }
+  }
+
+  const page = selectedPageId ? template.pages.find(p => p.id === selectedPageId) : null
+  if (!page) return null
+
+  for (const field of page.fields ?? []) {
+    if (field.svg_id === id) {
+      return toDataRef(field.value)
+    }
+  }
+
+  for (const table of page.tables) {
+    for (const cell of table.header?.cells ?? []) {
+      if (cell.svg_id === id) {
+        return toDataRef(cell.value, table.source || 'items')
+      }
+    }
+    for (const cell of table.cells) {
+      if (cell.svg_id === id) {
+        return toDataRef(cell.value, table.source || 'items')
+      }
+    }
+  }
+
+  return null
 }
 
 type PathToken = { type: 'key'; value: string } | { type: 'index'; value: number }
