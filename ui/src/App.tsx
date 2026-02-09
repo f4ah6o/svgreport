@@ -448,26 +448,35 @@ export function App() {
     })
   }, [])
 
+  const getUniqueSvgId = useCallback((desired: string, excludeIndex?: number | null) => {
+    const base = desired.trim()
+    if (!base) return ''
+    const existing = new Set<string>()
+    for (const el of svgElements) {
+      if (!el.id) continue
+      if (excludeIndex !== undefined && excludeIndex !== null && el.index === excludeIndex) continue
+      existing.add(el.id)
+    }
+    if (!existing.has(base)) return base
+    let counter = 2
+    let candidate = `${base}_${counter}`
+    while (existing.has(candidate)) {
+      counter += 1
+      candidate = `${base}_${counter}`
+    }
+    return candidate
+  }, [svgElements])
+
   const ensureSvgIdForElement = useCallback(async (element: TextElement, preferredBase?: string): Promise<string | null> => {
     if (!selectedSvg) return null
     if (element.id) return element.id
     if (!element.suggestedId) {
-      const existingIds = new Set<string>()
-      for (const el of svgElements) {
-        if (el.id) existingIds.add(el.id)
-        if (el.suggestedId) existingIds.add(el.suggestedId)
-      }
       const sanitize = (value: string) => value
         .toLowerCase()
         .replace(/[^a-z0-9_]+/g, '_')
         .replace(/^_+|_+$/g, '')
       const base = sanitize(preferredBase || 'auto') || 'auto'
-      let candidate = `${base}_${element.index}`
-      let counter = 1
-      while (existingIds.has(candidate)) {
-        candidate = `${base}_${element.index}_${counter}`
-        counter += 1
-      }
+      const candidate = getUniqueSvgId(`${base}_${element.index}`, element.index)
       const svgPath = `${templateDir}/${selectedSvg}`
       try {
         await rpc.setSvgIds(svgPath, [
@@ -489,8 +498,9 @@ export function App() {
     }
     const svgPath = `${templateDir}/${selectedSvg}`
     try {
+      const uniqueId = getUniqueSvgId(element.suggestedId, element.index)
       await rpc.setSvgIds(svgPath, [
-        { selector: { byIndex: element.index }, id: element.suggestedId },
+        { selector: { byIndex: element.index }, id: uniqueId },
       ])
       const inspectResult = await rpc.inspectText(svgPath)
       setSvgElements(inspectResult.texts)
@@ -499,13 +509,16 @@ export function App() {
         setSelectedTextIndex(nextIndex)
         setSelectedText(inspectResult.texts[nextIndex])
       }
-      return element.suggestedId
+      if (uniqueId !== element.suggestedId) {
+        setNotification(`ID duplicated. Using ${uniqueId}.`)
+      }
+      return uniqueId
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to assign ID'
       setNotification(message)
       return null
     }
-  }, [selectedSvg, templateDir, svgElements])
+  }, [selectedSvg, templateDir, svgElements, getUniqueSvgId])
 
   const handleDropBindingOnElement = useCallback(async (ref: BindingRef, element: TextElement) => {
     if (!template) return
@@ -529,10 +542,12 @@ export function App() {
     setStatus('Applying ID...')
 
     const svgPath = `${templateDir}/${selectedSvg}`
+    const desired = pendingId.trim()
+    const uniqueId = getUniqueSvgId(desired, selectedText.index)
 
     try {
       await rpc.setSvgIds(svgPath, [
-        { selector: { byIndex: selectedText.index }, id: pendingId.trim() },
+        { selector: { byIndex: selectedText.index }, id: uniqueId },
       ])
 
       const inspectResult = await rpc.inspectText(svgPath)
@@ -547,6 +562,10 @@ export function App() {
         setSelectedText(null)
       }
 
+      if (uniqueId !== desired) {
+        setPendingId(uniqueId)
+        setNotification(`ID duplicated. Using ${uniqueId}.`)
+      }
       setStatus('ID applied successfully')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to apply ID'
@@ -555,7 +574,7 @@ export function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [pendingId, selectedText, selectedSvg, templateDir])
+  }, [pendingId, selectedText, selectedSvg, templateDir, getUniqueSvgId])
 
   const bindingSvgIds = useMemo(() => {
     if (!template) return []
