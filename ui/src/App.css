@@ -572,6 +572,28 @@
   align-items: center;
 }
 
+.svg-preview-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #556;
+  padding: 0.1rem 0.25rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 6px;
+  background: #f7f9fb;
+}
+
+.svg-preview-zoom .btn-secondary {
+  padding: 0.2rem 0.5rem;
+}
+
+.svg-preview-zoom-value {
+  min-width: 3.25rem;
+  text-align: right;
+  font-weight: 600;
+}
+
 .svg-preview-actions .btn-secondary {
   padding: 0.35rem 0.65rem;
   border: none;
@@ -607,18 +629,30 @@
   display: flex;
   gap: 0.75rem;
   align-items: stretch;
+  background: #e6e9ee;
 }
 
 .svg-stage {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  padding-left: 0.75rem;
+  border-left: 1px solid #d0d7de;
+  background: #e6e9ee;
+  aspect-ratio: 210 / 297;
+}
+
+.svg-zoom {
+  transform-origin: top left;
+  background: #fff;
+  border: 1px solid #cfd6de;
+  box-shadow: 0 10px 24px rgba(30, 41, 59, 0.15);
 }
 
 .svg-content svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
 .svg-overlay {

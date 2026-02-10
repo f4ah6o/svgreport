@@ -76,6 +76,7 @@ export function SvgViewer({
   const [showUnboundLines, setShowUnboundLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
   const [bindMode, setBindMode] = useState(false)
+  const [svgZoom, setSvgZoom] = useState(1)
   const [tableDrawMode, setTableDrawMode] = useState(false)
   const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
   const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
@@ -313,6 +314,15 @@ export function SvgViewer({
   const handleElementClick = useCallback((_element: TextElement, listIndex?: number) => {
     if (listIndex !== undefined) onSelectElement(listIndex)
   }, [onSelectElement])
+
+  const clampZoom = useCallback((value: number) => Math.min(2.5, Math.max(0.5, value)), [])
+  const adjustZoom = useCallback((delta: number) => {
+    setSvgZoom((prev) => {
+      const next = Math.round((prev + delta) * 100) / 100
+      return clampZoom(next)
+    })
+  }, [clampZoom])
+
 
   const updateAnchors = useCallback(() => {
     if (!overlaySvgRef.current) return
@@ -719,37 +729,20 @@ export function SvgViewer({
                 {showUnboundLines ? 'Hide Unbound Lines' : 'Show Unbound Lines'}
               </button>
               <button
-                className={`btn-secondary ${lineEditMode ? 'active' : ''}`}
+                className={`btn-secondary ${bindMode ? 'active' : ''}`}
                 onClick={() => {
-                  setLineEditMode((prev) => {
+                  setBindMode((prev) => {
                     const next = !prev
+                    setLineEditMode(next)
                     if (next) {
                       setTableDrawMode(false)
                       setTableDragRect(null)
                       setTableDragStart(null)
-                      setBindMode(false)
                     }
                     return next
                   })
                 }}
                 disabled={!showGraphLines}
-              >
-                {lineEditMode ? 'Done Editing' : 'Edit Lines'}
-              </button>
-              <button
-                className={`btn-secondary ${bindMode ? 'active' : ''}`}
-                onClick={() => {
-                  setBindMode((prev) => {
-                    const next = !prev
-                    if (next) {
-                      setLineEditMode(false)
-                      setTableDrawMode(false)
-                      setTableDragRect(null)
-                      setTableDragStart(null)
-                    }
-                    return next
-                  })
-                }}
               >
                 {bindMode ? 'Done Binding' : 'Bind Mode'}
               </button>
@@ -763,6 +756,13 @@ export function SvgViewer({
               </label>
             </>
           )}
+          <div className="svg-preview-zoom">
+            <span>A4</span>
+            <button className="btn-secondary" onClick={() => adjustZoom(-0.1)}>-</button>
+            <button className="btn-secondary" onClick={() => setSvgZoom(1)}>Fit</button>
+            <button className="btn-secondary" onClick={() => adjustZoom(0.1)}>+</button>
+            <span className="svg-preview-zoom-value">{Math.round(svgZoom * 100)}%</span>
+          </div>
           {onCreateTableFromSelection && (
             <button
               className={`btn-secondary ${tableDrawMode ? 'active' : ''}`}
@@ -796,18 +796,19 @@ export function SvgViewer({
                 />
               )}
               <div className="svg-stage">
-                <div
-                  className="svg-content"
-                  ref={svgContentRef}
-                  dangerouslySetInnerHTML={{ __html: svgContent }}
-                />
-                {overlayViewBox && (
-                  <svg
-                    className="svg-overlay"
-                    viewBox={overlayViewBox}
-                    preserveAspectRatio={overlayPreserveAspectRatio}
-                    ref={overlaySvgRef}
-                  >
+                <div className="svg-zoom" style={{ transform: `scale(${svgZoom})` }}>
+                  <div
+                    className="svg-content"
+                    ref={svgContentRef}
+                    dangerouslySetInnerHTML={{ __html: svgContent }}
+                  />
+                  {overlayViewBox && (
+                    <svg
+                      className="svg-overlay"
+                      viewBox={overlayViewBox}
+                      preserveAspectRatio={overlayPreserveAspectRatio}
+                      ref={overlaySvgRef}
+                    >
                   {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning }) => (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
@@ -961,8 +962,9 @@ export function SvgViewer({
                       height={tableDragRect.h}
                     />
                   )}
-                  </svg>
-                )}
+                    </svg>
+                  )}
+                </div>
               </div>
             </div>
             {showGraphLines && graphLines.length > 0 && (
