@@ -71,7 +71,6 @@ export function SvgViewer({
   const showElementMap = true
   const showBindingElements = true
   const showNoBindingElements = true
-  const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid')
   const [showGraphLines, setShowGraphLines] = useState(true)
   const [showUnboundLines, setShowUnboundLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
@@ -562,7 +561,13 @@ export function SvgViewer({
   const graphLines = useMemo(() => {
     if (!graphConnections || graphConnections.length === 0) return []
     if (!graphContainerRect.width || !graphContainerRect.height) return []
-    const lines: Array<{ x1: number; y1: number; x2: number; y2: number; type: DataKeyRef['source']; key: string; svgId: string }> = []
+    const getStyle = (type: DataKeyRef['source']) => {
+      if (type === 'unbound') return 'dotted'
+      if (type === 'items') return 'dashed'
+      if (type === 'static') return 'longdash'
+      return 'solid'
+    }
+    const lines: Array<{ x1: number; y1: number; x2: number; y2: number; type: DataKeyRef['source']; key: string; svgId: string; style: 'solid' | 'dashed' | 'dotted' | 'longdash' }> = []
     const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
     for (const connection of graphConnections) {
       const start = graphDataAnchors.get(connection.key)
@@ -585,6 +590,7 @@ export function SvgViewer({
         x2: end.x - graphContainerRect.left,
         y2: end.y - graphContainerRect.top,
         type,
+        style: getStyle(type),
         key: connection.key,
         svgId: connection.svgId,
       })
@@ -746,14 +752,6 @@ export function SvgViewer({
               >
                 {bindMode ? 'Done Binding' : 'Bind Mode'}
               </button>
-              <label className="svg-preview-select">
-                Line Style
-                <select value={lineStyle} onChange={(e) => setLineStyle((e.target as HTMLSelectElement).value as typeof lineStyle)}>
-                  <option value="solid">Solid</option>
-                  <option value="dashed">Dashed</option>
-                  <option value="dotted">Dotted</option>
-                </select>
-              </label>
             </>
           )}
           <div className="svg-preview-zoom">
@@ -992,7 +990,7 @@ export function SvgViewer({
                       />
                     )}
                     <line
-                      className={`graph-connector-line graph-connector-visible graph-connector-line-${line.type} graph-connector-${lineStyle}`}
+                      className={`graph-connector-line graph-connector-visible graph-connector-line-${line.type} graph-connector-${line.style}`}
                       x1={line.x1}
                       y1={line.y1}
                       x2={line.x2}

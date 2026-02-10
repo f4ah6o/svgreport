@@ -149,6 +149,14 @@
   stroke-dasharray: 2 4;
 }
 
+.graph-connector-dashdot {
+  stroke-dasharray: 8 4 2 4;
+}
+
+.graph-connector-longdash {
+  stroke-dasharray: 14 6;
+}
+
 .btn-primary,
 .btn-secondary,
 .btn-danger {
