@@ -73,6 +73,7 @@ export function SvgViewer({
   const showNoBindingElements = true
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid')
   const [showGraphLines, setShowGraphLines] = useState(true)
+  const [showUnboundLines, setShowUnboundLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
   const [bindMode, setBindMode] = useState(false)
   const [tableDrawMode, setTableDrawMode] = useState(false)
@@ -544,6 +545,7 @@ export function SvgViewer({
       if (!start || !end) continue
       const ref = decodeDataKeyRef(connection.key)
       const type = ref?.source || 'meta'
+      if (type === 'unbound' && !showUnboundLines) continue
       lines.push({
         x1: start.x - graphContainerRect.left,
         y1: start.y - graphContainerRect.top,
@@ -555,7 +557,7 @@ export function SvgViewer({
       })
     }
     return lines
-  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect])
+  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect, showUnboundLines])
 
 
 
@@ -684,7 +686,14 @@ export function SvgViewer({
                   })
                 }}
               >
-                {showGraphLines ? 'Hide Lines' : 'Show Lines'}
+                {showGraphLines ? 'Hide Binding Lines' : 'Show Binding Lines'}
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setShowUnboundLines((prev) => !prev)}
+                disabled={!showGraphLines}
+              >
+                {showUnboundLines ? 'Hide Unbound Lines' : 'Show Unbound Lines'}
               </button>
               <button
                 className={`btn-secondary ${lineEditMode ? 'active' : ''}`}
