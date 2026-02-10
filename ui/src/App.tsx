@@ -442,10 +442,93 @@ export function App() {
       }
       const inspectResult = await rpc.inspectText(svgPath)
       setSvgElements(inspectResult.texts)
+      if (template && selectedPageId) {
+        const relativePath = svgPath.startsWith(`${templateDir}/`)
+          ? svgPath.slice(templateDir.length + 1)
+          : svgPath
+        const validIds = new Set(inspectResult.texts.map((text) => text.id).filter(Boolean) as string[])
+        const suggestedMap = new Map<string, string>()
+        for (const text of inspectResult.texts) {
+          if (text.suggestedId && text.id && !suggestedMap.has(text.suggestedId)) {
+            suggestedMap.set(text.suggestedId, text.id)
+          }
+        }
+        const resolveSuggested = (value?: string | null) => {
+          if (!value) return null
+          const normalized = value.trim()
+          if (!normalized) return null
+          return suggestedMap.get(normalized) || null
+        }
+        const resolveByValue = (value?: { type: string; key?: string; text?: string }) => {
+          if (!value) return null
+          if (value.type === 'data') {
+            return resolveSuggested(value.key || '')
+          }
+          if (value.type === 'static') {
+            return resolveSuggested(value.text || '')
+          }
+          return null
+        }
+        setTemplate((prev) => {
+          if (!prev) return prev
+          let changed = false
+          const fixBinding = <T extends { svg_id: string; enabled?: boolean; value?: { type: string; key?: string; text?: string } }>(binding: T): T => {
+            if (binding.enabled === false) return binding
+            const svgId = binding.svg_id
+            if (svgId) {
+              if (validIds.has(svgId)) return binding
+              const remap = resolveSuggested(svgId)
+              if (remap) {
+                changed = true
+                return { ...binding, svg_id: remap }
+              }
+              changed = true
+              return { ...binding, svg_id: '', enabled: false }
+            }
+            if (binding.value) {
+              const remap = resolveByValue(binding.value)
+              if (remap) {
+                changed = true
+                return { ...binding, svg_id: remap, enabled: true }
+              }
+            }
+            return binding
+          }
+
+          const pages = prev.pages.map((page) => {
+            if (page.svg !== relativePath) return page
+            const fields = (page.fields ?? []).map((field) => fixBinding(field))
+            const tables = page.tables.map((table) => {
+              const header = table.header
+                ? { cells: table.header.cells.map((cell) => fixBinding(cell)) }
+                : table.header
+              const cells = table.cells.map((cell) => fixBinding(cell))
+              return { ...table, header, cells }
+            })
+            let pageNumber = page.page_number
+            if (page.page_number?.svg_id) {
+              const svgId = page.page_number.svg_id
+              if (!validIds.has(svgId)) {
+                const remap = resolveSuggested(svgId)
+                pageNumber = remap
+                  ? { ...page.page_number, svg_id: remap }
+                  : { ...page.page_number, svg_id: '' }
+                changed = true
+              }
+            }
+            return { ...page, fields, tables, page_number: pageNumber }
+          })
+
+          const fields = prev.fields.map((field) => fixBinding(field))
+
+          if (!changed) return prev
+          return { ...prev, pages, fields }
+        })
+      }
     } catch {
       setSvgElements([])
     }
-  }, [applyReindexedSvgIds, templateDir])
+  }, [applyReindexedSvgIds, templateDir, template, selectedPageId])
 
   useEffect(() => {
     if (!selectedSvg) {
