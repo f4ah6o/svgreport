@@ -27,6 +27,7 @@ interface SvgViewerProps {
   validationWarningSvgIds?: string[]
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
+  onSvgEdited?: () => void
   pendingId: string
   onPendingIdChange: (value: string) => void
   onUseSuggestedId: () => void
@@ -53,6 +54,7 @@ export function SvgViewer({
   validationWarningSvgIds,
   onCreateTableFromSelection,
   onRemoveGraphBinding,
+  onSvgEdited,
   pendingId,
   onPendingIdChange,
   onUseSuggestedId,
@@ -63,6 +65,10 @@ export function SvgViewer({
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
   const overlaySvgRef = useRef<SVGSVGElement | null>(null)
   const [svgContent, setSvgContent] = useState<string | null>(null)
+  const [fitLabelDraft, setFitLabelDraft] = useState('')
+  const [fitLabelLoading, setFitLabelLoading] = useState(false)
+  const [fitLabelDraft, setFitLabelDraft] = useState('')
+  const [fitLabelLoading, setFitLabelLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
@@ -193,6 +199,85 @@ export function SvgViewer({
     }
     return map
   }, [graphConnections])
+
+  const fitLabelById = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!svgContent) return map
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgContent, 'image/svg+xml')
+      const nodes = Array.from(doc.getElementsByTagName('*'))
+      for (const node of nodes) {
+        const id = node.getAttribute('id')
+        const fitLabel = node.getAttribute('data-fit-label')
+        if (id && fitLabel) {
+          map.set(id, fitLabel)
+        }
+      }
+    } catch {
+      // ignore parse failures
+    }
+    return map
+  }, [svgContent])
+
+  const selectedFitLabel = useMemo(() => {
+    if (!selectedElement?.id) return ''
+    return fitLabelById.get(selectedElement.id) || ''
+  }, [fitLabelById, selectedElement])
+
+  useEffect(() => {
+    setFitLabelDraft(selectedFitLabel)
+  }, [selectedFitLabel])
+
+  const labelOptions = useMemo(() => {
+    return elements
+      .filter((el) => el.id && el.text && el.text.trim().length > 0)
+      .map((el) => ({ id: el.id as string, label: el.text }))
+  }, [elements])
+
+  const labelFontSize = useMemo(() => {
+    if (!fitLabelDraft) return null
+    const labelEl = elements.find((el) => el.id === fitLabelDraft)
+    return labelEl?.font.size ?? null
+  }, [elements, fitLabelDraft])
+
+  const applyFitLabel = useCallback(async () => {
+    if (!svgPath || !selectedElement?.id) return
+    setFitLabelLoading(true)
+    try {
+      await rpc.setSvgAttrs(svgPath, [
+        {
+          id: selectedElement.id,
+          attrs: { 'data-fit-label': fitLabelDraft ? fitLabelDraft : null },
+        },
+      ])
+      onSvgEdited?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update fit label')
+    } finally {
+      setFitLabelLoading(false)
+    }
+  }, [svgPath, selectedElement, fitLabelDraft, onSvgEdited])
+
+  const adjustLabelFont = useCallback(async (delta: number) => {
+    if (!svgPath || !fitLabelDraft) return
+    const current = labelFontSize ?? 12
+    const next = Math.max(6, Math.min(72, Math.round((current + delta) * 10) / 10))
+    setFitLabelLoading(true)
+    try {
+      await rpc.setSvgAttrs(svgPath, [
+        {
+          id: fitLabelDraft,
+          attrs: { 'font-size': String(next) },
+        },
+      ])
+      onSvgEdited?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update label size')
+    } finally {
+      setFitLabelLoading(false)
+    }
+  }, [svgPath, fitLabelDraft, labelFontSize, onSvgEdited])
 
   const overlayElements = useMemo(() => {
     return elements.filter((element) => {
@@ -1041,6 +1126,58 @@ export function SvgViewer({
                 <dt>Font Size</dt>
                 <dd>{selectedElement.font.size?.toFixed(2) || 'unknown'}</dd>
               </dl>
+            </div>
+          )}
+
+          {selectedElement && (
+            <div className="fit-label-panel">
+              <h4>Fit Label</h4>
+              <div className="form-row">
+                <label>Label</label>
+                <select
+                  value={fitLabelDraft}
+                  onChange={(e) => setFitLabelDraft((e.target as HTMLSelectElement).value)}
+                  disabled={fitLabelLoading}
+                >
+                  <option value="">(none)</option>
+                  {labelOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.id} — {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="fit-label-actions">
+                <button
+                  className="btn-secondary"
+                  onClick={applyFitLabel}
+                  disabled={fitLabelLoading}
+                >
+                  {fitLabelLoading ? 'Applying...' : 'Apply Fit Label'}
+                </button>
+              </div>
+              {fitLabelDraft && (
+                <div className="form-row">
+                  <label>Label Size</label>
+                  <div className="fit-label-size">
+                    <button
+                      className="btn-secondary"
+                      onClick={() => adjustLabelFont(-1)}
+                      disabled={fitLabelLoading}
+                    >
+                      A-
+                    </button>
+                    <span>{labelFontSize?.toFixed(1) ?? '-'}</span>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => adjustLabelFont(1)}
+                      disabled={fitLabelLoading}
+                    >
+                      A+
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

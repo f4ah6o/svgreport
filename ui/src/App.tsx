@@ -543,6 +543,13 @@ export function App() {
     }
   }, [applyReindexedSvgIds, templateDir, template])
 
+  const handleSvgEdited = useCallback(async () => {
+    if (!selectedSvg) return
+    const svgPath = `${templateDir}/${selectedSvg}`
+    setSvgReloadToken((value) => value + 1)
+    await loadInspectText(svgPath)
+  }, [selectedSvg, templateDir, loadInspectText])
+
   useEffect(() => {
     if (!selectedSvg) {
       setSvgElements([])
@@ -2198,6 +2205,7 @@ export function App() {
                   validationSvgIds={validationSvgIds}
                   validationWarningSvgIds={validationWarningSvgIds}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
+                  onSvgEdited={handleSvgEdited}
                   onCreateTableFromSelection={async (_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)
@@ -2396,6 +2404,7 @@ export function App() {
                 onPendingIdChange={setPendingId}
                 onUseSuggestedId={handleUseSuggestedId}
                 onApplyId={handleApplyId}
+                onSvgEdited={handleSvgEdited}
                 isLoading={isLoading}
               />
             </div>

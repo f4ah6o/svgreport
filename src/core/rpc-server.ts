@@ -379,6 +379,9 @@ export class RpcServer {
       } else if (pathname === '/rpc/svg/reindex-text-ids' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgReindexTextIds(body);
+      } else if (pathname === '/rpc/svg/set-attrs' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleSvgSetAttrs(body);
       } else if (pathname === '/rpc/svg/write' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleSvgWrite(body);
@@ -729,6 +732,85 @@ export class RpcServer {
       };
     } catch (error) {
       return { error: { code: 'INTERNAL_ERROR', message: `Cannot reindex SVG IDs: ${error}` } };
+    }
+  }
+
+  private async handleSvgSetAttrs(body: Record<string, unknown>): Promise<RpcResponse> {
+    const { path: inputPath, updates } = body as {
+      path: string;
+      updates: Array<{ id: string; attrs?: Record<string, string | null>; text?: string | null }>;
+    };
+
+    if (!inputPath || !updates) {
+      return { error: { code: 'BAD_REQUEST', message: 'Missing required fields: path, updates' } };
+    }
+
+    try {
+      const resolvedPath = this.resolvePath(inputPath);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'image/svg+xml');
+      const svg = doc.documentElement;
+
+      if (!svg) {
+        return { error: { code: 'BAD_REQUEST', message: 'Invalid SVG file' } };
+      }
+
+      const allElements = Array.from(svg.getElementsByTagName('*'));
+      const byId = new Map<string, Element>();
+      for (const el of allElements) {
+        const id = el.getAttribute('id');
+        if (id) byId.set(id, el);
+      }
+
+      let updated = false;
+      const missing: string[] = [];
+
+      for (const update of updates) {
+        const target = byId.get(update.id);
+        if (!target) {
+          missing.push(update.id);
+          continue;
+        }
+        if (update.attrs) {
+          for (const [key, value] of Object.entries(update.attrs)) {
+            if (value === null) {
+              if (target.hasAttribute(key)) {
+                target.removeAttribute(key);
+                updated = true;
+              }
+            } else if (target.getAttribute(key) !== value) {
+              target.setAttribute(key, value);
+              updated = true;
+            }
+          }
+        }
+        if (update.text !== undefined) {
+          const textValue = update.text ?? '';
+          while (target.firstChild) {
+            target.removeChild(target.firstChild);
+          }
+          const textNode = doc.createTextNode(textValue);
+          target.appendChild(textNode);
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        const serializer = new XMLSerializer();
+        const updatedContent = serializer.serializeToString(doc);
+        const tempPath = `${resolvedPath}.tmp`;
+        await fs.writeFile(tempPath, updatedContent, 'utf-8');
+        await fs.rename(tempPath, resolvedPath);
+      }
+
+      return {
+        updated,
+        missing,
+        writtenPath: inputPath,
+      };
+    } catch (error) {
+      return { error: { code: 'INTERNAL_ERROR', message: `Cannot update SVG attributes: ${error}` } };
     }
   }
 

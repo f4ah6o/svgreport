@@ -913,6 +913,35 @@
   padding-top: 0.75rem;
 }
 
+.fit-label-panel {
+  margin-top: 1rem;
+  border-top: 1px solid #ddd;
+  padding-top: 0.75rem;
+}
+
+.fit-label-panel .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fit-label-panel select {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.fit-label-actions {
+  margin-top: 0.5rem;
+}
+
+.fit-label-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .id-assign .form-row {
   display: flex;
   flex-direction: column;

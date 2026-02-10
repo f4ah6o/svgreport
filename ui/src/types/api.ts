@@ -187,6 +187,13 @@ export interface SvgWriteResponse {
   writtenPath?: string;
 }
 
+export interface SvgSetAttrsResponse {
+  request_id: string;
+  updated: boolean;
+  missing?: string[];
+  writtenPath?: string;
+}
+
 export interface ValidationError {
   code: string;
   file: string;

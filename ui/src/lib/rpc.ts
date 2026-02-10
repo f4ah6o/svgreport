@@ -7,6 +7,7 @@ import type {
   SvgReadResponse,
   SvgReindexResponse,
   SvgWriteResponse,
+  SvgSetAttrsResponse,
   ValidationResponse,
   PreviewResponse,
   SaveResponse,
@@ -87,6 +88,16 @@ class RpcClient {
     return this.request<SvgWriteResponse>('/svg/write', {
       method: 'POST',
       body: JSON.stringify({ path, svg }),
+    })
+  }
+
+  async setSvgAttrs(
+    path: string,
+    updates: Array<{ id: string; attrs?: Record<string, string | null>; text?: string | null }>
+  ): Promise<SvgSetAttrsResponse> {
+    return this.request<SvgSetAttrsResponse>('/svg/set-attrs', {
+      method: 'POST',
+      body: JSON.stringify({ path, updates }),
     })
   }
 
