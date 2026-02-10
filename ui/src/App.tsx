@@ -492,7 +492,9 @@ export function App() {
                 return { ...binding, svg_id: remap, enabled: true }
               }
             }
-            return binding
+            // No svg_id and no auto match: keep unbound to avoid validation errors.
+            changed = true
+            return { ...binding, svg_id: '', enabled: false }
           }
 
           const pages = current.pages.map((page) => {
