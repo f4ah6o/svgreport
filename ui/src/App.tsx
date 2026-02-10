@@ -336,7 +336,8 @@ export function App() {
       }
     }
     const duplicates = new Set(duplicateOldIds)
-    if (map.size === 0 && duplicates.size === 0) return
+    const validIds = new Set(mapping.map(entry => entry.newId))
+    if (map.size === 0 && duplicates.size === 0 && validIds.size === 0) return
 
     setTemplate((prev) => {
       if (!prev) return prev
@@ -349,6 +350,9 @@ export function App() {
         const next = map.get(svgId)
         if (next && next !== svgId) {
           return { svgId: next, changed: true }
+        }
+        if (svgId && !validIds.has(svgId)) {
+          return { svgId: '', disabled: true, changed: true }
         }
         return null
       }
