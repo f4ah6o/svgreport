@@ -442,7 +442,7 @@ export function App() {
       }
       const inspectResult = await rpc.inspectText(svgPath)
       setSvgElements(inspectResult.texts)
-      if (template && selectedPageId) {
+      if (template) {
         const relativePath = svgPath.startsWith(`${templateDir}/`)
           ? svgPath.slice(templateDir.length + 1)
           : svgPath
@@ -541,7 +541,7 @@ export function App() {
     } catch {
       setSvgElements([])
     }
-  }, [applyReindexedSvgIds, templateDir, template, selectedPageId])
+  }, [applyReindexedSvgIds, templateDir, template])
 
   useEffect(() => {
     if (!selectedSvg) {
