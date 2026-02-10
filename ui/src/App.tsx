@@ -325,29 +325,25 @@ export function App() {
   const applyReindexedSvgIds = useCallback((
     svgFile: string,
     mapping: Array<{ oldId: string | null; newId: string }>,
-    duplicateOldIds: string[],
   ) => {
     if (!template) return
     const map = new Map<string, string>()
     for (const entry of mapping) {
       if (!entry.oldId) continue
-      if (entry.oldId === entry.newId) continue
-      map.set(entry.oldId, entry.newId)
+      if (!map.has(entry.oldId)) {
+        map.set(entry.oldId, entry.newId)
+      }
     }
-    const duplicates = new Set(duplicateOldIds)
-    if (map.size === 0 && duplicates.size === 0) return
+    if (map.size === 0) return
 
     setTemplate((prev) => {
       if (!prev) return prev
       let changed = false
 
       const remapSvgId = (svgId: string) => {
-        if (duplicates.has(svgId)) {
-          return { svgId: '', disabled: true, changed: true }
-        }
         const next = map.get(svgId)
         if (next && next !== svgId) {
-          return { svgId: next, disabled: false, changed: true }
+          return { svgId: next, changed: true }
         }
         return null
       }
@@ -357,9 +353,7 @@ export function App() {
         const remap = remapSvgId(field.svg_id)
         if (!remap) return field
         changed = true
-        return remap.disabled
-          ? { ...field, svg_id: '', enabled: false }
-          : { ...field, svg_id: remap.svgId }
+        return { ...field, svg_id: remap.svgId }
       }
 
       const updatePage = (page: TemplateConfig['pages'][number]) => {
@@ -396,9 +390,7 @@ export function App() {
           const remap = remapSvgId(page.page_number.svg_id)
           if (remap) {
             pageChanged = true
-            pageNumber = remap.disabled
-              ? { ...page.page_number, svg_id: '' }
-              : { ...page.page_number, svg_id: remap.svgId }
+            pageNumber = { ...page.page_number, svg_id: remap.svgId }
           }
         }
 
@@ -426,10 +418,10 @@ export function App() {
           const relativePath = svgPath.startsWith(`${templateDir}/`)
             ? svgPath.slice(templateDir.length + 1)
             : svgPath
-          applyReindexedSvgIds(relativePath, reindex.mapping, reindex.duplicateOldIds)
+          applyReindexedSvgIds(relativePath, reindex.mapping)
         }
         if (reindex.duplicateOldIds.length > 0) {
-          setNotification(`Duplicate text IDs detected. ${reindex.duplicateOldIds.length} bindings were cleared.`)
+          setNotification(`Duplicate text IDs detected. Bound IDs were remapped to the first occurrence.`)
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to reindex text IDs'
