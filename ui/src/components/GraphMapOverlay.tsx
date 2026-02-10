@@ -8,6 +8,7 @@ export type GraphMapNode = {
   label: string
   type: DataKeyRef['source']
   missing: boolean
+  status?: 'error' | 'warning'
 }
 
 export type GraphMapSection = {
@@ -102,6 +103,7 @@ export function GraphMapOverlay({
         'graph-map-node',
         `graph-map-node-${node.type}`,
         node.missing ? 'missing' : '',
+        node.status ? `graph-map-node-${node.status}` : '',
         canDrag ? 'graph-map-node-draggable' : '',
       ].join(' ')}
       draggable={canDrag}
