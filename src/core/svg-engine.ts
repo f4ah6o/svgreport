@@ -89,7 +89,21 @@ export function applyTextBinding(doc: Document, binding: TextBinding, value: str
   }
 
   if (binding.fit === 'shrink') {
-    applyTextShrink(element, formattedValue);
+    let maxWidth: number | undefined;
+    const labelId = element.getAttribute('data-fit-label');
+    if (labelId) {
+      try {
+        const label = requireElementById(doc, labelId, `fit-label:${labelId}`);
+        const labelText = getTextContent(label);
+        const labelFontSize = getFontSize(label, 12);
+        if (labelText) {
+          maxWidth = estimateTextWidth(labelText, labelFontSize);
+        }
+      } catch {
+        // ignore missing label
+      }
+    }
+    applyTextShrink(element, formattedValue, maxWidth);
   }
 }
 
@@ -110,13 +124,43 @@ export function applyTextAlignment(element: Element, align: string): void {
   }
 }
 
-export function applyTextShrink(element: Element, text: string): void {
-  const fontSize = parseFloat(element.getAttribute('font-size') ?? '12');
-  
+export function applyTextShrink(element: Element, text: string, maxWidth?: number): void {
+  let fontSize = getFontSize(element, 12);
+
+  if (maxWidth) {
+    let width = estimateTextWidth(text, fontSize);
+    while (width > maxWidth && fontSize > 8) {
+      fontSize = Math.max(8, fontSize * 0.9);
+      width = estimateTextWidth(text, fontSize);
+    }
+    element.setAttribute('font-size', String(fontSize));
+    return;
+  }
+
   if (text.length > 20 && fontSize > 8) {
     const newSize = Math.max(8, fontSize * 0.8);
     element.setAttribute('font-size', String(newSize));
   }
+}
+
+function getFontSize(element: Element, fallback: number): number {
+  const value = parseFloat(element.getAttribute('font-size') ?? String(fallback));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function estimateTextWidth(text: string, fontSize: number): number {
+  if (!text) return fontSize;
+  let units = 0;
+  for (const ch of Array.from(text)) {
+    if (/[\u3000-\u9fff]/.test(ch)) {
+      units += 1;
+    } else if (/[A-Z0-9]/.test(ch)) {
+      units += 0.75;
+    } else {
+      units += 0.6;
+    }
+  }
+  return units * fontSize;
 }
 
 export function cloneRowTemplate(doc: Document, rowGroupId: string): Element {

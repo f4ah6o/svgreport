@@ -20,7 +20,7 @@
   <!-- Customer Info -->
   <text x="50" y="100" class="label" id="text_2">請求先</text>
   <text id="text_3" x="50" y="120" class="value">株式会社サンプル</text>
-  <text id="text_4" x="50" y="140" class="value">東京都新宿区...</text>
+  <text id="text_4" data-fit-label="text_2" x="50" y="140" class="value">東京都新宿区...</text>
   
   <!-- Invoice Info -->
   <text x="370" y="100" class="label" id="text_5">請求書番号</text>
