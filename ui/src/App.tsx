@@ -469,8 +469,8 @@ export function App() {
           }
           return null
         }
-        setTemplate((prev) => {
-          if (!prev) return prev
+
+        const healTemplate = (current: TemplateConfig) => {
           let changed = false
           const fixBinding = <T extends { svg_id: string; enabled?: boolean; value?: { type: string; key?: string; text?: string } }>(binding: T): T => {
             if (binding.enabled === false) return binding
@@ -495,7 +495,7 @@ export function App() {
             return binding
           }
 
-          const pages = prev.pages.map((page) => {
+          const pages = current.pages.map((page) => {
             if (page.svg !== relativePath) return page
             const fields = (page.fields ?? []).map((field) => fixBinding(field))
             const tables = page.tables.map((table) => {
@@ -519,11 +519,22 @@ export function App() {
             return { ...page, fields, tables, page_number: pageNumber }
           })
 
-          const fields = prev.fields.map((field) => fixBinding(field))
+          const fields = current.fields.map((field) => fixBinding(field))
 
-          if (!changed) return prev
-          return { ...prev, pages, fields }
-        })
+          if (!changed) return { next: current, changed }
+          return { next: { ...current, pages, fields }, changed }
+        }
+
+        const healed = healTemplate(template)
+        if (healed.changed) {
+          setTemplate(healed.next)
+          try {
+            await rpc.saveTemplate(templateDir, healed.next, false)
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to save auto-healed template'
+            setNotification(message)
+          }
+        }
       }
     } catch {
       setSvgElements([])
