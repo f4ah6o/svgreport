@@ -1585,6 +1585,7 @@ export function App() {
   const graphNodes = useMemo(() => {
     type Node = { key: string; ref: DataKeyRef; label: string; type: DataKeyRef['source']; missing: boolean; status?: 'error' | 'warning' }
     const nodes = new Map<string, Node>()
+    const hasLoadedData = Boolean(metaData || itemsData)
 
     const addNode = (ref: DataKeyRef, label: string, missing: boolean, status?: 'error' | 'warning') => {
       const key = encodeDataKeyRef(ref)
@@ -1609,80 +1610,82 @@ export function App() {
       return false
     }
 
-    if (metaData) {
-      for (const key of Object.keys(metaData)) {
-        addNode({ source: 'meta', key }, key, false)
-      }
-    }
-
-    if (itemsData?.headers) {
-      for (const key of itemsData.headers) {
-        addNode({ source: 'items', key }, key, false)
-      }
-    }
-
-    if (template) {
-      const toDataRef = (value: { type: string; source?: string; key?: string }, fallbackSource?: string): DataKeyRef | null => {
-        if (value.type !== 'data' || !value.key) return null
-        const source = value.source || fallbackSource || 'meta'
-        const normalized: DataKeyRef['source'] = source === 'items' ? 'items' : 'meta'
-        return { source: normalized, key: value.key }
+    if (hasLoadedData) {
+      if (metaData) {
+        for (const key of Object.keys(metaData)) {
+          addNode({ source: 'meta', key }, key, false)
+        }
       }
 
-      for (const field of template.fields) {
-        if (field.enabled === false) continue
-        const ref = toDataRef(field.value)
-        if (ref) addNode(ref, ref.key, missingFor(ref))
+      if (itemsData?.headers) {
+        for (const key of itemsData.headers) {
+          addNode({ source: 'items', key }, key, false)
+        }
       }
 
-      const page = template.pages.find(p => p.id === selectedPageId)
-      if (page) {
-        for (const field of page.fields ?? []) {
+      if (template) {
+        const toDataRef = (value: { type: string; source?: string; key?: string }, fallbackSource?: string): DataKeyRef | null => {
+          if (value.type !== 'data' || !value.key) return null
+          const source = value.source || fallbackSource || 'meta'
+          const normalized: DataKeyRef['source'] = source === 'items' ? 'items' : 'meta'
+          return { source: normalized, key: value.key }
+        }
+
+        for (const field of template.fields) {
           if (field.enabled === false) continue
           const ref = toDataRef(field.value)
           if (ref) addNode(ref, ref.key, missingFor(ref))
         }
-        for (const table of page.tables ?? []) {
-          for (const cell of table.header?.cells ?? []) {
-            if (cell.enabled === false) continue
-            const ref = toDataRef(cell.value, table.source || 'items')
+
+        const page = template.pages.find(p => p.id === selectedPageId)
+        if (page) {
+          for (const field of page.fields ?? []) {
+            if (field.enabled === false) continue
+            const ref = toDataRef(field.value)
             if (ref) addNode(ref, ref.key, missingFor(ref))
           }
-          for (const cell of table.cells ?? []) {
-            if (cell.enabled === false) continue
-            const ref = toDataRef(cell.value, table.source || 'items')
-            if (ref) addNode(ref, ref.key, missingFor(ref))
+          for (const table of page.tables ?? []) {
+            for (const cell of table.header?.cells ?? []) {
+              if (cell.enabled === false) continue
+              const ref = toDataRef(cell.value, table.source || 'items')
+              if (ref) addNode(ref, ref.key, missingFor(ref))
+            }
+            for (const cell of table.cells ?? []) {
+              if (cell.enabled === false) continue
+              const ref = toDataRef(cell.value, table.source || 'items')
+              if (ref) addNode(ref, ref.key, missingFor(ref))
+            }
           }
         }
       }
-    }
 
-    const staticValues = new Set<string>()
-    if (template) {
-      for (const field of template.fields) {
-        if (field.enabled === false) continue
-        if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
-      }
-      const page = template.pages.find(p => p.id === selectedPageId)
-      if (page) {
-        for (const field of page.fields ?? []) {
+      const staticValues = new Set<string>()
+      if (template) {
+        for (const field of template.fields) {
           if (field.enabled === false) continue
           if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
         }
-        for (const table of page.tables ?? []) {
-          for (const cell of table.header?.cells ?? []) {
-            if (cell.enabled === false) continue
-            if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
+        const page = template.pages.find(p => p.id === selectedPageId)
+        if (page) {
+          for (const field of page.fields ?? []) {
+            if (field.enabled === false) continue
+            if (field.value.type === 'static' && field.value.text) staticValues.add(field.value.text)
           }
-          for (const cell of table.cells ?? []) {
-            if (cell.enabled === false) continue
-            if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
+          for (const table of page.tables ?? []) {
+            for (const cell of table.header?.cells ?? []) {
+              if (cell.enabled === false) continue
+              if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
+            }
+            for (const cell of table.cells ?? []) {
+              if (cell.enabled === false) continue
+              if (cell.value.type === 'static' && cell.value.text) staticValues.add(cell.value.text)
+            }
           }
         }
       }
-    }
-    for (const text of staticValues) {
-      addNode({ source: 'static', key: text }, text, false)
+      for (const text of staticValues) {
+        addNode({ source: 'static', key: text }, text, false)
+      }
     }
 
     const errorKeys = new Set<string>()
@@ -1700,15 +1703,19 @@ export function App() {
       }
     }
 
-    for (const connection of graphConnections) {
-      if (nodes.has(connection.key)) continue
-      const ref = decodeDataKeyRef(connection.key) || { source: 'meta', key: connection.key }
-      const status = errorKeys.has(encodeDataKeyRef(ref))
-        ? 'error'
-        : warningKeys.has(encodeDataKeyRef(ref))
-          ? 'warning'
-          : undefined
-      addNode(ref, ref.key, true, status)
+    if (hasLoadedData) {
+      for (const connection of graphConnections) {
+        if (nodes.has(connection.key)) continue
+        const ref = decodeDataKeyRef(connection.key) || { source: 'meta', key: connection.key }
+        if (ref.source === 'meta' && !metaData) continue
+        if (ref.source === 'items' && !itemsData?.headers) continue
+        const status = errorKeys.has(encodeDataKeyRef(ref))
+          ? 'error'
+          : warningKeys.has(encodeDataKeyRef(ref))
+            ? 'warning'
+            : undefined
+        addNode(ref, ref.key, true, status)
+      }
     }
 
     for (const [key, node] of nodes.entries()) {
