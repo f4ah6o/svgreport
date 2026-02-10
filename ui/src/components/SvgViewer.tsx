@@ -81,6 +81,7 @@ export function SvgViewer({
   const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
+  const [graphSvgAnchorRects, setGraphSvgAnchorRects] = useState<Map<string, { x1: number; y1: number; x2: number; y2: number }>>(new Map())
   const [graphContainerRect, setGraphContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 })
 
   useEffect(() => {
@@ -150,15 +151,6 @@ export function SvgViewer({
   const validationSet = useMemo(() => new Set(validationSvgIds || []), [validationSvgIds])
   const validationWarningSet = useMemo(() => new Set(validationWarningSvgIds || []), [validationWarningSvgIds])
 
-  const overlayElements = useMemo(() => {
-    return elements.filter((element) => {
-      const isBound = Boolean(element.id && bindingSet.has(element.id))
-      if (isBound && !showBindingElements) return false
-      if (!isBound && !showNoBindingElements) return false
-      return true
-    })
-  }, [elements, showBindingElements, showNoBindingElements, bindingSet])
-
   const viewBoxNumbers = useMemo(() => {
     if (!overlayViewBox) return null
     const parts = overlayViewBox.split(/[,\s]+/).filter(Boolean).map((value) => parseFloat(value))
@@ -201,6 +193,17 @@ export function SvgViewer({
     }
     return map
   }, [graphConnections])
+
+  const overlayElements = useMemo(() => {
+    return elements.filter((element) => {
+      const isBound = Boolean(element.id && bindingSet.has(element.id))
+      if (isBound && !showBindingElements) return false
+      if (!isBound && !showNoBindingElements) return false
+      const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
+      if (bindingType === 'unbound' && !showUnboundLines) return false
+      return true
+    })
+  }, [elements, showBindingElements, showNoBindingElements, bindingSet, bindingTypeBySvgId, showUnboundLines])
 
   const getDropPadding = useCallback((bbox: { w: number; h: number }) => {
     const base = Math.min(bbox.w, bbox.h)
@@ -316,18 +319,29 @@ export function SvgViewer({
     const ctm = overlaySvgRef.current.getScreenCTM()
     if (!ctm) return
     const anchors = new Map<string, { x: number; y: number }>()
+    const rects = new Map<string, { x1: number; y1: number; x2: number; y2: number }>()
     for (const { element, bbox } of anchorCandidates) {
-      const point = new DOMPoint(bbox.x, bbox.y).matrixTransform(ctm)
+      const topLeft = new DOMPoint(bbox.x, bbox.y).matrixTransform(ctm)
+      const bottomRight = new DOMPoint(bbox.x + bbox.w, bbox.y + bbox.h).matrixTransform(ctm)
+      const rect = {
+        x1: Math.min(topLeft.x, bottomRight.x),
+        y1: Math.min(topLeft.y, bottomRight.y),
+        x2: Math.max(topLeft.x, bottomRight.x),
+        y2: Math.max(topLeft.y, bottomRight.y),
+      }
+      const center = { x: (rect.x1 + rect.x2) / 2, y: (rect.y1 + rect.y2) / 2 }
       const addAnchor = (key?: string | null) => {
         if (!key) return
         if (!anchors.has(key)) {
-          anchors.set(key, { x: point.x, y: point.y })
+          anchors.set(key, center)
+          rects.set(key, rect)
         }
       }
       addAnchor(element.id)
       addAnchor(element.suggestedId)
     }
     setGraphSvgAnchors(anchors)
+    setGraphSvgAnchorRects(rects)
   }, [anchorCandidates])
 
   const highlightedOverlayItems = useMemo(() => {
@@ -539,10 +553,19 @@ export function SvgViewer({
     if (!graphConnections || graphConnections.length === 0) return []
     if (!graphContainerRect.width || !graphContainerRect.height) return []
     const lines: Array<{ x1: number; y1: number; x2: number; y2: number; type: DataKeyRef['source']; key: string; svgId: string }> = []
+    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
     for (const connection of graphConnections) {
       const start = graphDataAnchors.get(connection.key)
-      const end = graphSvgAnchors.get(connection.svgId)
-      if (!start || !end) continue
+      if (!start) continue
+      const rect = graphSvgAnchorRects.get(connection.svgId)
+      const fallback = graphSvgAnchors.get(connection.svgId)
+      if (!rect && !fallback) continue
+      const end = rect
+        ? {
+            x: clamp(start.x, rect.x1, rect.x2),
+            y: clamp(start.y, rect.y1, rect.y2),
+          }
+        : fallback!
       const ref = decodeDataKeyRef(connection.key)
       const type = ref?.source || 'meta'
       if (type === 'unbound' && !showUnboundLines) continue
@@ -557,7 +580,7 @@ export function SvgViewer({
       })
     }
     return lines
-  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphContainerRect, showUnboundLines])
+  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphSvgAnchorRects, graphContainerRect, showUnboundLines])
 
 
 
