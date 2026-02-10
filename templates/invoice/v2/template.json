@@ -17,81 +17,276 @@
           "rows_per_page": 8,
           "cells": [
             {
-              "svg_id": "item_no",
+              "svg_id": "text_17",
               "align": "center",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "no"
-              }
+              },
+              "enabled": true
             },
             {
-              "svg_id": "item_name",
+              "svg_id": "text_18",
               "fit": "shrink",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "name"
-              }
+              },
+              "enabled": true
             },
             {
-              "svg_id": "item_qty",
-              "align": "right",
-              "value": {
-                "type": "data",
-                "source": "items",
-                "key": "qty"
-              }
-            },
-            {
-              "svg_id": "item_unit",
+              "svg_id": "",
               "align": "center",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "unit"
-              }
+              },
+              "enabled": false
             },
             {
-              "svg_id": "item_price",
+              "svg_id": "text_22",
               "align": "right",
               "format": "yen",
               "value": {
                 "type": "data",
                 "source": "items",
-                "key": "price"
-              }
+                "key": "qty"
+              },
+              "enabled": true
             },
             {
-              "svg_id": "item_amount",
+              "svg_id": "text_19",
               "align": "right",
               "format": "yen",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "amount"
-              }
+              },
+              "enabled": true
+            },
+            {
+              "svg_id": "text_21",
+              "value": {
+                "type": "data",
+                "source": "items",
+                "key": "price"
+              },
+              "enabled": true
             }
           ],
           "header": {
             "cells": [
               {
-                "svg_id": "text_75_214",
+                "svg_id": "",
                 "value": {
                   "type": "static",
                   "text": "No"
                 },
                 "fit": "none",
-                "align": "left"
+                "align": "left",
+                "enabled": false
               }
             ]
           }
         }
       ],
       "page_number": {
-        "svg_id": "page_no",
+        "svg_id": "",
         "format": "{current}/{total}"
-      }
+      },
+      "fields": [
+        {
+          "svg_id": "text_10",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "due_date"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_6",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "invoice_no"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_8",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "issue_date"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_1",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_5",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_7",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_9",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_4",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "customer.address"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_3",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "customer.name"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_2",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_24",
+          "format": "yen",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "subtotal"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_26",
+          "format": "yen",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "tax"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_28",
+          "format": "yen",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "total"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "text_25",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_23",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_27",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_11",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_12",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_13",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_14",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_15",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_16",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        }
+      ]
     },
     {
       "id": "follow",
@@ -166,83 +361,92 @@
       "page_number": {
         "svg_id": "page_no",
         "format": "{current}/{total}"
-      }
+      },
+      "fields": []
     }
   ],
   "fields": [
     {
-      "svg_id": "customer_name",
+      "svg_id": "",
       "fit": "shrink",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "customer.name"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "customer_address",
+      "svg_id": "",
       "fit": "shrink",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "customer.address"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "invoice_no",
+      "svg_id": "",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "invoice_no"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "issue_date",
+      "svg_id": "",
       "format": "date",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "issue_date"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "due_date",
+      "svg_id": "",
       "format": "date",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "due_date"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "subtotal",
+      "svg_id": "",
       "format": "yen",
       "align": "right",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "subtotal"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "tax",
+      "svg_id": "",
       "format": "yen",
       "align": "right",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "tax"
-      }
+      },
+      "enabled": false
     },
     {
-      "svg_id": "total",
+      "svg_id": "",
       "format": "yen",
       "align": "right",
       "value": {
         "type": "data",
         "source": "meta",
         "key": "total"
-      }
+      },
+      "enabled": false
     }
   ]
 }
