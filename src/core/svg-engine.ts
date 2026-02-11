@@ -82,7 +82,6 @@ export interface TextBinding {
 export function applyTextBinding(doc: Document, binding: TextBinding, value: string): void {
   const element = requireElementById(doc, binding.svg_id, `binding:${binding.svg_id}`);
   const formattedValue = format(value, binding.format);
-  setTextContent(element, formattedValue);
 
   if (binding.align) {
     applyTextAlignment(element, binding.align);
@@ -90,27 +89,35 @@ export function applyTextBinding(doc: Document, binding: TextBinding, value: str
 
   const fitWidthAttr = element.getAttribute('data-fit-width');
   const hasFitWidth = fitWidthAttr && Number.isFinite(parseFloat(fitWidthAttr));
+  let maxWidth: number | undefined;
+  if (fitWidthAttr) {
+    const fitWidth = parseFloat(fitWidthAttr);
+    if (Number.isFinite(fitWidth) && fitWidth > 0) {
+      maxWidth = fitWidth;
+    }
+  }
+  const labelId = element.getAttribute('data-fit-label');
+  if (labelId && maxWidth === undefined) {
+    try {
+      const label = requireElementById(doc, labelId, `fit-label:${labelId}`);
+      const labelText = getTextContent(label);
+      const labelFontSize = getFontSize(label, 12);
+      if (labelText) {
+        maxWidth = estimateTextWidth(labelText, labelFontSize);
+      }
+    } catch {
+      // ignore missing label
+    }
+  }
+
+  if (binding.fit === 'wrap' || formattedValue.includes('\n')) {
+    applyTextWrap(element, formattedValue, maxWidth);
+    return;
+  }
+
+  setTextContent(element, formattedValue);
+
   if (binding.fit === 'shrink' || hasFitWidth) {
-    let maxWidth: number | undefined;
-    if (fitWidthAttr) {
-      const fitWidth = parseFloat(fitWidthAttr);
-      if (Number.isFinite(fitWidth) && fitWidth > 0) {
-        maxWidth = fitWidth;
-      }
-    }
-    const labelId = element.getAttribute('data-fit-label');
-    if (labelId && maxWidth === undefined) {
-      try {
-        const label = requireElementById(doc, labelId, `fit-label:${labelId}`);
-        const labelText = getTextContent(label);
-        const labelFontSize = getFontSize(label, 12);
-        if (labelText) {
-          maxWidth = estimateTextWidth(labelText, labelFontSize);
-        }
-      } catch {
-        // ignore missing label
-      }
-    }
     applyTextShrink(element, formattedValue, maxWidth);
   }
 }
@@ -188,6 +195,83 @@ function estimateTextWidth(text: string, fontSize: number): number {
     }
   }
   return units * fontSize;
+}
+
+function applyTextWrap(element: Element, text: string, maxWidth?: number): void {
+  const fontSize = getFontSize(element, 12);
+  const lineHeight = fontSize * 1.2;
+  const x = element.getAttribute('x');
+  const y = element.getAttribute('y');
+  const lines: string[] = [];
+  const rawLines = text.split(/\r?\n/);
+  for (const raw of rawLines) {
+    if (maxWidth) {
+      lines.push(...wrapTextByWidth(raw, fontSize, maxWidth));
+    } else {
+      lines.push(raw);
+    }
+  }
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+  const doc = element.ownerDocument;
+  if (!doc) return;
+  lines.forEach((line, index) => {
+    const tspan = doc.createElementNS(SVG_NS, 'tspan');
+    if (x) tspan.setAttribute('x', x);
+    if (index > 0) {
+      tspan.setAttribute('dy', String(lineHeight));
+    } else {
+      tspan.setAttribute('dy', '0');
+    }
+    tspan.appendChild(doc.createTextNode(line));
+    element.appendChild(tspan);
+  });
+  if (y) {
+    element.setAttribute('y', y);
+  }
+}
+
+function wrapTextByWidth(text: string, fontSize: number, maxWidth: number): string[] {
+  if (!text) return [''];
+  const hasSpaces = /\s/.test(text);
+  if (!hasSpaces) {
+    const chars = Array.from(text);
+    const lines: string[] = [];
+    let current = '';
+    for (const ch of chars) {
+      const next = current + ch;
+      if (estimateTextWidth(next, fontSize) <= maxWidth || current.length === 0) {
+        current = next;
+      } else {
+        lines.push(current);
+        current = ch;
+      }
+    }
+    if (current.length > 0) lines.push(current);
+    return lines;
+  }
+
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (estimateTextWidth(candidate, fontSize) <= maxWidth) {
+      current = candidate;
+      continue;
+    }
+    if (current) {
+      lines.push(current);
+      current = word;
+      continue;
+    }
+    const broken = wrapTextByWidth(word, fontSize, maxWidth);
+    lines.push(...broken.slice(0, -1));
+    current = broken[broken.length - 1] ?? '';
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [''];
 }
 
 export function cloneRowTemplate(doc: Document, rowGroupId: string): Element {
