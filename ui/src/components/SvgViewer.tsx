@@ -28,11 +28,6 @@ interface SvgViewerProps {
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   onSvgEdited?: () => void
-  pendingId: string
-  onPendingIdChange: (value: string) => void
-  onUseSuggestedId: () => void
-  onApplyId: () => void
-  isLoading: boolean
 }
 
 export function SvgViewer({
@@ -55,11 +50,6 @@ export function SvgViewer({
   onCreateTableFromSelection,
   onRemoveGraphBinding,
   onSvgEdited,
-  pendingId,
-  onPendingIdChange,
-  onUseSuggestedId,
-  onApplyId,
-  isLoading,
 }: SvgViewerProps) {
   const svgContentRef = useRef<HTMLDivElement | null>(null)
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
@@ -280,10 +270,15 @@ export function SvgViewer({
     startX: number
     startWidth: number
     anchor: 'start' | 'middle' | 'end'
+    startY: number
+    startLines: number
+    startHeight: number
     labelStartFontSize?: number
     labelStartWidth?: number
   } | null>(null)
   const [labelDragWidth, setLabelDragWidth] = useState<number | null>(null)
+  const [labelDragLines, setLabelDragLines] = useState<number | null>(null)
+  const [labelDragLinesTouched, setLabelDragLinesTouched] = useState(false)
 
   const getDragTarget = useCallback((element: TextElement, isBound: boolean) => {
     if (!element.id) return null
@@ -310,6 +305,32 @@ export function SvgViewer({
     return fitWidthById.get(id) ?? fallback
   }, [fitWidthById])
 
+  const fitLinesById = useMemo(() => {
+    const map = new Map<string, number>()
+    if (!svgContent) return map
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgContent, 'image/svg+xml')
+      const nodes = Array.from(doc.getElementsByTagName('*'))
+      for (const node of nodes) {
+        const id = node.getAttribute('id')
+        if (!id) continue
+        const value = parseInt(node.getAttribute('data-fit-lines') || '', 10)
+        if (Number.isFinite(value) && value > 0) {
+          map.set(id, value)
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return map
+  }, [svgContent])
+
+  const getLinesForId = useCallback((id: string | null | undefined, fallback: number) => {
+    if (!id) return fallback
+    return fitLinesById.get(id) ?? fallback
+  }, [fitLinesById])
+
   const getDisplayRect = useCallback((element: TextElement, width: number, anchor: 'start' | 'middle' | 'end') => {
     const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
     const anchorX = element.position?.x ?? (
@@ -332,6 +353,21 @@ export function SvgViewer({
     }
   }, [resolvedBBoxByIndex])
 
+  const getDisplayRectWithLines = useCallback((
+    element: TextElement,
+    width: number,
+    anchor: 'start' | 'middle' | 'end',
+    lines: number
+  ) => {
+    const base = getDisplayRect(element, width, anchor)
+    const fontSize = element.font?.size ?? 12
+    const lineHeight = fontSize * 1.2
+    return {
+      ...base,
+      h: Math.max(base.h, lineHeight * Math.max(1, lines)),
+    }
+  }, [getDisplayRect])
+
   const handleLabelMouseDown = useCallback((element: TextElement, dragTarget: ReturnType<typeof getDragTarget>) => (event: MouseEvent) => {
     if (!editLabelsMode) return
     if (!dragTarget) return
@@ -342,6 +378,7 @@ export function SvgViewer({
     const anchor = getAnchorForId(dragTarget.targetId)
     const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
     const startWidth = getWidthForId(dragTarget.targetId, bbox.w)
+    const startLines = getLinesForId(dragTarget.targetId, 1)
     const nextDrag: typeof labelDrag = {
       targetId: dragTarget.targetId,
       labelId: dragTarget.labelId,
@@ -349,6 +386,9 @@ export function SvgViewer({
       startX: point.x,
       startWidth,
       anchor,
+      startY: point.y,
+      startLines,
+      startHeight: bbox.h,
     }
     if (dragTarget.mode === 'label') {
       const labelEl = labelElementsById.get(dragTarget.targetId)
@@ -359,6 +399,8 @@ export function SvgViewer({
     }
     setLabelDrag(nextDrag)
     setLabelDragWidth(startWidth)
+    setLabelDragLines(startLines)
+    setLabelDragLinesTouched(false)
   }, [editLabelsMode, toSvgPoint, getDragTarget, getAnchorForId, getWidthForId, resolvedBBoxByIndex, labelElementsById])
 
   useEffect(() => {
@@ -367,16 +409,33 @@ export function SvgViewer({
       const point = toSvgPoint(event)
       if (!point) return
       const dx = point.x - labelDrag.startX
+      const dy = point.y - labelDrag.startY
       const direction = labelDrag.anchor === 'end' ? -1 : 1
       const multiplier = labelDrag.anchor === 'middle' ? 2 : 1
       const delta = dx * direction * multiplier
       const next = Math.max(12, Math.min(600, Math.round((labelDrag.startWidth + delta) * 10) / 10))
-      setLabelDragWidth(next)
+      if (event.shiftKey) {
+        setLabelDragWidth(next)
+        return
+      }
+
+      const fontSize = labelElementsById.get(labelDrag.targetId)?.font.size ?? 12
+      const lineHeight = fontSize * 1.2
+      const steps = Math.max(1, Math.round((labelDrag.startHeight + dy) / lineHeight))
+      if (Math.abs(dy) > Math.abs(dx)) {
+        setLabelDragLines(steps)
+        setLabelDragLinesTouched(true)
+      } else {
+        setLabelDragWidth(next)
+      }
     }
     const handleUp = async () => {
       const width = labelDragWidth ?? labelDrag.startWidth
+      const lines = labelDragLines ?? labelDrag.startLines
       setLabelDrag(null)
       setLabelDragWidth(null)
+      setLabelDragLines(null)
+      setLabelDragLinesTouched(false)
       if (!svgPath) return
       try {
         if (labelDrag.mode === 'label') {
@@ -398,8 +457,14 @@ export function SvgViewer({
           return
         }
 
+        const attrs: Record<string, string> = {
+          'data-fit-width': String(width),
+        }
+        if (labelDragLinesTouched) {
+          attrs['data-fit-lines'] = String(lines)
+        }
         await rpc.setSvgAttrs(svgPath, [
-          { id: labelDrag.targetId, attrs: { 'data-fit-width': String(width) } },
+          { id: labelDrag.targetId, attrs },
         ])
         onSvgEdited?.()
       } catch (err) {
@@ -412,7 +477,7 @@ export function SvgViewer({
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [labelDrag, labelDragWidth, svgPath, onSvgEdited, toSvgPoint, labelElementsById])
+  }, [labelDrag, labelDragWidth, labelDragLines, labelDragLinesTouched, svgPath, onSvgEdited, toSvgPoint, labelElementsById])
 
   const overlayElements = useMemo(() => {
     return elements.filter((element) => {
@@ -997,6 +1062,9 @@ export function SvgViewer({
           >
             {editLabelsMode ? 'Done Labels' : 'Edit Labels'}
           </button>
+          {editLabelsMode && (
+            <span className="edit-labels-hint">Drag horizontally to set width, vertically to set lines (Shift = width only)</span>
+          )}
           <div className="svg-preview-zoom">
             <span>A4</span>
             <button className="btn-secondary" onClick={() => adjustZoom(-0.1)}>-</button>
@@ -1058,10 +1126,14 @@ export function SvgViewer({
                     const labelDragging = Boolean(dragId && labelDrag?.targetId === dragId)
                     const anchor = getAnchorForId(element.id)
                     const baseWidth = getWidthForId(element.id, bbox.w)
+                    const baseLines = getLinesForId(element.id, 1)
                     const liveWidth = labelDragging && labelDragWidth
                       ? labelDragWidth
                       : baseWidth
-                    const displayRect = getDisplayRect(element, liveWidth, anchor)
+                    const liveLines = labelDragging && labelDragLines
+                      ? labelDragLines
+                      : baseLines
+                    const displayRect = getDisplayRectWithLines(element, liveWidth, anchor, liveLines)
                     const baseRectClasses = [
                       isHighlighted
                         ? 'svg-overlay-rect-linked'

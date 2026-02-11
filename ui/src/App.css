@@ -606,6 +606,12 @@
   font-weight: 600;
 }
 
+.edit-labels-hint {
+  margin-left: 0.6rem;
+  font-size: 0.72rem;
+  color: #556275;
+}
+
 .svg-preview-actions .btn-secondary {
   padding: 0.35rem 0.65rem;
   border: none;

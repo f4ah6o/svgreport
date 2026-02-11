@@ -18,15 +18,15 @@
   <text x="297.64" y="50" text-anchor="middle" class="title" id="text_1">請求書</text>
   
   <!-- Customer Info -->
-  <text x="50" y="100" class="label" id="text_2" font-size="38.9">請求先</text>
+  <text x="50" y="100" class="label" id="text_2" font-size="10" style="font-size:10px">請求先</text>
   <text id="text_3" x="50" y="120" class="value" data-fit-label="text_2" data-fit-width="21.7">株式会社サンプル</text>
-  <text id="text_4" data-fit-label="text_2" x="50" y="140" class="value" data-fit-width="274.1">東京都新宿区...</text>
+  <text id="text_4" data-fit-label="text_2" x="50" y="140" class="value" data-fit-width="99.9" data-fit-lines="1">東京都新宿区...</text>
   
   <!-- Invoice Info -->
-  <text x="370" y="100" class="label" id="text_5" font-size="10">請求書番号</text>
+  <text x="370" y="100" class="label" id="text_5" font-size="10" style="font-size:10px">請求書番号</text>
   <text id="text_6" x="500" y="100" text-anchor="end" class="value" data-fit-label="text_5" data-fit-width="49.961501051740015">INV-0001</text>
   
-  <text x="370" y="120" class="label" id="text_7" font-size="15.4">発行日</text>
+  <text x="370" y="120" class="label" id="text_7" font-size="10" style="font-size:10px">発行日</text>
   <text id="text_8" x="500" y="120" text-anchor="end" class="value" data-fit-label="text_7" data-fit-width="46.2">2026年2月2日</text>
   
   <text x="370" y="140" class="label" id="text_9">支払期限</text>

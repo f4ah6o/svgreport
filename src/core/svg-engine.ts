@@ -89,6 +89,9 @@ export function applyTextBinding(doc: Document, binding: TextBinding, value: str
 
   const fitWidthAttr = element.getAttribute('data-fit-width');
   const hasFitWidth = fitWidthAttr && Number.isFinite(parseFloat(fitWidthAttr));
+  const fitLinesAttr = element.getAttribute('data-fit-lines');
+  const fitLines = fitLinesAttr ? parseInt(fitLinesAttr, 10) : null;
+  const hasFitLines = Number.isFinite(fitLines) && (fitLines ?? 0) > 0;
   let maxWidth: number | undefined;
   if (fitWidthAttr) {
     const fitWidth = parseFloat(fitWidthAttr);
@@ -110,15 +113,18 @@ export function applyTextBinding(doc: Document, binding: TextBinding, value: str
     }
   }
 
-  if (binding.fit === 'wrap' || formattedValue.includes('\n')) {
-    applyTextWrap(element, formattedValue, maxWidth);
+  const singleLine = hasFitLines && (fitLines ?? 0) === 1;
+
+  if (binding.fit === 'wrap' || formattedValue.includes('\n') || (hasFitLines && !singleLine)) {
+    applyTextWrap(element, formattedValue, maxWidth, hasFitLines ? fitLines ?? undefined : undefined);
     return;
   }
 
   setTextContent(element, formattedValue);
 
-  if (binding.fit === 'shrink' || hasFitWidth) {
+  if (binding.fit === 'shrink' || singleLine || hasFitWidth || maxWidth !== undefined) {
     applyTextShrink(element, formattedValue, maxWidth);
+    return;
   }
 }
 
@@ -197,7 +203,7 @@ function estimateTextWidth(text: string, fontSize: number): number {
   return units * fontSize;
 }
 
-function applyTextWrap(element: Element, text: string, maxWidth?: number): void {
+function applyTextWrap(element: Element, text: string, maxWidth?: number, maxLines?: number): void {
   const fontSize = getFontSize(element, 12);
   const lineHeight = fontSize * 1.2;
   const x = element.getAttribute('x');
@@ -216,6 +222,30 @@ function applyTextWrap(element: Element, text: string, maxWidth?: number): void 
   }
   const doc = element.ownerDocument;
   if (!doc) return;
+  if (maxLines && lines.length > maxLines) {
+    const trimmed = lines.slice(0, maxLines);
+    while (element.firstChild) {
+      element.removeChild(element.firstChild);
+    }
+    const doc = element.ownerDocument;
+    if (!doc) return;
+    trimmed.forEach((line, index) => {
+      const tspan = doc.createElementNS(SVG_NS, 'tspan');
+      if (x) tspan.setAttribute('x', x);
+      if (index > 0) {
+        tspan.setAttribute('dy', String(lineHeight));
+      } else {
+        tspan.setAttribute('dy', '0');
+      }
+      tspan.appendChild(doc.createTextNode(line));
+      element.appendChild(tspan);
+    });
+    if (y) {
+      element.setAttribute('y', y);
+    }
+    return;
+  }
+
   lines.forEach((line, index) => {
     const tspan = doc.createElementNS(SVG_NS, 'tspan');
     if (x) tspan.setAttribute('x', x);

@@ -41,7 +41,6 @@ export function App() {
   const [selectedText, setSelectedText] = useState<TextElement | null>(null)
   const [selectedBindingSvgId, setSelectedBindingSvgId] = useState<string | null>(null)
   const [selectedBindingRef, setSelectedBindingRef] = useState<BindingRef | null>(null)
-  const [pendingId, setPendingId] = useState<string>('')
   const [templatesBaseDir, setTemplatesBaseDir] = useState('templates')
   const [templatesList, setTemplatesList] = useState<TemplateListItem[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(false)
@@ -135,7 +134,6 @@ export function App() {
       setSelectedTextIndex(null)
       setSelectedText(null)
       setSelectedBindingSvgId(null)
-      setPendingId('')
       setStatus(`Loaded template: ${templateJson.template.id} v${templateJson.template.version}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load template')
@@ -569,7 +567,6 @@ export function App() {
     setSelectedTextIndex(null)
     setSelectedText(null)
     setSelectedBindingSvgId(null)
-    setPendingId('')
 
     const svgPath = `${templateDir}/${selectedSvg}`
     const timer = setTimeout(() => {
@@ -739,7 +736,6 @@ export function App() {
     setSelectedTextIndex(index)
     setSelectedText(element)
     setSelectedBindingSvgId(element.id || element.suggestedId || null)
-    setPendingId(element.suggestedId || element.id || '')
   }, [svgElements])
 
 
@@ -1187,52 +1183,6 @@ export function App() {
     }
   }, [template, ensureSvgIdForElement, updateBindingSvgId, ensureFitLabelForElement])
 
-  const handleUseSuggestedId = useCallback(() => {
-    if (!selectedText) return
-    setPendingId(selectedText.suggestedId || '')
-  }, [selectedText])
-
-  const handleApplyId = useCallback(async () => {
-    if (!selectedText || !selectedSvg || !pendingId.trim()) return
-
-    setIsLoading(true)
-    setError(null)
-    setStatus('Applying ID...')
-
-    const svgPath = `${templateDir}/${selectedSvg}`
-    const desired = pendingId.trim()
-    const uniqueId = getUniqueSvgId(desired, selectedText.index)
-
-    try {
-      await rpc.setSvgIds(svgPath, [
-        { selector: { byIndex: selectedText.index }, id: uniqueId },
-      ])
-
-      const inspectResult = await rpc.inspectText(svgPath)
-      setSvgElements(inspectResult.texts)
-
-      const nextIndex = inspectResult.texts.findIndex(t => t.index === selectedText.index)
-      if (nextIndex >= 0) {
-        setSelectedTextIndex(nextIndex)
-        setSelectedText(inspectResult.texts[nextIndex])
-      } else {
-        setSelectedTextIndex(null)
-        setSelectedText(null)
-      }
-
-      if (uniqueId !== desired) {
-        setPendingId(uniqueId)
-        setNotification(`ID duplicated. Using ${uniqueId}.`)
-      }
-      setStatus('ID applied successfully')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to apply ID'
-      setError(message)
-      setStatus('Error applying ID')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [pendingId, selectedText, selectedSvg, templateDir, getUniqueSvgId])
 
   const bindingSvgIds = useMemo(() => {
     if (!template) return []
@@ -2476,11 +2426,6 @@ export function App() {
                       setNotification(`Added table from ${cells.length} elements.`)
                     }
                   }}
-                  pendingId={pendingId}
-                  onPendingIdChange={setPendingId}
-                  onUseSuggestedId={handleUseSuggestedId}
-                  onApplyId={handleApplyId}
-                  isLoading={isLoading}
                 />
               </div>
             </div>
@@ -2559,12 +2504,7 @@ export function App() {
                 validationWarningSvgIds={validationWarningSvgIds}
                 onSelectElement={handleSelectTextElement}
                 onDropBinding={handleDropBindingOnElement}
-                pendingId={pendingId}
-                onPendingIdChange={setPendingId}
-                onUseSuggestedId={handleUseSuggestedId}
-                onApplyId={handleApplyId}
                 onSvgEdited={handleSvgEdited}
-                isLoading={isLoading}
               />
             </div>
           </>
