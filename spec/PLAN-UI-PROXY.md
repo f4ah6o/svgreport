@@ -327,6 +327,43 @@ CLIの preview 相当。UIは “Preview” ボタンで呼ぶ。
 { "saved": true, "path": "templates/invoice/v3/template.json" }
 ```
 
+### 10.3 /rpc/template/import-pdf（推奨）
+PDFをアップロードしてテンプレート一式を生成する（convert + normalize + template.json生成）。
+
+**Request**
+- POST `/rpc/template/import-pdf`
+```json
+{
+  "templateId": "invoice",
+  "version": "v1",
+  "baseDir": "templates",
+  "pdf": {
+    "filename": "agreed.pdf",
+    "contentBase64": "<base64>"
+  },
+  "options": {
+    "engine": "auto"
+  }
+}
+```
+
+**Response 200**
+```json
+{
+  "created": true,
+  "templateDir": "templates/invoice/v1",
+  "files": [
+    "templates/invoice/v1/page-1.svg",
+    "templates/invoice/v1/page-follow.svg",
+    "templates/invoice/v1/template.json"
+  ],
+  "warnings": [
+    "Ignored 1 page(s) from the source PDF (only first/repeat are adopted)."
+  ],
+  "pageSummary": { "converted": 3, "adopted": 2, "ignored": 1 }
+}
+```
+
 ---
 
 ## 11. エラーモデル（共通）
@@ -379,6 +416,7 @@ CLIの preview 相当。UIは “Preview” ボタンで呼ぶ。
 任意（便利）：
 - GET `/rpc/templates/list`
 - POST `/rpc/generate`
+- POST `/rpc/template/import-pdf`
 
 ---
 
@@ -387,4 +425,3 @@ CLIの preview 相当。UIは “Preview” ボタンで呼ぶ。
   RPCハンドラからそのまま呼ぶ（薄いHTTP層）
 - UIは template.json の編集と “ボタンでRPC呼ぶ” に集中
 - schema はサーバから配布し、UIは内蔵しない（粗結合維持）
-

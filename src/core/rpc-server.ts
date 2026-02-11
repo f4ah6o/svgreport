@@ -11,10 +11,12 @@ import { extractTextElements, analyzeTemplateSvgs } from './text-inspector.js';
 import { validateTemplateFull, type ValidationResult } from './template-validator.js';
 import { generatePreview } from './preview-generator.js';
 import { generateTemplate } from './template-generator.js';
+import { importPdfTemplate } from './template-importer.js';
 import { SVGREPORT_JOB_V0_1_SCHEMA, SVGREPORT_TEMPLATE_V0_2_SCHEMA } from './schema-registry.js';
 import { parseCsv, parseJsonToKv } from './datasource.js';
 const PACKAGE_VERSION = '2026.2.0';
 const API_VERSION = 'rpc/v0.1';
+const MAX_PDF_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export interface ServerOptions {
   port?: number;
@@ -280,7 +282,7 @@ export class RpcServer {
       res.statusCode = 200;
       res.setHeader('Content-Type', contentType);
       res.end(content);
-    } catch (error) {
+    } catch {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
@@ -337,7 +339,7 @@ export class RpcServer {
       res.statusCode = 200;
       res.setHeader('Content-Type', contentType);
       res.end(content);
-    } catch (error) {
+    } catch {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
@@ -409,6 +411,9 @@ export class RpcServer {
       } else if (pathname === '/rpc/template/save' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleTemplateSave(body);
+      } else if (pathname === '/rpc/template/import-pdf' && req.method === 'POST') {
+        const body = await this.parseBody(req);
+        response = await this.handleTemplateImportPdf(body);
       } else if (pathname === '/rpc/generate' && req.method === 'POST') {
         const body = await this.parseBody(req);
         response = await this.handleGenerate(body);
@@ -555,6 +560,7 @@ export class RpcServer {
         inspectText: true,
         generate: true,
         wrap: false,
+        importPdfTemplate: true,
       },
     };
   }
@@ -675,7 +681,7 @@ export class RpcServer {
 
       const allElements = Array.from(svg.getElementsByTagName('*'));
       const textNodes = Array.from(svg.getElementsByTagName('text'));
-      const textSet = new Set(textNodes);
+      const textSet = new Set<Element>(textNodes);
       const existingIds = new Set<string>();
 
       for (const el of allElements) {
@@ -1225,6 +1231,88 @@ export class RpcServer {
     }
   }
 
+  private async handleTemplateImportPdf(body: Record<string, unknown>): Promise<RpcResponse> {
+    const {
+      templateId,
+      version,
+      baseDir,
+      pdf,
+      options,
+    } = body as {
+      templateId?: string;
+      version?: string;
+      baseDir?: string;
+      pdf?: { filename?: string; contentBase64?: string };
+      options?: { engine?: 'pdf2svg' | 'inkscape' | 'auto' };
+    };
+
+    if (!templateId || !version || !pdf?.filename || !pdf?.contentBase64) {
+      return {
+        error: {
+          code: 'BAD_REQUEST',
+          message: 'Missing required fields: templateId, version, pdf.filename, pdf.contentBase64',
+        },
+      };
+    }
+
+    const encoded = stripDataUrlPrefix(pdf.contentBase64).replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9+/=]+$/.test(encoded)) {
+      return { error: { code: 'BAD_REQUEST', message: 'Invalid base64 content for PDF' } };
+    }
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = Buffer.from(encoded, 'base64');
+    } catch {
+      return { error: { code: 'BAD_REQUEST', message: 'Invalid base64 content for PDF' } };
+    }
+
+    if (!pdfBuffer.length) {
+      return { error: { code: 'BAD_REQUEST', message: 'PDF payload is empty' } };
+    }
+
+    if (pdfBuffer.length > MAX_PDF_UPLOAD_BYTES) {
+      return {
+        error: {
+          code: 'BAD_REQUEST',
+          message: `PDF payload exceeds ${MAX_PDF_UPLOAD_BYTES} bytes`,
+        },
+      };
+    }
+
+    try {
+      const resolvedBaseDir = this.resolvePath(baseDir || this.templatesDir);
+      const result = await importPdfTemplate({
+        templateId,
+        version,
+        baseDir: resolvedBaseDir,
+        pdfBuffer,
+        pdfFileName: pdf.filename,
+        engine: options?.engine || 'auto',
+      });
+
+      return {
+        created: true,
+        templateDir: path.relative(this.root, result.templateDir),
+        files: result.files.map(file => path.relative(this.root, file)),
+        warnings: result.warnings,
+        pageSummary: result.pageSummary,
+        conversion: {
+          engine: result.conversion.engine,
+          quality: result.conversion.quality,
+        },
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorReason = error instanceof Error && 'reason' in error
+        ? String((error as Error & { reason?: string }).reason || '')
+        : '';
+      if (errorReason === 'ID_CONFLICT') {
+        return { error: { code: 'ID_CONFLICT', message: errorMessage } };
+      }
+      return { error: { code: 'INTERNAL_ERROR', message: `Template import failed: ${errorMessage}` } };
+    }
+  }
+
   private async handleGenerate(body: Record<string, unknown>): Promise<RpcResponse> {
     const { id, version, baseDir, pageTypes } = body as {
       id: string;
@@ -1256,6 +1344,14 @@ export class RpcServer {
       return { error: { code: 'INTERNAL_ERROR', message: `Template generation failed: ${error}` } };
     }
   }
+}
+
+function stripDataUrlPrefix(content: string): string {
+  const match = content.match(/^data:application\/pdf;base64,(.+)$/i);
+  if (match) {
+    return match[1];
+  }
+  return content;
 }
 
 function estimateTextBBox(

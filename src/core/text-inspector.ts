@@ -241,7 +241,7 @@ function getCumulativeTransformMatrix(element: Element): Matrix2D {
   let current: Element | null = element;
   while (current) {
     chain.push(current);
-    const parent = current.parentNode;
+    const parent: Node | null = current.parentNode;
     current = parent && parent.nodeType === 1 ? parent as Element : null;
   }
 

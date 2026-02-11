@@ -51,6 +51,17 @@ svgreport validate ./templates/invoice/v3/
 svgreport preview ./templates/invoice/v3/ -o ./preview -s realistic
 ```
 
+### GUIでのPDFテンプレ化
+
+1. `just demo` で統合サーバーを起動（`http://127.0.0.1:8788/`）
+2. 画面右上の「`PDF取込`」からPDFをアップロード
+3. `template.id` / `version` を確認して作成
+4. 作成後はGraph画面でそのままバインディングを編集
+
+注記:
+- GUI取込はPDFを自動でSVG化+正規化し、`templates/<id>/<version>/` を生成します。
+- 複数ページPDFは `1ページ目=first`、`2ページ目=repeat` を採用し、3ページ目以降は警告付きで無視します。
+
 ### レンダリング（本番データ）
 
 ```bash
@@ -125,6 +136,7 @@ src/
 │   ├── template.ts            # template.json検証・読込
 │   ├── template-validator.ts  # テンプレート検証（schema + SVG参照）
 │   ├── template-generator.ts  # 新規テンプレート雛形生成
+│   ├── template-importer.ts   # PDF取込→テンプレ生成
 │   ├── formatter.ts           # 日付・数値・通貨フォーマット
 │   ├── paginator.ts           # ページ分割ロジック（純関数）
 │   ├── svg-engine.ts          # SVG操作（@xmldom/xmldom + xpath）
@@ -146,7 +158,7 @@ src/
 | コマンド | 説明 | 使用例 |
 |---------|------|--------|
 | `render` | ジョブZIPをレンダリング | `svgreport render job.zip` |
-| `convert` | PDF→SVG変換（auto fallback） | `svgreport convert input.pdf ./output/` |
+| `convert` | PDF全ページ→SVG変換（auto fallback） | `svgreport convert input.pdf ./output/` |
 | `normalize` | SVG正規化 | `svgreport normalize ./raw/ ./norm/ -s a4` |
 | `validate` | テンプレート検証 | `svgreport validate ./templates/inv/v1/` |
 | `preview` | プレビュー生成 | `svgreport preview ./templates/inv/v1/` |

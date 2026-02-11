@@ -1000,7 +1000,7 @@ export function SvgViewer({
   if (!svgPath) {
     return (
       <div className="svg-viewer empty">
-        <p>Select a page to view its SVG</p>
+        <p>帳票ページを選択してください</p>
       </div>
     )
   }
@@ -1008,8 +1008,7 @@ export function SvgViewer({
   return (
     <div className="svg-viewer">
       <div className="svg-preview">
-        <h3>SVG Preview</h3>
-        <div className="svg-path">{svgPath}</div>
+        <h3>帳票プレビュー</h3>
         <div className="svg-preview-actions">
           {graphConnections && graphConnections.length > 0 && (
             <>
@@ -1090,7 +1089,7 @@ export function SvgViewer({
           )}
         </div>
 
-        {loading && <div className="loading">Loading SVG...</div>}
+        {loading && <div className="loading">帳票を読み込み中...</div>}
         {error && <div className="error">{error}</div>}
 
         {svgContent && (

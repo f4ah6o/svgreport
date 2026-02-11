@@ -9,7 +9,6 @@ import { SVGReportError } from '../types/index.js';
 export interface ConversionEngine {
   name: string;
   command: string;
-  args: string[];
 }
 
 export interface ConversionResult {
@@ -42,12 +41,10 @@ const ENGINES: ConversionEngine[] = [
   {
     name: 'pdf2svg',
     command: 'pdf2svg',
-    args: ['{input}', '{output}', '{page}'],
   },
   {
     name: 'inkscape',
     command: 'inkscape',
-    args: ['{input}', '--export-type=svg', '--export-filename={output}', '--pdf-page={page}'],
   },
 ];
 
@@ -113,18 +110,163 @@ async function tryConvertWithEngine(
   outputDir: string,
   prefix: string
 ): Promise<ConversionResult> {
+  await removeGeneratedSvgFiles(outputDir, prefix);
+
+  if (engine.name === 'pdf2svg') {
+    return convertWithPdf2Svg(pdfPath, outputDir, prefix);
+  }
+
+  if (engine.name === 'inkscape') {
+    return convertWithInkscape(pdfPath, outputDir, prefix);
+  }
+
+  return {
+    success: false,
+    engine: engine.name,
+    exitCode: -1,
+    stderr: `Unsupported engine: ${engine.name}`,
+    outputFiles: [],
+    quality: {
+      status: 'fail',
+      pageCount: 0,
+      metrics: [],
+      issues: [`Unsupported engine: ${engine.name}`],
+    },
+  };
+}
+
+async function convertWithPdf2Svg(
+  pdfPath: string,
+  outputDir: string,
+  prefix: string
+): Promise<ConversionResult> {
   const outputPattern = path.join(outputDir, `${prefix}-%d.svg`);
+  const execResult = await runCommand('pdf2svg', [pdfPath, outputPattern, 'all'], pdfPath);
 
-  // Build command arguments
-  const args = engine.args.map(arg => {
-    if (arg === '{input}') return pdfPath;
-    if (arg === '{output}') return outputPattern;
-    if (arg === '{page}') return '1'; // pdf2svg uses page number
-    return arg;
-  });
+  if (execResult.exitCode !== 0) {
+    return toFailedResult('pdf2svg', execResult.exitCode, execResult.stderr);
+  }
 
+  const svgFiles = await findGeneratedSvgFiles(outputDir, prefix);
+  if (svgFiles.length === 0) {
+    return toFailedResult('pdf2svg', execResult.exitCode, 'No SVG files were generated');
+  }
+
+  return {
+    success: true,
+    engine: 'pdf2svg',
+    exitCode: execResult.exitCode,
+    stderr: execResult.stderr,
+    outputFiles: svgFiles,
+    quality: await analyzeQuality(svgFiles),
+  };
+}
+
+async function convertWithInkscape(
+  pdfPath: string,
+  outputDir: string,
+  prefix: string
+): Promise<ConversionResult> {
+  const pageCount = await getPdfPageCount(pdfPath);
+  if (pageCount <= 0) {
+    return toFailedResult('inkscape', 1, 'Failed to detect PDF page count');
+  }
+
+  const stderrLines: string[] = [];
+
+  for (let page = 1; page <= pageCount; page += 1) {
+    const outputFile = path.join(outputDir, `${prefix}-${page}.svg`);
+    const args = [
+      pdfPath,
+      '--export-type=svg',
+      `--export-filename=${outputFile}`,
+      `--pdf-page=${page}`,
+    ];
+    const execResult = await runCommand('inkscape', args, pdfPath);
+    if (execResult.stderr) {
+      stderrLines.push(execResult.stderr.trim());
+    }
+    if (execResult.exitCode !== 0) {
+      return toFailedResult('inkscape', execResult.exitCode, execResult.stderr);
+    }
+  }
+
+  const svgFiles = await findGeneratedSvgFiles(outputDir, prefix);
+  if (svgFiles.length === 0) {
+    return toFailedResult('inkscape', 0, 'No SVG files were generated');
+  }
+
+  return {
+    success: true,
+    engine: 'inkscape',
+    exitCode: 0,
+    stderr: stderrLines.filter(Boolean).join('\n'),
+    outputFiles: svgFiles,
+    quality: await analyzeQuality(svgFiles),
+  };
+}
+
+async function getPdfPageCount(pdfPath: string): Promise<number> {
+  const info = await runCommand('pdfinfo', [pdfPath], pdfPath);
+  if (info.exitCode !== 0) {
+    throw new SVGReportError(
+      'Failed to inspect PDF page count',
+      pdfPath,
+      info.stderr || info.stdout || `pdfinfo exit code ${info.exitCode}`
+    );
+  }
+  const match = info.stdout.match(/^Pages:\s+(\d+)/m);
+  return match ? Number.parseInt(match[1], 10) : 0;
+}
+
+async function removeGeneratedSvgFiles(outputDir: string, prefix: string): Promise<void> {
+  const files = await fs.readdir(outputDir);
+  const targets = files.filter(f => f.startsWith(`${prefix}-`) && f.endsWith('.svg'));
+  await Promise.all(targets.map(file => fs.rm(path.join(outputDir, file), { force: true })));
+}
+
+async function findGeneratedSvgFiles(outputDir: string, prefix: string): Promise<string[]> {
+  const files = await fs.readdir(outputDir);
+  return files
+    .filter(f => f.startsWith(`${prefix}-`) && f.endsWith('.svg'))
+    .sort((a, b) => compareSvgFilenames(a, b, prefix))
+    .map(f => path.join(outputDir, f));
+}
+
+function compareSvgFilenames(a: string, b: string, prefix: string): number {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${escaped}-(\\d+)\\.svg$`);
+  const am = a.match(pattern);
+  const bm = b.match(pattern);
+  const an = am ? Number.parseInt(am[1], 10) : Number.MAX_SAFE_INTEGER;
+  const bn = bm ? Number.parseInt(bm[1], 10) : Number.MAX_SAFE_INTEGER;
+  if (an !== bn) return an - bn;
+  return a.localeCompare(b);
+}
+
+function toFailedResult(engine: string, exitCode: number, stderr: string): ConversionResult {
+  return {
+    success: false,
+    engine,
+    exitCode,
+    stderr,
+    outputFiles: [],
+    quality: {
+      status: 'fail',
+      pageCount: 0,
+      metrics: [],
+      issues: [`Engine exited with code ${exitCode}: ${stderr || 'Unknown error'}`],
+    },
+  };
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  targetPath: string
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(engine.command, args, {
+    const child = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -139,48 +281,18 @@ async function tryConvertWithEngine(
       stderr += data.toString();
     });
 
-    child.on('close', async (exitCode) => {
-      if (exitCode !== 0) {
-        resolve({
-          success: false,
-          engine: engine.name,
-          exitCode: exitCode ?? -1,
-          stderr,
-          outputFiles: [],
-          quality: {
-            status: 'fail',
-            pageCount: 0,
-            metrics: [],
-            issues: [`Engine exited with code ${exitCode}: ${stderr}`],
-          },
-        });
-        return;
-      }
-
-      // Find generated files
-      const files = await fs.readdir(outputDir);
-      const svgFiles = files
-        .filter(f => f.startsWith(prefix) && f.endsWith('.svg'))
-        .sort()
-        .map(f => path.join(outputDir, f));
-
-      // Analyze quality
-      const quality = await analyzeQuality(svgFiles);
-
+    child.on('close', (exitCode) => {
       resolve({
-        success: true,
-        engine: engine.name,
-        exitCode: 0,
+        exitCode: exitCode ?? -1,
+        stdout,
         stderr,
-        outputFiles: svgFiles,
-        quality,
       });
     });
 
     child.on('error', (error) => {
       reject(new SVGReportError(
-        `Failed to spawn ${engine.command}`,
-        pdfPath,
+        `Failed to spawn ${command}`,
+        targetPath,
         error.message
       ));
     });

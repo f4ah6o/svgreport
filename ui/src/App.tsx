@@ -4,7 +4,6 @@ import type {
   TextElement,
   ValidationResponse,
   ValidationError,
-  PreviewResponse,
   TemplateListItem,
   KVData,
   TableData,
@@ -36,7 +35,6 @@ export function App() {
   const [status, setStatus] = useState<string>('Ready')
   const [error, setError] = useState<string | null>(null)
   const [validationResult, setValidationResult] = useState<ValidationResponse | null>(null)
-  const [previewResult, setPreviewResult] = useState<PreviewResponse | null>(null)
   const [selectedTextIndex, setSelectedTextIndex] = useState<number | null>(null)
   const [selectedText, setSelectedText] = useState<TextElement | null>(null)
   const [selectedBindingSvgId, setSelectedBindingSvgId] = useState<string | null>(null)
@@ -51,7 +49,15 @@ export function App() {
   const [itemsFileName, setItemsFileName] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
-  const [editorMode, setEditorMode] = useState<'graph' | 'legacy'>('graph')
+  const editorMode = 'graph' as const
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [importTemplateId, setImportTemplateId] = useState('')
+  const [importVersion, setImportVersion] = useState('v1')
+  const [importTemplateIdTouched, setImportTemplateIdTouched] = useState(false)
+  const [importVersionTouched, setImportVersionTouched] = useState(false)
+  const [importPdfFile, setImportPdfFile] = useState<File | null>(null)
+  const [importEngine, setImportEngine] = useState<'auto' | 'pdf2svg' | 'inkscape'>('auto')
+  const [importLoading, setImportLoading] = useState(false)
   const [graphMetaScope, setGraphMetaScope] = useState<'page' | 'global'>('page')
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
   const [graphTableIndex, setGraphTableIndex] = useState(0)
@@ -147,6 +153,105 @@ export function App() {
     await loadTemplateByPath(templateDir)
   }, [loadTemplateByPath, templateDir])
 
+  const resetImportDialog = useCallback(() => {
+    setImportTemplateId('')
+    setImportVersion('v1')
+    setImportTemplateIdTouched(false)
+    setImportVersionTouched(false)
+    setImportPdfFile(null)
+    setImportEngine('auto')
+    setImportLoading(false)
+  }, [])
+
+  const openImportDialog = useCallback(() => {
+    resetImportDialog()
+    setImportDialogOpen(true)
+  }, [resetImportDialog])
+
+  const closeImportDialog = useCallback(() => {
+    setImportDialogOpen(false)
+    resetImportDialog()
+  }, [resetImportDialog])
+
+  const handleImportPdfFileChange = useCallback((event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0] || null
+    setImportPdfFile(file)
+    if (file) {
+      if (!importTemplateIdTouched || !importTemplateId.trim()) {
+        setImportTemplateId(suggestTemplateIdFromFileName(file.name))
+      }
+      if (!importVersionTouched || !importVersion.trim()) {
+        setImportVersion('v1')
+      }
+    }
+    input.value = ''
+  }, [importTemplateIdTouched, importTemplateId, importVersionTouched, importVersion])
+
+  const handleImportTemplate = useCallback(async () => {
+    if (!importPdfFile) {
+      setError('PDFファイルを選択してください。')
+      return
+    }
+
+    const templateIdValue = importTemplateId.trim()
+    const versionValue = importVersion.trim()
+    if (!templateIdValue || !versionValue) {
+      setError('テンプレートIDとバージョンは必須です。')
+      return
+    }
+
+    setImportLoading(true)
+    setError(null)
+    setStatus('PDFから帳票テンプレートを作成中...')
+
+    try {
+      const buffer = await importPdfFile.arrayBuffer()
+      const contentBase64 = arrayBufferToBase64(buffer)
+      const result = await rpc.importTemplateFromPdf(
+        templateIdValue,
+        versionValue,
+        {
+          filename: importPdfFile.name,
+          contentBase64,
+        },
+        templatesBaseDir,
+        importEngine
+      )
+
+      try {
+        const templates = await rpc.listTemplates(templatesBaseDir)
+        setTemplatesList(templates.templates)
+        setTemplatesError(null)
+      } catch (listErr) {
+        setTemplatesError(listErr instanceof Error ? listErr.message : 'Failed to load templates list')
+      }
+      setTemplateDir(result.templateDir)
+      await loadTemplateByPath(result.templateDir)
+
+      if (result.warnings.length > 0) {
+        setNotification(`作成完了（警告 ${result.warnings.length} 件）: ${result.warnings.join(' / ')}`)
+      } else {
+        setStatus(`帳票テンプレートを作成しました: ${result.templateDir}`)
+      }
+      closeImportDialog()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'PDF取込に失敗しました'
+      setError(message)
+      setStatus('PDF取込に失敗しました')
+    } finally {
+      setImportLoading(false)
+    }
+  }, [
+    importPdfFile,
+    importTemplateId,
+    importVersion,
+    templatesBaseDir,
+    importEngine,
+    loadTemplateByPath,
+    closeImportDialog,
+  ])
+
   const refreshTemplatesList = useCallback(async (baseDir: string) => {
     setTemplatesLoading(true)
     setTemplatesError(null)
@@ -215,14 +320,25 @@ export function App() {
     setIsLoading(true)
     setError(null)
     setStatus('Generating preview...')
+    const previewTab = window.open('', '_blank')
     
     try {
       const outputDir = `out/preview/${template.template.id}-${template.template.version}`
       const data = metaData || itemsData ? { meta: metaData ?? undefined, items: itemsData ?? undefined } : undefined
       const result = await rpc.preview(templateDir, outputDir, 'realistic', data)
-      setPreviewResult(result)
-      setStatus(result.ok ? `Preview generated: ${result.output?.pages.length || 0} pages` : 'Preview generation failed')
+      if (result.ok && result.output?.html) {
+        if (previewTab) {
+          previewTab.location.href = result.output.html
+        } else {
+          window.open(result.output.html, '_blank')
+        }
+        setStatus(`Preview generated: ${result.output?.pages.length || 0} pages`)
+      } else {
+        previewTab?.close()
+        setStatus('Preview generation failed')
+      }
     } catch (err) {
+      previewTab?.close()
       setError(err instanceof Error ? err.message : 'Preview generation failed')
       setStatus('Error generating preview')
     } finally {
@@ -2037,27 +2153,6 @@ export function App() {
     setNotification('Session reset.')
   }, [])
 
-  const handleCopyPreviewPath = useCallback(async (path: string | undefined) => {
-    if (!path) return
-    try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(path)
-      } else {
-        const area = document.createElement('textarea')
-        area.value = path
-        area.style.position = 'fixed'
-        area.style.left = '-9999px'
-        document.body.appendChild(area)
-        area.select()
-        document.execCommand('copy')
-        document.body.removeChild(area)
-      }
-      setNotification('Copied preview path to clipboard.')
-    } catch {
-      setNotification('Failed to copy preview path.')
-    }
-  }, [])
-
   const startResizeMain = useCallback((event: MouseEvent) => {
     event.preventDefault()
     const container = mainSplitRef.current
@@ -2193,22 +2288,22 @@ export function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>SVG Paper - Template Editor</h1>
+        <h1>SVG Paper - 帳票テンプレートエディタ</h1>
         <div className="template-path">
           <input
             type="text"
             value={templateDir}
             onChange={(e) => setTemplateDir((e.target as HTMLInputElement).value)}
-            placeholder="Template directory path"
+            placeholder="テンプレートディレクトリ"
           />
-          <button onClick={handleLoad} disabled={isLoading}>Load</button>
-          <button className="btn-reset" onClick={handleResetSession}>Reset session</button>
+          <button onClick={handleLoad} disabled={isLoading}>読込</button>
+          <button className="btn-reset" onClick={handleResetSession}>セッション初期化</button>
         </div>
       </header>
 
       <div className="templates-bar">
         <div className="templates-bar-left">
-          <label>Templates Base Dir</label>
+          <label>テンプレートベース</label>
           <input
             type="text"
             value={templatesBaseDir}
@@ -2216,46 +2311,39 @@ export function App() {
             placeholder="templates"
           />
           <button onClick={() => refreshTemplatesList(templatesBaseDir)} disabled={templatesLoading}>
-            {templatesLoading ? 'Loading...' : 'Refresh'}
+            {templatesLoading ? '読込中...' : '更新'}
           </button>
         </div>
         <div className="templates-bar-right">
           <div className="templates-actions">
             <button
+              onClick={openImportDialog}
+              disabled={isLoading || importLoading}
+              className="btn-primary"
+            >
+              PDF取込
+            </button>
+            <button
               onClick={handleSave}
               disabled={!template || isLoading}
               className="btn-primary"
             >
-              {isLoading ? 'Saving...' : 'Save'}
+              {isLoading ? '保存中...' : '保存'}
             </button>
             <button
               onClick={handleValidate}
               disabled={!template || isLoading}
               className="btn-secondary"
             >
-              Validate
+              検証
             </button>
             <button
               onClick={handlePreview}
               disabled={!template || isLoading}
               className="btn-secondary"
             >
-              Preview
+              プレビュー
             </button>
-            <div className="editor-mode-toggle">
-              <button
-                className={`btn-secondary ${editorMode === 'graph' ? 'active' : ''}`}
-                onClick={() => setEditorMode('graph')}
-              >
-                Graph
-              </button>
-              <button
-                className={`btn-secondary ${editorMode === 'legacy' ? 'active' : ''}`}
-                onClick={() => setEditorMode('legacy')}
-              >
-                Legacy
-              </button>
-            </div>
           </div>
           {templatesError ? <span className="templates-error">{templatesError}</span> : null}
         </div>
@@ -2278,8 +2366,17 @@ export function App() {
                   onSelectPageId={handlePageSelect}
                   metaData={metaData}
                   itemsData={itemsData}
+                  metaFileName={metaFileName}
+                  itemsFileName={itemsFileName}
+                  dataError={dataError}
                   dataLoading={dataLoading}
                   onLoadDemoData={handleLoadDemoData}
+                  onMetaUpload={handleMetaUpload}
+                  onItemsUpload={handleItemsUpload}
+                  onMetaUrlLoad={handleMetaUrlLoad}
+                  onItemsUrlLoad={handleItemsUrlLoad}
+                  onClearMeta={clearMetaData}
+                  onClearItems={clearItemsData}
                   metaScope={graphMetaScope}
                   onMetaScopeChange={setGraphMetaScope}
                   itemsTarget={graphItemsTarget}
@@ -2511,11 +2608,11 @@ export function App() {
           )
         ) : (
           <div className="welcome">
-            <h2>Welcome to SVG Paper Template Editor</h2>
-            <p>Enter a template directory path and click Load to start editing.</p>
-            <p>Example: <code>test-templates/delivery-slip/v1</code></p>
+            <h2>帳票テンプレートエディタ</h2>
+            <p>テンプレートディレクトリを入力して「読込」を押してください。</p>
+            <p>例: <code>test-templates/delivery-slip/v1</code></p>
             <div className="templates-panel">
-              <h3>Templates</h3>
+              <h3>テンプレート一覧</h3>
               {templatesList.length === 0 ? (
                 <p className="empty">No templates found under {templatesBaseDir}</p>
               ) : (
@@ -2618,18 +2715,62 @@ export function App() {
         </div>
       )}
 
-      {previewResult?.ok && previewResult.output && (
-        <div className="preview-panel">
-          <h3>Preview Generated</h3>
-          <p>Pages: {previewResult.output.pages.length}</p>
-          <p>HTML: {previewResult.output.html}</p>
-          <button onClick={() => handleCopyPreviewPath(previewResult.output?.html)}>
-            Copy path
-          </button>
-          <button onClick={() => window.open(previewResult.output?.html, '_blank')}>
-            Open Preview
-          </button>
-          <button onClick={() => setPreviewResult(null)}>Close</button>
+      {importDialogOpen && (
+        <div className="modal-backdrop" onClick={closeImportDialog}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3>PDFから帳票テンプレートを作成</h3>
+            <div className="modal-row">
+              <label>テンプレートID</label>
+              <input
+                type="text"
+                value={importTemplateId}
+                onChange={(e) => {
+                  setImportTemplateId((e.target as HTMLInputElement).value)
+                  setImportTemplateIdTouched(true)
+                }}
+                placeholder="invoice"
+              />
+            </div>
+            <div className="modal-row">
+              <label>バージョン</label>
+              <input
+                type="text"
+                value={importVersion}
+                onChange={(e) => {
+                  setImportVersion((e.target as HTMLInputElement).value)
+                  setImportVersionTouched(true)
+                }}
+                placeholder="v1"
+              />
+            </div>
+            <div className="modal-row">
+              <label>変換エンジン</label>
+              <select
+                value={importEngine}
+                onChange={(e) => setImportEngine((e.target as HTMLSelectElement).value as 'auto' | 'pdf2svg' | 'inkscape')}
+              >
+                <option value="auto">auto</option>
+                <option value="pdf2svg">pdf2svg</option>
+                <option value="inkscape">inkscape</option>
+              </select>
+            </div>
+            <div className="modal-row">
+              <label>PDFファイル</label>
+              <label className="btn-secondary graph-upload-button">
+                ファイル選択
+                <input type="file" accept="application/pdf,.pdf" onChange={handleImportPdfFileChange} />
+              </label>
+              {importPdfFile ? <span className="modal-file-name">{importPdfFile.name}</span> : null}
+            </div>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={closeImportDialog} disabled={importLoading}>
+                キャンセル
+              </button>
+              <button className="btn-primary" onClick={handleImportTemplate} disabled={importLoading}>
+                {importLoading ? '作成中...' : '作成'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3030,6 +3171,26 @@ function parsePathTokens(input: string): PathToken[] | null {
   }
 
   return tokens
+}
+
+function suggestTemplateIdFromFileName(fileName: string): string {
+  const base = fileName.replace(/\.pdf$/i, '').trim().toLowerCase()
+  const normalized = base
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+  return normalized || 'template'
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+  return btoa(binary)
 }
 
 function loadSession(): { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string } {

@@ -11,6 +11,7 @@ import type {
   ValidationResponse,
   PreviewResponse,
   SaveResponse,
+  TemplateImportPdfResponse,
   KVData,
   TableData,
 } from '../types/api'
@@ -142,6 +143,25 @@ class RpcClient {
     return this.request('/generate', {
       method: 'POST',
       body: JSON.stringify({ id, version, baseDir, pageTypes }),
+    })
+  }
+
+  async importTemplateFromPdf(
+    templateId: string,
+    version: string,
+    pdf: { filename: string; contentBase64: string },
+    baseDir?: string,
+    engine: 'pdf2svg' | 'inkscape' | 'auto' = 'auto'
+  ): Promise<TemplateImportPdfResponse> {
+    return this.request<TemplateImportPdfResponse>('/template/import-pdf', {
+      method: 'POST',
+      body: JSON.stringify({
+        templateId,
+        version,
+        baseDir,
+        pdf,
+        options: { engine },
+      }),
     })
   }
 

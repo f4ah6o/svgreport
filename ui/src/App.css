@@ -1295,6 +1295,71 @@
   margin-bottom: 0.5rem;
 }
 
+.graph-data-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.graph-data-import {
+  border: 1px solid #e6ebf0;
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: #f8fafd;
+  margin-bottom: 0.6rem;
+}
+
+.graph-data-import-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.graph-data-import-row:last-child {
+  margin-bottom: 0;
+}
+
+.graph-data-import-row input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 6px;
+}
+
+.graph-data-label {
+  min-width: 88px;
+  font-size: 0.78rem;
+  color: #4c5a68;
+}
+
+.graph-upload-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.graph-upload-button input[type='file'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.graph-data-source {
+  font-size: 0.74rem;
+  color: #576779;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-data-error {
+  margin: 0.4rem 0 0.5rem 0;
+  color: #c0392b;
+  font-size: 0.78rem;
+}
+
 .graph-subsection + .graph-subsection {
   margin-top: 0.75rem;
 }
@@ -1626,6 +1691,66 @@
   margin-top: 0.5rem;
   font-size: 0.8rem;
   color: #556;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+}
+
+.modal-card {
+  width: min(560px, calc(100vw - 2rem));
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.25);
+  padding: 1rem;
+}
+
+.modal-card h3 {
+  margin: 0 0 0.8rem 0;
+}
+
+.modal-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.65rem;
+}
+
+.modal-row label {
+  font-size: 0.82rem;
+  color: #334155;
+}
+
+.modal-row input[type='text'],
+.modal-row select {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.modal-file-name {
+  font-size: 0.8rem;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
 }
 
 .binding-list {

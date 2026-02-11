@@ -27,6 +27,7 @@ export interface VersionResponse {
     inspectText: boolean;
     generate: boolean;
     wrap: boolean;
+    importPdfTemplate?: boolean;
   };
 }
 
@@ -231,6 +232,27 @@ export interface SaveResponse {
     ok: boolean;
     errors: ValidationError[];
     warnings: string[];
+  };
+}
+
+export interface TemplateImportPdfResponse {
+  request_id: string;
+  created: boolean;
+  templateDir: string;
+  files: string[];
+  warnings: string[];
+  pageSummary: {
+    converted: number;
+    adopted: number;
+    ignored: number;
+  };
+  conversion: {
+    engine: string;
+    quality: {
+      status: 'pass' | 'conditional' | 'fail';
+      pageCount: number;
+      issues: string[];
+    };
   };
 }
 

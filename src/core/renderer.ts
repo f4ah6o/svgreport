@@ -191,7 +191,17 @@ export class Renderer {
     }
   }
 
-  private applyFieldList(svgDoc: Document, fields: { svg_id: string; enabled?: boolean; value: ValueBinding; fit?: string; align?: string; format?: string }[]): void {
+  private applyFieldList(
+    svgDoc: Document,
+    fields: Array<{
+      svg_id: string;
+      enabled?: boolean;
+      value: ValueBinding;
+      fit?: 'none' | 'shrink' | 'wrap' | 'clip';
+      align?: 'left' | 'center' | 'right';
+      format?: string;
+    }>
+  ): void {
     for (const field of fields) {
       if (field.enabled === false || !field.svg_id) continue;
       const value = this.resolveValue(field.value);

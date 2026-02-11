@@ -17,4 +17,5 @@ export * from './core/template-validator.js';
 export * from './core/preview-generator.js';
 export * from './core/text-inspector.js';
 export * from './core/template-generator.js';
+export * from './core/template-importer.js';
 export * from './core/rpc-server.js';

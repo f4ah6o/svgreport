@@ -130,7 +130,7 @@ program
 // convert command: PDF to SVG
 program
   .command('convert')
-  .description('Convert PDF to SVG (pdf2svg/inkscape)')
+  .description('Convert PDF pages to SVG files (pdf2svg/inkscape)')
   .argument('<pdf>', 'Input PDF file')
   .argument('<output>', 'Output directory')
   .option('-e, --engine <engine>', 'Conversion engine (pdf2svg, inkscape, auto)', 'auto')

@@ -9,8 +9,17 @@ interface GraphEditorProps {
   onSelectPageId: (pageId: string) => void
   metaData: KVData | null
   itemsData: TableData | null
+  metaFileName: string | null
+  itemsFileName: string | null
+  dataError: string | null
   dataLoading: boolean
   onLoadDemoData: () => void
+  onMetaUpload: (file: File) => void
+  onItemsUpload: (file: File) => void
+  onMetaUrlLoad: (url: string) => void
+  onItemsUrlLoad: (url: string) => void
+  onClearMeta: () => void
+  onClearItems: () => void
   metaScope: 'page' | 'global'
   onMetaScopeChange: (scope: 'page' | 'global') => void
   itemsTarget: 'body' | 'header'
@@ -33,8 +42,17 @@ export function GraphEditor({
   onSelectPageId,
   metaData,
   itemsData,
+  metaFileName,
+  itemsFileName,
+  dataError,
   dataLoading,
   onLoadDemoData,
+  onMetaUpload,
+  onItemsUpload,
+  onMetaUrlLoad,
+  onItemsUrlLoad,
+  onClearMeta,
+  onClearItems,
   metaScope,
   onMetaScopeChange,
   itemsTarget,
@@ -52,6 +70,8 @@ export function GraphEditor({
 }: GraphEditorProps) {
   const [staticInput, setStaticInput] = useState('')
   const [customStaticNodes, setCustomStaticNodes] = useState<string[]>([])
+  const [metaUrlInput, setMetaUrlInput] = useState('')
+  const [itemsUrlInput, setItemsUrlInput] = useState('')
 
   const page = useMemo(() => {
     if (selectedPageId) {
@@ -96,6 +116,30 @@ export function GraphEditor({
     setStaticInput('')
   }
 
+  const handleMetaFileChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (file) onMetaUpload(file)
+    input.value = ''
+  }
+
+  const handleItemsFileChange = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (file) onItemsUpload(file)
+    input.value = ''
+  }
+
+  const handleMetaUrlLoad = () => {
+    if (!metaUrlInput.trim()) return
+    onMetaUrlLoad(metaUrlInput.trim())
+  }
+
+  const handleItemsUrlLoad = () => {
+    if (!itemsUrlInput.trim()) return
+    onItemsUrlLoad(itemsUrlInput.trim())
+  }
+
   const tableIndex = page && page.tables.length > 0
     ? Math.min(activeTableIndex, page.tables.length - 1)
     : 0
@@ -128,13 +172,67 @@ export function GraphEditor({
 
         <div className="graph-section">
           <h3>Data</h3>
-          <button
-            className="btn-secondary graph-demo-button"
-            onClick={onLoadDemoData}
-            disabled={dataLoading}
-          >
-            Load Demo Data
-          </button>
+          <div className="graph-data-toolbar">
+            <button
+              className="btn-secondary graph-demo-button"
+              onClick={onLoadDemoData}
+              disabled={dataLoading}
+            >
+              デモデータ読込
+            </button>
+          </div>
+
+          <div className="graph-data-import">
+            <div className="graph-data-import-row">
+              <span className="graph-data-label">Meta(JSON)</span>
+              <label className="btn-secondary graph-upload-button">
+                Upload
+                <input type="file" accept="application/json,.json" onChange={handleMetaFileChange} />
+              </label>
+              <button className="btn-secondary" onClick={onClearMeta} disabled={!metaData}>
+                Clear
+              </button>
+            </div>
+            <div className="graph-data-import-row">
+              <input
+                type="text"
+                value={metaUrlInput}
+                onChange={(e) => setMetaUrlInput((e.target as HTMLInputElement).value)}
+                placeholder="https://.../meta.json"
+              />
+              <button className="btn-secondary" onClick={handleMetaUrlLoad} disabled={dataLoading || !metaUrlInput.trim()}>
+                URL読込
+              </button>
+            </div>
+            {metaFileName ? <div className="graph-data-source">source: {metaFileName}</div> : null}
+          </div>
+
+          <div className="graph-data-import">
+            <div className="graph-data-import-row">
+              <span className="graph-data-label">Items(CSV)</span>
+              <label className="btn-secondary graph-upload-button">
+                Upload
+                <input type="file" accept=".csv,text/csv" onChange={handleItemsFileChange} />
+              </label>
+              <button className="btn-secondary" onClick={onClearItems} disabled={!itemsData}>
+                Clear
+              </button>
+            </div>
+            <div className="graph-data-import-row">
+              <input
+                type="text"
+                value={itemsUrlInput}
+                onChange={(e) => setItemsUrlInput((e.target as HTMLInputElement).value)}
+                placeholder="https://.../items.csv"
+              />
+              <button className="btn-secondary" onClick={handleItemsUrlLoad} disabled={dataLoading || !itemsUrlInput.trim()}>
+                URL読込
+              </button>
+            </div>
+            {itemsFileName ? <div className="graph-data-source">source: {itemsFileName}</div> : null}
+          </div>
+
+          {dataError ? <p className="graph-data-error">{dataError}</p> : null}
           <div className="graph-subsection">
             <div className="graph-subsection-header">
               <h4>Meta</h4>
@@ -300,18 +398,18 @@ export function GraphEditor({
         <div className="graph-section">
           <h3>Binding Details</h3>
           {!selectedSvgId ? (
-            <p className="empty">Select an SVG element to manage binding.</p>
+            <p className="empty">帳票上の要素を選択すると、ここに割当情報が表示されます。</p>
           ) : (
             <div className="graph-binding-details">
               <div className="graph-binding-row">
-                <span className="label">Selected SVG ID</span>
+                <span className="label">選択中の要素ID</span>
                 <span className="value">{selectedSvgId}</span>
               </div>
               <button
                 className="btn-secondary"
                 onClick={() => onUnbindSvgId(selectedSvgId)}
               >
-                Keep unbound
+                未割当に戻す
               </button>
             </div>
           )}

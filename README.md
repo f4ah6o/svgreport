@@ -54,6 +54,17 @@ svgreport validate ./templates/invoice/v3/
 svgreport preview ./templates/invoice/v3/ -o ./preview -s realistic
 ```
 
+### GUI PDF Template Import
+
+1. Start integrated server with `just demo` (`http://127.0.0.1:8788/`)
+2. Click `PDF取込` in the UI and upload a PDF
+3. Confirm `template.id` and `version`, then create
+4. Continue editing bindings in the Graph editor
+
+Notes:
+- GUI import automatically runs PDF->SVG conversion and normalization, then creates `templates/<id>/<version>/`.
+- For multi-page PDFs, only page 1 (`first`) and page 2 (`repeat`) are adopted. Page 3+ are ignored with warnings.
+
 ### Rendering (Production Data)
 
 ```bash
@@ -128,6 +139,7 @@ src/
 │   ├── template.ts            # template.json validation/loading
 │   ├── template-validator.ts  # Template validation (schema + SVG refs)
 │   ├── template-generator.ts  # New template boilerplate generation
+│   ├── template-importer.ts   # PDF import -> template package generation
 │   ├── formatter.ts           # Date/number/currency formatting
 │   ├── paginator.ts           # Page splitting logic (pure function)
 │   ├── svg-engine.ts          # SVG manipulation (@xmldom/xmldom + xpath)
@@ -149,7 +161,7 @@ src/
 | Command | Description | Example |
 |---------|-------------|---------|
 | `render` | Render job ZIP | `svgreport render job.zip` |
-| `convert` | PDF→SVG conversion (auto fallback) | `svgreport convert input.pdf ./output/` |
+| `convert` | Convert all PDF pages to SVG (auto fallback) | `svgreport convert input.pdf ./output/` |
 | `normalize` | SVG normalization | `svgreport normalize ./raw/ ./norm/ -s a4` |
 | `validate` | Template validation | `svgreport validate ./templates/inv/v1/` |
 | `preview` | Preview generation | `svgreport preview ./templates/inv/v1/` |
@@ -174,5 +186,3 @@ out/
 ## License
 
 MIT
-
-
