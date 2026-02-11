@@ -300,7 +300,7 @@
           "rows_per_page": 12,
           "cells": [
             {
-              "svg_id": "item_no",
+              "svg_id": "text_22",
               "align": "center",
               "value": {
                 "type": "data",
@@ -309,7 +309,7 @@
               }
             },
             {
-              "svg_id": "item_name",
+              "svg_id": "text_23",
               "fit": "shrink",
               "value": {
                 "type": "data",
@@ -318,7 +318,7 @@
               }
             },
             {
-              "svg_id": "item_qty",
+              "svg_id": "text_24",
               "align": "right",
               "value": {
                 "type": "data",
@@ -327,7 +327,7 @@
               }
             },
             {
-              "svg_id": "item_unit",
+              "svg_id": "text_25",
               "align": "center",
               "value": {
                 "type": "data",
@@ -336,7 +336,7 @@
               }
             },
             {
-              "svg_id": "item_price",
+              "svg_id": "text_26",
               "align": "right",
               "format": "yen",
               "value": {
@@ -346,7 +346,7 @@
               }
             },
             {
-              "svg_id": "item_amount",
+              "svg_id": "text_27",
               "align": "right",
               "format": "yen",
               "value": {
@@ -359,7 +359,7 @@
         }
       ],
       "page_number": {
-        "svg_id": "page_no",
+        "svg_id": "text_28",
         "format": "{current}/{total}"
       },
       "fields": []
