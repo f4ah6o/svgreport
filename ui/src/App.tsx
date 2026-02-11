@@ -669,6 +669,38 @@ export function App() {
           ? svgPath.slice(templateDir.length + 1)
           : svgPath
         const validIds = new Set(dynamicTexts.map((text) => text.id).filter(Boolean) as string[])
+        let rowGroupCellIds = new Map<string, string[]>()
+        try {
+          const svgResult = await rpc.readSvg(svgPath)
+          const parser = new DOMParser()
+          const doc = parser.parseFromString(svgResult.svg, 'image/svg+xml')
+          const idIndex = new Map<string, number>()
+          let domOrder = 0
+          for (const node of Array.from(doc.getElementsByTagName('*'))) {
+            const id = node.getAttribute('id')
+            if (!id) continue
+            idIndex.set(id, domOrder)
+            domOrder += 1
+          }
+          rowGroupCellIds = new Map(
+            template.pages
+              .filter((page) => page.svg === relativePath)
+              .flatMap((page) => page.tables.map((table) => table.row_group_id))
+              .filter(Boolean)
+              .map((rowGroupId) => {
+                const rowGroup = doc.querySelector?.(`#${rowGroupId}`) || null
+                if (!rowGroup) return [rowGroupId, []] as const
+                const ids = Array.from(rowGroup.getElementsByTagName('*'))
+                  .map((node) => node.getAttribute('id'))
+                  .filter((id): id is string => Boolean(id))
+                  .filter((id) => validIds.has(id))
+                  .sort((a, b) => (idIndex.get(a) ?? 0) - (idIndex.get(b) ?? 0))
+                return [rowGroupId, Array.from(new Set(ids))] as const
+              })
+          )
+        } catch {
+          rowGroupCellIds = new Map()
+        }
         const suggestedMap = new Map<string, string>()
         for (const text of dynamicTexts) {
           if (text.suggestedId && text.id && !suggestedMap.has(text.suggestedId)) {
@@ -723,10 +755,37 @@ export function App() {
             if (page.svg !== relativePath) return page
             const fields = (page.fields ?? []).map((field) => fixBinding(field))
             const tables = page.tables.map((table) => {
+              const rowGroupCandidates = rowGroupCellIds.get(table.row_group_id) || []
+              const reserved = new Set<string>()
+              for (const cell of table.cells) {
+                if (cell.svg_id && validIds.has(cell.svg_id)) {
+                  reserved.add(cell.svg_id)
+                }
+              }
+              const assignByRowGroup = (
+                binding: { svg_id: string; enabled?: boolean; value?: { type: string; key?: string; text?: string } },
+                index: number,
+              ) => {
+                if (binding.enabled === false) return binding
+                if (binding.svg_id && validIds.has(binding.svg_id)) return binding
+                const preferred = rowGroupCandidates[index]
+                if (preferred && !reserved.has(preferred)) {
+                  reserved.add(preferred)
+                  changed = true
+                  return { ...binding, svg_id: preferred, enabled: true }
+                }
+                const fallback = rowGroupCandidates.find((id) => !reserved.has(id))
+                if (fallback) {
+                  reserved.add(fallback)
+                  changed = true
+                  return { ...binding, svg_id: fallback, enabled: true }
+                }
+                return fixBinding(binding)
+              }
               const header = table.header
                 ? { cells: table.header.cells.map((cell) => fixBinding(cell)) }
                 : table.header
-              const cells = table.cells.map((cell) => fixBinding(cell))
+              const cells = table.cells.map((cell, index) => assignByRowGroup(cell, index))
               return { ...table, header, cells }
             })
             let pageNumber = page.page_number
@@ -742,8 +801,7 @@ export function App() {
             }
             return { ...page, fields, tables, page_number: pageNumber }
           })
-
-          const fields = current.fields.map((field) => fixBinding(field))
+          const fields = current.fields
 
           if (!changed) return { next: current, changed }
           return { next: { ...current, pages, fields }, changed }
