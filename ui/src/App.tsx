@@ -72,6 +72,16 @@ export function App() {
   const validationPathLogRef = useRef(new Set<string>())
   const [svgReloadToken, setSvgReloadToken] = useState(0)
 
+  const svgElementsById = useMemo(() => {
+    const map = new Map<string, TextElement>()
+    for (const element of svgElements) {
+      if (element.id && !map.has(element.id)) {
+        map.set(element.id, element)
+      }
+    }
+    return map
+  }, [svgElements])
+
   // Check connection on mount
   useEffect(() => {
     rpc.getVersion()
@@ -963,6 +973,60 @@ export function App() {
     }
   }, [selectedSvg, templateDir, svgElements, getUniqueSvgId])
 
+  const ensureFitLabelForElement = useCallback(async (element: TextElement, svgId?: string | null) => {
+    if (!selectedSvg) return
+    const targetId = svgId ?? element.id
+    if (!targetId) return
+    const svgPath = `${templateDir}/${selectedSvg}`
+    try {
+      const svgResult = await rpc.readSvg(svgPath)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgResult.svg, 'image/svg+xml')
+      const nodes = Array.from(doc.getElementsByTagName('*'))
+      const targetNode = nodes.find((node) => node.getAttribute('id') === targetId) || null
+      if (!targetNode) return
+      if (targetNode.getAttribute('data-fit-label')) return
+      const targetClass = targetNode.getAttribute('class') || ''
+      if (targetClass.split(/\s+/).includes('label')) return
+
+      const targetElement = svgElementsById.get(targetId) || element
+      const targetBBox = targetElement?.bbox
+      if (!targetBBox) return
+
+      const targetCenterX = targetBBox.x + targetBBox.w / 2
+      const targetCenterY = targetBBox.y + targetBBox.h / 2
+      let best: { id: string; score: number } | null = null
+
+      for (const node of nodes) {
+        const id = node.getAttribute('id')
+        if (!id || id === targetId) continue
+        const className = node.getAttribute('class') || ''
+        if (!className.split(/\s+/).includes('label')) continue
+        const labelElement = svgElementsById.get(id)
+        if (!labelElement) continue
+        const bbox = labelElement.bbox
+        const labelCenterX = bbox.x + bbox.w / 2
+        const labelCenterY = bbox.y + bbox.h / 2
+        if (labelCenterX > targetCenterX + 4) continue
+        const dy = Math.abs(labelCenterY - targetCenterY)
+        const dx = Math.abs(targetCenterX - labelCenterX)
+        const score = dy * 2 + dx * 0.5
+        if (!best || score < best.score) {
+          best = { id, score }
+        }
+      }
+
+      if (!best) return
+      await rpc.setSvgAttrs(svgPath, [
+        { id: targetId, attrs: { 'data-fit-label': best.id } },
+      ])
+      setSvgReloadToken((value) => value + 1)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to auto-assign label'
+      setNotification(message)
+    }
+  }, [selectedSvg, templateDir, svgElementsById])
+
   const normalizeRowGroupsForPage = useCallback(async (templateSnapshot: TemplateConfig, pageId: string) => {
     if (!selectedSvg) return null
     if (autoFixTableRef.current) return null
@@ -1118,7 +1182,10 @@ export function App() {
     updateBindingSvgId(ref, targetId)
     setSelectedBindingRef(ref)
     setSelectedBindingSvgId(targetId)
-  }, [template, ensureSvgIdForElement, updateBindingSvgId])
+    if (ref.kind === 'global-field' || ref.kind === 'page-field') {
+      void ensureFitLabelForElement(element, targetId)
+    }
+  }, [template, ensureSvgIdForElement, updateBindingSvgId, ensureFitLabelForElement])
 
   const handleUseSuggestedId = useCallback(() => {
     if (!selectedText) return
@@ -1203,6 +1270,95 @@ export function App() {
 
     return Array.from(ids)
   }, [template, selectedPageId])
+
+  useEffect(() => {
+    if (!template || !selectedSvg) return
+    if (bindingSvgIds.length === 0) return
+    if (svgElements.length === 0) return
+
+    const page = selectedPageId ? template.pages.find(p => p.id === selectedPageId) : undefined
+    const tableSvgIds = new Set<string>()
+    if (page) {
+      for (const table of page.tables) {
+        if (table.header?.cells) {
+          for (const cell of table.header.cells) {
+            if (cell.svg_id) tableSvgIds.add(cell.svg_id)
+          }
+        }
+        for (const cell of table.cells) {
+          if (cell.svg_id) tableSvgIds.add(cell.svg_id)
+        }
+      }
+    }
+
+    const run = async () => {
+      const svgPath = `${templateDir}/${selectedSvg}`
+      const svgResult = await rpc.readSvg(svgPath)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgResult.svg, 'image/svg+xml')
+      const nodes = Array.from(doc.getElementsByTagName('*'))
+      const nodeById = new Map<string, Element>()
+      const labelCandidates: Array<{ id: string; bbox: TextElement['bbox'] }> = []
+
+      for (const node of nodes) {
+        const id = node.getAttribute('id')
+        if (!id) continue
+        nodeById.set(id, node)
+        const className = node.getAttribute('class') || ''
+        if (className.split(/\s+/).includes('label')) {
+          const labelEl = svgElementsById.get(id)
+          if (labelEl) {
+            labelCandidates.push({ id, bbox: labelEl.bbox })
+          }
+        }
+      }
+
+      if (labelCandidates.length === 0) return
+
+      const assignments: Array<{ id: string; attrs: Record<string, string> }> = []
+
+      for (const svgId of bindingSvgIds) {
+        if (tableSvgIds.has(svgId)) continue
+        const node = nodeById.get(svgId)
+        if (!node) continue
+        if (node.getAttribute('data-fit-label')) continue
+        const className = node.getAttribute('class') || ''
+        if (className.split(/\s+/).includes('label')) continue
+
+        const element = svgElementsById.get(svgId)
+        if (!element) continue
+        const bbox = element.bbox
+        const targetCenterX = bbox.x + bbox.w / 2
+        const targetCenterY = bbox.y + bbox.h / 2
+        let best: { id: string; score: number } | null = null
+
+        for (const label of labelCandidates) {
+          const labelCenterX = label.bbox.x + label.bbox.w / 2
+          const labelCenterY = label.bbox.y + label.bbox.h / 2
+          if (labelCenterX > targetCenterX + 4) continue
+          const dy = Math.abs(labelCenterY - targetCenterY)
+          const dx = Math.abs(targetCenterX - labelCenterX)
+          const score = dy * 2 + dx * 0.5
+          if (!best || score < best.score) {
+            best = { id: label.id, score }
+          }
+        }
+
+        if (best) {
+          assignments.push({ id: svgId, attrs: { 'data-fit-label': best.id } })
+        }
+      }
+
+      if (assignments.length === 0) return
+      await rpc.setSvgAttrs(svgPath, assignments)
+      setSvgReloadToken((value) => value + 1)
+    }
+
+    run().catch((err) => {
+      const message = err instanceof Error ? err.message : 'Failed to auto-assign labels'
+      setNotification(message)
+    })
+  }, [template, selectedSvg, selectedPageId, bindingSvgIds, svgElements, svgElementsById, templateDir])
 
   const handleAddTableGraph = useCallback((pageId: string) => {
     setTemplate((prev) => {
@@ -1317,6 +1473,9 @@ export function App() {
       : `${dataRef.source}_${dataRef.key}`
     const svgId = await ensureSvgIdForElement(element, base)
     if (!svgId) return
+    if (dataRef.source !== 'items') {
+      void ensureFitLabelForElement(element, svgId)
+    }
     let nextTemplate: TemplateConfig | null = null
     setTemplate((prev) => {
       if (!prev) return prev
@@ -1437,7 +1596,7 @@ export function App() {
 
     setSelectedBindingSvgId(svgId)
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
-  }, [template, selectedPageId, ensureSvgIdForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir, clearBindingsBySvgId])
+  }, [template, selectedPageId, ensureSvgIdForElement, ensureFitLabelForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir, clearBindingsBySvgId])
 
   const handleUnbindSvgId = useCallback(async (svgId: string) => {
     if (!svgId) return

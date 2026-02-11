@@ -18,19 +18,19 @@
   <text x="297.64" y="50" text-anchor="middle" class="title" id="text_1">請求書</text>
   
   <!-- Customer Info -->
-  <text x="50" y="100" class="label" id="text_2">請求先</text>
-  <text id="text_3" x="50" y="120" class="value">株式会社サンプル</text>
-  <text id="text_4" data-fit-label="text_2" x="50" y="140" class="value">東京都新宿区...</text>
+  <text x="50" y="100" class="label" id="text_2" font-size="38.9">請求先</text>
+  <text id="text_3" x="50" y="120" class="value" data-fit-label="text_2" data-fit-width="21.7">株式会社サンプル</text>
+  <text id="text_4" data-fit-label="text_2" x="50" y="140" class="value" data-fit-width="274.1">東京都新宿区...</text>
   
   <!-- Invoice Info -->
-  <text x="370" y="100" class="label" id="text_5">請求書番号</text>
-  <text id="text_6" x="500" y="100" text-anchor="end" class="value">INV-0001</text>
+  <text x="370" y="100" class="label" id="text_5" font-size="10">請求書番号</text>
+  <text id="text_6" x="500" y="100" text-anchor="end" class="value" data-fit-label="text_5" data-fit-width="49.961501051740015">INV-0001</text>
   
-  <text x="370" y="120" class="label" id="text_7">発行日</text>
-  <text id="text_8" x="500" y="120" text-anchor="end" class="value">2026年2月2日</text>
+  <text x="370" y="120" class="label" id="text_7" font-size="15.4">発行日</text>
+  <text id="text_8" x="500" y="120" text-anchor="end" class="value" data-fit-label="text_7" data-fit-width="46.2">2026年2月2日</text>
   
   <text x="370" y="140" class="label" id="text_9">支払期限</text>
-  <text id="text_10" x="500" y="140" text-anchor="end" class="value">2026年3月2日</text>
+  <text id="text_10" x="500" y="140" text-anchor="end" class="value" data-fit-label="text_9">2026年3月2日</text>
   
   <!-- Table Header -->
   <g transform="translate(50, 200)">
@@ -59,15 +59,15 @@
 
   <!-- Totals -->
   <g transform="translate(350, 500)">
-    <text x="0" y="0" class="label" id="text_23">小計</text>
-    <text id="text_24" x="145" y="0" text-anchor="end" class="value">¥100,000</text>
+    <text x="0" y="0" class="label" id="text_23" font-size="41">小計</text>
+    <text id="text_24" x="145" y="0" text-anchor="end" class="value" data-fit-label="text_23">¥100,000</text>
     
-    <text x="0" y="25" class="label" id="text_25">消費税(10%)</text>
-    <text id="text_26" x="145" y="25" text-anchor="end" class="value">¥10,000</text>
+    <text x="0" y="25" class="label" id="text_25" font-size="13.5">消費税(10%)</text>
+    <text id="text_26" x="145" y="25" text-anchor="end" class="value" data-fit-label="text_25">¥10,000</text>
     
     <rect x="-10" y="40" width="165" height="30" fill="none" stroke="#000" stroke-width="1"/>
-    <text x="0" y="60" class="label" id="text_27">合計</text>
-    <text id="text_28" x="145" y="60" text-anchor="end" class="total">¥110,000</text>
+    <text x="0" y="60" class="label" id="text_27" font-size="17.4">合計</text>
+    <text id="text_28" x="145" y="60" text-anchor="end" class="total" data-fit-label="text_27" data-fit-width="30.8">¥110,000</text>
   </g>
   
   <!-- Page Number -->

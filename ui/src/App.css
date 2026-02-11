@@ -88,6 +88,10 @@
   display: none;
 }
 
+.graph-preview-pane .graph-map-panel {
+  display: block;
+}
+
 .graph-preview-pane .svg-viewer {
   position: relative;
   z-index: 1;
@@ -769,6 +773,30 @@
   user-select: none;
 }
 
+.svg-overlay-label-draggable {
+  cursor: ew-resize;
+}
+
+.svg-overlay-label-dragging {
+  fill: #b94a48;
+}
+
+.svg-overlay-rect-fit-label {
+  stroke-dasharray: 4 2;
+  cursor: ew-resize;
+  pointer-events: all;
+  fill: transparent;
+}
+
+.svg-overlay-rect-fit-label.svg-overlay-rect-fit-label-draggable {
+  cursor: ew-resize;
+}
+
+.svg-overlay-rect-fit-label-active {
+  stroke: #b94a48;
+  stroke-width: 1.6;
+}
+
 .svg-overlay-table {
   fill: rgba(241, 196, 15, 0.08);
   stroke: #d4ac0d;
@@ -1416,8 +1444,8 @@
 
 .graph-map-overlay {
   position: relative;
-  width: 220px;
-  flex: 0 0 220px;
+  width: 100%;
+  flex: 0 0 auto;
   height: 100%;
   overflow: auto;
   padding: 0.75rem;
@@ -1426,6 +1454,18 @@
   border-radius: 8px;
   z-index: 6;
   pointer-events: auto;
+}
+
+.graph-map-column {
+  width: 240px;
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.graph-map-panel {
+  background: #f4f6f9;
 }
 
 .graph-map-title {

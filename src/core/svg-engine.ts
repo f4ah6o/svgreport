@@ -88,10 +88,18 @@ export function applyTextBinding(doc: Document, binding: TextBinding, value: str
     applyTextAlignment(element, binding.align);
   }
 
-  if (binding.fit === 'shrink') {
+  const fitWidthAttr = element.getAttribute('data-fit-width');
+  const hasFitWidth = fitWidthAttr && Number.isFinite(parseFloat(fitWidthAttr));
+  if (binding.fit === 'shrink' || hasFitWidth) {
     let maxWidth: number | undefined;
+    if (fitWidthAttr) {
+      const fitWidth = parseFloat(fitWidthAttr);
+      if (Number.isFinite(fitWidth) && fitWidth > 0) {
+        maxWidth = fitWidth;
+      }
+    }
     const labelId = element.getAttribute('data-fit-label');
-    if (labelId) {
+    if (labelId && maxWidth === undefined) {
       try {
         const label = requireElementById(doc, labelId, `fit-label:${labelId}`);
         const labelText = getTextContent(label);
@@ -128,24 +136,43 @@ export function applyTextShrink(element: Element, text: string, maxWidth?: numbe
   let fontSize = getFontSize(element, 12);
 
   if (maxWidth) {
+    const units = estimateTextWidth(text, 1);
+    if (units > 0) {
+      const desired = maxWidth / units;
+      const clamped = Math.max(4, Math.min(fontSize, desired));
+      setInlineFontSize(element, clamped);
+      return;
+    }
     let width = estimateTextWidth(text, fontSize);
-    while (width > maxWidth && fontSize > 8) {
-      fontSize = Math.max(8, fontSize * 0.9);
+    while (width > maxWidth && fontSize > 4) {
+      fontSize = Math.max(4, fontSize * 0.9);
       width = estimateTextWidth(text, fontSize);
     }
-    element.setAttribute('font-size', String(fontSize));
+    setInlineFontSize(element, fontSize);
     return;
   }
 
   if (text.length > 20 && fontSize > 8) {
     const newSize = Math.max(8, fontSize * 0.8);
-    element.setAttribute('font-size', String(newSize));
+    setInlineFontSize(element, newSize);
   }
 }
 
 function getFontSize(element: Element, fallback: number): number {
   const value = parseFloat(element.getAttribute('font-size') ?? String(fallback));
   return Number.isFinite(value) ? value : fallback;
+}
+
+function setInlineFontSize(element: Element, size: number): void {
+  const raw = element.getAttribute('style') ?? '';
+  const normalized = raw
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !part.toLowerCase().startsWith('font-size:'))
+  normalized.push(`font-size:${size}px`)
+  element.setAttribute('style', normalized.join('; '))
+  element.setAttribute('font-size', String(size))
 }
 
 function estimateTextWidth(text: string, fontSize: number): number {

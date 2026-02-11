@@ -783,6 +783,18 @@ export class RpcServer {
               target.setAttribute(key, value);
               updated = true;
             }
+            if (value !== null && key === 'font-size') {
+              const styleRaw = target.getAttribute('style') ?? '';
+              const styleParts = styleRaw
+                .split(';')
+                .map((part) => part.trim())
+                .filter(Boolean)
+                .filter((part) => !part.toLowerCase().startsWith('font-size:'));
+              const nextValue = /[a-z%]/i.test(value) ? value : `${value}px`;
+              styleParts.push(`font-size:${nextValue}`);
+              target.setAttribute('style', styleParts.join('; '));
+              updated = true;
+            }
           }
         }
         if (update.text !== undefined) {

@@ -65,10 +65,6 @@ export function SvgViewer({
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
   const overlaySvgRef = useRef<SVGSVGElement | null>(null)
   const [svgContent, setSvgContent] = useState<string | null>(null)
-  const [fitLabelDraft, setFitLabelDraft] = useState('')
-  const [fitLabelLoading, setFitLabelLoading] = useState(false)
-  const [fitLabelDraft, setFitLabelDraft] = useState('')
-  const [fitLabelLoading, setFitLabelLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlayViewBox, setOverlayViewBox] = useState<string | null>(null)
@@ -81,6 +77,7 @@ export function SvgViewer({
   const [showUnboundLines, setShowUnboundLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
   const [bindMode, setBindMode] = useState(false)
+  const [editLabelsMode, setEditLabelsMode] = useState(false)
   const [svgZoom, setSvgZoom] = useState(1)
   const [tableDrawMode, setTableDrawMode] = useState(false)
   const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
@@ -200,84 +197,222 @@ export function SvgViewer({
     return map
   }, [graphConnections])
 
-  const fitLabelById = useMemo(() => {
-    const map = new Map<string, string>()
-    if (!svgContent) return map
+  const toSvgPoint = useCallback((event: MouseEvent | DragEvent) => {
+    if (!overlaySvgRef.current) return null
+    const ctm = overlaySvgRef.current.getScreenCTM()
+    if (!ctm) return null
+    return new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
+  }, [])
+
+  const svgAttrInfo = useMemo(() => {
+    const fitLabelById = new Map<string, string>()
+    const labelsInUse = new Set<string>()
+    const labelIds = new Set<string>()
+    const fitWidthById = new Map<string, number>()
+    const anchorById = new Map<string, 'start' | 'middle' | 'end'>()
+    if (!svgContent) {
+      return {
+        fitLabelById,
+        labelsInUse,
+        labelIds,
+        fitWidthById,
+        anchorById,
+      }
+    }
     try {
       const parser = new DOMParser()
       const doc = parser.parseFromString(svgContent, 'image/svg+xml')
       const nodes = Array.from(doc.getElementsByTagName('*'))
       for (const node of nodes) {
         const id = node.getAttribute('id')
+        if (!id) continue
+        const className = node.getAttribute('class') || ''
+        if (className.split(/\s+/).includes('label')) {
+          labelIds.add(id)
+        }
         const fitLabel = node.getAttribute('data-fit-label')
-        if (id && fitLabel) {
-          map.set(id, fitLabel)
+        if (fitLabel) {
+          fitLabelById.set(id, fitLabel)
+          labelsInUse.add(fitLabel)
+        }
+        const fitWidth = parseFloat(node.getAttribute('data-fit-width') || '')
+        if (Number.isFinite(fitWidth) && fitWidth > 0) {
+          fitWidthById.set(id, fitWidth)
+        }
+        const anchor = node.getAttribute('text-anchor')
+        if (anchor === 'start' || anchor === 'middle' || anchor === 'end') {
+          anchorById.set(id, anchor)
         }
       }
     } catch {
       // ignore parse failures
     }
-    return map
+    return {
+      fitLabelById,
+      labelsInUse,
+      labelIds,
+      fitWidthById,
+      anchorById,
+    }
   }, [svgContent])
 
-  const selectedFitLabel = useMemo(() => {
-    if (!selectedElement?.id) return ''
-    return fitLabelById.get(selectedElement.id) || ''
-  }, [fitLabelById, selectedElement])
-
-  useEffect(() => {
-    setFitLabelDraft(selectedFitLabel)
-  }, [selectedFitLabel])
-
-  const labelOptions = useMemo(() => {
-    return elements
-      .filter((el) => el.id && el.text && el.text.trim().length > 0)
-      .map((el) => ({ id: el.id as string, label: el.text }))
+  const {
+    fitLabelById,
+    labelsInUse,
+    labelIds,
+    fitWidthById,
+    anchorById,
+  } = svgAttrInfo
+  const labelElementsById = useMemo(() => {
+    const map = new Map<string, TextElement>()
+    for (const element of elements) {
+      if (element.id && !map.has(element.id)) {
+        map.set(element.id, element)
+      }
+    }
+    return map
   }, [elements])
 
-  const labelFontSize = useMemo(() => {
-    if (!fitLabelDraft) return null
-    const labelEl = elements.find((el) => el.id === fitLabelDraft)
-    return labelEl?.font.size ?? null
-  }, [elements, fitLabelDraft])
+  const [labelDrag, setLabelDrag] = useState<{
+    targetId: string
+    labelId: string | null
+    mode: 'value' | 'label'
+    startX: number
+    startWidth: number
+    anchor: 'start' | 'middle' | 'end'
+    labelStartFontSize?: number
+    labelStartWidth?: number
+  } | null>(null)
+  const [labelDragWidth, setLabelDragWidth] = useState<number | null>(null)
 
-  const applyFitLabel = useCallback(async () => {
-    if (!svgPath || !selectedElement?.id) return
-    setFitLabelLoading(true)
-    try {
-      await rpc.setSvgAttrs(svgPath, [
-        {
-          id: selectedElement.id,
-          attrs: { 'data-fit-label': fitLabelDraft ? fitLabelDraft : null },
-        },
-      ])
-      onSvgEdited?.()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update fit label')
-    } finally {
-      setFitLabelLoading(false)
+  const getDragTarget = useCallback((element: TextElement, isBound: boolean) => {
+    if (!element.id) return null
+    const directLabel = fitLabelById.get(element.id)
+    if (directLabel) {
+      return { targetId: element.id, labelId: directLabel, mode: 'value' as const }
     }
-  }, [svgPath, selectedElement, fitLabelDraft, onSvgEdited])
+    if (labelIds.has(element.id) || labelsInUse.has(element.id)) {
+      return { targetId: element.id, labelId: element.id, mode: 'label' as const }
+    }
+    if (isBound) {
+      return { targetId: element.id, labelId: null, mode: 'value' as const }
+    }
+    return null
+  }, [fitLabelById, labelIds, labelsInUse])
 
-  const adjustLabelFont = useCallback(async (delta: number) => {
-    if (!svgPath || !fitLabelDraft) return
-    const current = labelFontSize ?? 12
-    const next = Math.max(6, Math.min(72, Math.round((current + delta) * 10) / 10))
-    setFitLabelLoading(true)
-    try {
-      await rpc.setSvgAttrs(svgPath, [
-        {
-          id: fitLabelDraft,
-          attrs: { 'font-size': String(next) },
-        },
-      ])
-      onSvgEdited?.()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update label size')
-    } finally {
-      setFitLabelLoading(false)
+  const getAnchorForId = useCallback((id: string | null | undefined) => {
+    if (!id) return 'start' as const
+    return anchorById.get(id) ?? 'start'
+  }, [anchorById])
+
+  const getWidthForId = useCallback((id: string | null | undefined, fallback: number) => {
+    if (!id) return fallback
+    return fitWidthById.get(id) ?? fallback
+  }, [fitWidthById])
+
+  const getDisplayRect = useCallback((element: TextElement, width: number, anchor: 'start' | 'middle' | 'end') => {
+    const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+    const anchorX = element.position?.x ?? (
+      anchor === 'end'
+        ? bbox.x + bbox.w
+        : anchor === 'middle'
+          ? bbox.x + bbox.w / 2
+          : bbox.x
+    )
+    const x = anchor === 'end'
+      ? anchorX - width
+      : anchor === 'middle'
+        ? anchorX - width / 2
+        : anchorX
+    return {
+      x,
+      y: bbox.y,
+      w: Math.max(6, width),
+      h: Math.max(6, bbox.h),
     }
-  }, [svgPath, fitLabelDraft, labelFontSize, onSvgEdited])
+  }, [resolvedBBoxByIndex])
+
+  const handleLabelMouseDown = useCallback((element: TextElement, dragTarget: ReturnType<typeof getDragTarget>) => (event: MouseEvent) => {
+    if (!editLabelsMode) return
+    if (!dragTarget) return
+    const point = toSvgPoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.stopPropagation()
+    const anchor = getAnchorForId(dragTarget.targetId)
+    const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+    const startWidth = getWidthForId(dragTarget.targetId, bbox.w)
+    const nextDrag: typeof labelDrag = {
+      targetId: dragTarget.targetId,
+      labelId: dragTarget.labelId,
+      mode: dragTarget.mode,
+      startX: point.x,
+      startWidth,
+      anchor,
+    }
+    if (dragTarget.mode === 'label') {
+      const labelEl = labelElementsById.get(dragTarget.targetId)
+      if (labelEl?.font.size && labelEl.bbox.w) {
+        nextDrag.labelStartFontSize = labelEl.font.size
+        nextDrag.labelStartWidth = labelEl.bbox.w
+      }
+    }
+    setLabelDrag(nextDrag)
+    setLabelDragWidth(startWidth)
+  }, [editLabelsMode, toSvgPoint, getDragTarget, getAnchorForId, getWidthForId, resolvedBBoxByIndex, labelElementsById])
+
+  useEffect(() => {
+    if (!labelDrag) return
+    const handleMove = (event: MouseEvent) => {
+      const point = toSvgPoint(event)
+      if (!point) return
+      const dx = point.x - labelDrag.startX
+      const direction = labelDrag.anchor === 'end' ? -1 : 1
+      const multiplier = labelDrag.anchor === 'middle' ? 2 : 1
+      const delta = dx * direction * multiplier
+      const next = Math.max(12, Math.min(600, Math.round((labelDrag.startWidth + delta) * 10) / 10))
+      setLabelDragWidth(next)
+    }
+    const handleUp = async () => {
+      const width = labelDragWidth ?? labelDrag.startWidth
+      setLabelDrag(null)
+      setLabelDragWidth(null)
+      if (!svgPath) return
+      try {
+        if (labelDrag.mode === 'label') {
+          const startFontSize = labelDrag.labelStartFontSize
+          const startWidth = labelDrag.labelStartWidth
+          if (startFontSize && startWidth) {
+            const nextFontSize = Math.max(6, Math.round((startFontSize * (width / startWidth)) * 10) / 10)
+            await rpc.setSvgAttrs(svgPath, [
+              {
+                id: labelDrag.targetId,
+                attrs: {
+                  'font-size': String(nextFontSize),
+                  style: `font-size:${nextFontSize}px`,
+                },
+              },
+            ])
+            onSvgEdited?.()
+          }
+          return
+        }
+
+        await rpc.setSvgAttrs(svgPath, [
+          { id: labelDrag.targetId, attrs: { 'data-fit-width': String(width) } },
+        ])
+        onSvgEdited?.()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to update label size')
+      }
+    }
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp, { once: true })
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [labelDrag, labelDragWidth, svgPath, onSvgEdited, toSvgPoint, labelElementsById])
 
   const overlayElements = useMemo(() => {
     return elements.filter((element) => {
@@ -304,9 +439,32 @@ export function SvgViewer({
       const isHighlighted = Boolean(highlightedBindingSvgId && element.id === highlightedBindingSvgId)
       const isValidationError = Boolean(element.id && validationSet.has(element.id))
       const isValidationWarning = Boolean(element.id && validationWarningSet.has(element.id))
-      return { element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning }
+      const dragTarget = getDragTarget(element, isBound)
+      const isFitLabel = Boolean(dragTarget)
+      return {
+        element,
+        bbox,
+        listIndex,
+        isBound,
+        isHighlighted,
+        bindingType,
+        isValidationError,
+        isValidationWarning,
+        isFitLabel,
+        dragTarget,
+      }
     })
-  }, [overlayElements, resolvedBBoxByIndex, indexByElementIndex, bindingSet, highlightedBindingSvgId, bindingTypeBySvgId, validationSet, validationWarningSet])
+  }, [
+    overlayElements,
+    resolvedBBoxByIndex,
+    indexByElementIndex,
+    bindingSet,
+    highlightedBindingSvgId,
+    bindingTypeBySvgId,
+    validationSet,
+    validationWarningSet,
+    getDragTarget,
+  ])
 
   const handleDrop = useCallback((element: TextElement) => (event: DragEvent) => {
     event.preventDefault()
@@ -336,13 +494,6 @@ export function SvgViewer({
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'copy'
     }
-  }, [])
-
-  const toSvgPoint = useCallback((event: MouseEvent | DragEvent) => {
-    if (!overlaySvgRef.current) return null
-    const ctm = overlaySvgRef.current.getScreenCTM()
-    if (!ctm) return null
-    return new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse())
   }, [])
 
   const handleTableMouseDown = useCallback((event: MouseEvent) => {
@@ -839,6 +990,13 @@ export function SvgViewer({
               </button>
             </>
           )}
+          <button
+            className={`btn-secondary ${editLabelsMode ? 'active' : ''}`}
+            onClick={() => setEditLabelsMode((prev) => !prev)}
+            disabled={!graphMapNodes || graphMapNodes.length === 0}
+          >
+            {editLabelsMode ? 'Done Labels' : 'Edit Labels'}
+          </button>
           <div className="svg-preview-zoom">
             <span>A4</span>
             <button className="btn-secondary" onClick={() => adjustZoom(-0.1)}>-</button>
@@ -871,12 +1029,14 @@ export function SvgViewer({
           <div className="svg-container" ref={svgContainerRef}>
             <div className="svg-layout">
               {graphMapNodes && (
-                <GraphMapOverlay
-                  nodes={orderedGraphNodes}
-                  sections={graphMapSections}
-                  dragEnabled={bindMode}
-                  onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
-                />
+                <div className="graph-map-column">
+                  <GraphMapOverlay
+                    nodes={orderedGraphNodes}
+                    sections={graphMapSections}
+                    dragEnabled={bindMode}
+                    onAnchorsChange={(anchors) => setGraphDataAnchors(new Map(anchors))}
+                  />
+                </div>
               )}
               <div className="svg-stage">
                 <div className="svg-zoom" style={{ transform: `scale(${svgZoom})` }}>
@@ -892,7 +1052,33 @@ export function SvgViewer({
                       preserveAspectRatio={overlayPreserveAspectRatio}
                       ref={overlaySvgRef}
                     >
-                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning }) => (
+                  {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning, isFitLabel, dragTarget }) => {
+                    const dragId = dragTarget?.targetId || null
+                    const labelDraggable = editLabelsMode && Boolean(dragTarget) && isFitLabel
+                    const labelDragging = Boolean(dragId && labelDrag?.targetId === dragId)
+                    const anchor = getAnchorForId(element.id)
+                    const baseWidth = getWidthForId(element.id, bbox.w)
+                    const liveWidth = labelDragging && labelDragWidth
+                      ? labelDragWidth
+                      : baseWidth
+                    const displayRect = getDisplayRect(element, liveWidth, anchor)
+                    const baseRectClasses = [
+                      isHighlighted
+                        ? 'svg-overlay-rect-linked'
+                        : isBound
+                          ? 'svg-overlay-rect-bound'
+                          : 'svg-overlay-rect-dim',
+                      isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
+                      isValidationError ? 'svg-overlay-rect-error' : '',
+                      !isValidationError && isValidationWarning ? 'svg-overlay-rect-warning' : '',
+                    ].join(' ')
+                    const baseRect = labelDraggable ? displayRect : {
+                      x: bbox.x,
+                      y: bbox.y,
+                      w: Math.max(bbox.w, 6),
+                      h: Math.max(bbox.h, 6),
+                    }
+                    return (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
                         className="svg-overlay-drop-zone"
@@ -906,24 +1092,31 @@ export function SvgViewer({
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
                       />
+                      {labelDraggable && (
+                        <rect
+                          className={[
+                            baseRectClasses,
+                            'svg-overlay-rect-fit-label',
+                            labelDragging ? 'svg-overlay-rect-fit-label-active' : '',
+                          ].join(' ')}
+                          x={displayRect.x}
+                          y={displayRect.y}
+                          width={displayRect.w}
+                          height={displayRect.h}
+                          onMouseDown={handleLabelMouseDown(element, dragTarget)}
+                        />
+                      )}
                       <rect
-                        className={[
-                          isHighlighted
-                            ? 'svg-overlay-rect-linked'
-                            : isBound
-                              ? 'svg-overlay-rect-bound'
-                              : 'svg-overlay-rect-dim',
-                          isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
-                          isValidationError ? 'svg-overlay-rect-error' : '',
-                          !isValidationError && isValidationWarning ? 'svg-overlay-rect-warning' : '',
-                        ].join(' ')}
-                        x={bbox.x}
-                        y={bbox.y}
-                        width={Math.max(bbox.w, 6)}
-                        height={Math.max(bbox.h, 6)}
+                        className={baseRectClasses}
+                        x={baseRect.x}
+                        y={baseRect.y}
+                        width={baseRect.w}
+                        height={baseRect.h}
+                        style={labelDraggable ? { cursor: 'ew-resize' } : undefined}
                         onClick={() => {
                           handleElementClick(element, listIndex)
                         }}
+                        onMouseDown={labelDraggable ? handleLabelMouseDown(element, dragTarget) : undefined}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
                       />
@@ -931,6 +1124,7 @@ export function SvgViewer({
                         className={[
                           isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label',
                           isBound && bindingType ? `svg-overlay-label-${bindingType}` : '',
+                          labelDragging ? 'svg-overlay-label-dragging' : '',
                         ].join(' ')}
                         x={bbox.x + 1}
                         y={bbox.y - 1}
@@ -944,7 +1138,8 @@ export function SvgViewer({
                         {element.index}
                       </text>
                     </g>
-                  ))}
+                    )
+                  })}
                   {showElementMap && showBindingElements && tableOverlays.map((rect) => (
                     <g key={rect.id}>
                       {rect.cells.map((cell, i) => (
@@ -1088,129 +1283,6 @@ export function SvgViewer({
           </div>
         )}
 
-        <div className="selected-element-panel">
-          <div className="selected-element-header">
-            <h4>Selected Element</h4>
-            {!selectedElement && <span className="empty">Click a label on the SVG to select.</span>}
-          </div>
-
-          {selectedElement && (
-            <div className="element-details">
-              <dl>
-                <dt>Index</dt>
-                <dd>{selectedElement.index}</dd>
-
-                <dt>ID</dt>
-                <dd>{selectedElement.id || '(none)'}</dd>
-
-                <dt>Suggested ID</dt>
-                <dd>{selectedElement.suggestedId || '(none)'}</dd>
-
-                <dt>Text</dt>
-                <dd>{selectedElement.text}</dd>
-
-                <dt>Position</dt>
-                <dd>
-                  x: {selectedElement.position.x.toFixed(2)}<br />
-                  y: {selectedElement.position.y.toFixed(2)}
-                </dd>
-
-                <dt>Bounding Box</dt>
-                <dd>
-                  x: {selectedElement.bbox.x.toFixed(2)}<br />
-                  y: {selectedElement.bbox.y.toFixed(2)}<br />
-                  w: {selectedElement.bbox.w.toFixed(2)}<br />
-                  h: {selectedElement.bbox.h.toFixed(2)}
-                </dd>
-
-                <dt>Font Size</dt>
-                <dd>{selectedElement.font.size?.toFixed(2) || 'unknown'}</dd>
-              </dl>
-            </div>
-          )}
-
-          {selectedElement && (
-            <div className="fit-label-panel">
-              <h4>Fit Label</h4>
-              <div className="form-row">
-                <label>Label</label>
-                <select
-                  value={fitLabelDraft}
-                  onChange={(e) => setFitLabelDraft((e.target as HTMLSelectElement).value)}
-                  disabled={fitLabelLoading}
-                >
-                  <option value="">(none)</option>
-                  {labelOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.id} — {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="fit-label-actions">
-                <button
-                  className="btn-secondary"
-                  onClick={applyFitLabel}
-                  disabled={fitLabelLoading}
-                >
-                  {fitLabelLoading ? 'Applying...' : 'Apply Fit Label'}
-                </button>
-              </div>
-              {fitLabelDraft && (
-                <div className="form-row">
-                  <label>Label Size</label>
-                  <div className="fit-label-size">
-                    <button
-                      className="btn-secondary"
-                      onClick={() => adjustLabelFont(-1)}
-                      disabled={fitLabelLoading}
-                    >
-                      A-
-                    </button>
-                    <span>{labelFontSize?.toFixed(1) ?? '-'}</span>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => adjustLabelFont(1)}
-                      disabled={fitLabelLoading}
-                    >
-                      A+
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="id-assign">
-            <h4>ID Assignment</h4>
-            <div className="form-row">
-              <label>Pending ID</label>
-              <input
-                type="text"
-                value={pendingId}
-                onChange={(e) => onPendingIdChange((e.target as HTMLInputElement).value)}
-                placeholder="e.g. customer_name"
-                disabled={!selectedElement || isLoading}
-              />
-            </div>
-            <div className="id-assign-actions">
-              <button
-                className="btn-secondary"
-                onClick={onUseSuggestedId}
-                disabled={!selectedElement?.suggestedId || isLoading}
-              >
-                Use Suggested
-              </button>
-              <button
-                className="btn-primary"
-                onClick={onApplyId}
-                disabled={!selectedElement || !pendingId.trim() || isLoading}
-              >
-                {isLoading ? 'Applying...' : 'Apply ID'}
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )
