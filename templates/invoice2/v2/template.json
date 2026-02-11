@@ -9,7 +9,154 @@
       "id": "first",
       "svg": "page-1.svg",
       "kind": "first",
-      "tables": []
+      "tables": [
+        {
+          "source": "items",
+          "row_group_id": "table_1_rows_9",
+          "row_height_mm": 6,
+          "rows_per_page": 10,
+          "cells": [
+            {
+              "svg_id": "text_72_234",
+              "enabled": true,
+              "value": {
+                "type": "static",
+                "text": ""
+              }
+            },
+            {
+              "svg_id": "text_110_234",
+              "enabled": true,
+              "value": {
+                "type": "static",
+                "text": ""
+              }
+            },
+            {
+              "svg_id": "text_370_234",
+              "enabled": true,
+              "value": {
+                "type": "static",
+                "text": ""
+              }
+            },
+            {
+              "svg_id": "text_415_234",
+              "enabled": true,
+              "value": {
+                "type": "static",
+                "text": ""
+              }
+            },
+            {
+              "svg_id": "text_450_234",
+              "enabled": true,
+              "value": {
+                "type": "static",
+                "text": ""
+              }
+            },
+            {
+              "svg_id": "text_490_234",
+              "enabled": true,
+              "value": {
+                "type": "static",
+                "text": ""
+              }
+            }
+          ]
+        }
+      ],
+      "fields": [
+        {
+          "svg_id": "text_262_50",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_50_100",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_370_100",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_370_120",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_370_140",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_68_214",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_189_214",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_359_214",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_409_214",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_469_214",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "text_498_214",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        }
+      ]
     }
   ],
   "fields": []

@@ -1238,6 +1238,43 @@ export function App() {
     }
   }, [selectedSvg, templateDir, svgElementsById])
 
+  const ensureFitAttrsForElement = useCallback(async (element: TextElement, svgId?: string | null) => {
+    if (!selectedSvg) return
+    const targetId = svgId ?? element.id
+    if (!targetId) return
+    const svgPath = `${templateDir}/${selectedSvg}`
+    try {
+      const svgResult = await rpc.readSvg(svgPath)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgResult.svg, 'image/svg+xml')
+      const nodes = Array.from(doc.getElementsByTagName('*'))
+      const targetNode = nodes.find((node) => node.getAttribute('id') === targetId) || null
+      if (!targetNode) return
+
+      const updates: Record<string, string> = {}
+      const hasFitWidth = targetNode.hasAttribute('data-fit-width')
+      const hasFitLines = targetNode.hasAttribute('data-fit-lines')
+
+      if (!hasFitWidth) {
+        const targetElement = svgElementsById.get(targetId) || element
+        const width = Math.max(12, Math.round(Math.max(1, targetElement.bbox.w) * 10) / 10)
+        updates['data-fit-width'] = String(width)
+      }
+      if (!hasFitLines) {
+        updates['data-fit-lines'] = '1'
+      }
+
+      if (Object.keys(updates).length === 0) return
+      await rpc.setSvgAttrs(svgPath, [
+        { id: targetId, attrs: updates },
+      ])
+      setSvgReloadToken((value) => value + 1)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to auto-assign fit attrs'
+      setNotification(message)
+    }
+  }, [selectedSvg, templateDir, svgElementsById])
+
   const normalizeRowGroupsForPage = useCallback(async (templateSnapshot: TemplateConfig, pageId: string) => {
     if (!selectedSvg) return null
     if (autoFixTableRef.current) return null
@@ -1390,13 +1427,14 @@ export function App() {
     if (!template) return
     const targetId = await ensureSvgIdForElement(element)
     if (!targetId) return
+    void ensureFitAttrsForElement(element, targetId)
     updateBindingSvgId(ref, targetId)
     setSelectedBindingRef(ref)
     setSelectedBindingSvgId(targetId)
     if (ref.kind === 'global-field' || ref.kind === 'page-field') {
       void ensureFitLabelForElement(element, targetId)
     }
-  }, [template, ensureSvgIdForElement, updateBindingSvgId, ensureFitLabelForElement])
+  }, [template, ensureSvgIdForElement, ensureFitAttrsForElement, updateBindingSvgId, ensureFitLabelForElement])
 
 
   const bindingSvgIds = useMemo(() => {
@@ -1525,6 +1563,53 @@ export function App() {
     })
   }, [template, selectedSvg, selectedPageId, bindingSvgIds, svgElements, svgElementsById, templateDir])
 
+  useEffect(() => {
+    if (!template || !selectedSvg) return
+    if (bindingSvgIds.length === 0) return
+
+    const run = async () => {
+      const svgPath = `${templateDir}/${selectedSvg}`
+      const svgResult = await rpc.readSvg(svgPath)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(svgResult.svg, 'image/svg+xml')
+      const nodes = Array.from(doc.getElementsByTagName('*'))
+      const nodeById = new Map<string, Element>()
+      for (const node of nodes) {
+        const id = node.getAttribute('id')
+        if (!id) continue
+        nodeById.set(id, node)
+      }
+
+      const assignments: Array<{ id: string; attrs: Record<string, string> }> = []
+      for (const svgId of bindingSvgIds) {
+        const node = nodeById.get(svgId)
+        if (!node) continue
+        const attrs: Record<string, string> = {}
+        if (!node.hasAttribute('data-fit-width')) {
+          const el = svgElementsById.get(svgId)
+          if (el?.bbox?.w) {
+            const width = Math.max(12, Math.round(Math.max(1, el.bbox.w) * 10) / 10)
+            attrs['data-fit-width'] = String(width)
+          }
+        }
+        if (!node.hasAttribute('data-fit-lines')) {
+          attrs['data-fit-lines'] = '1'
+        }
+        if (Object.keys(attrs).length > 0) {
+          assignments.push({ id: svgId, attrs })
+        }
+      }
+      if (assignments.length === 0) return
+      await rpc.setSvgAttrs(svgPath, assignments)
+      setSvgReloadToken((value) => value + 1)
+    }
+
+    run().catch((err) => {
+      const message = err instanceof Error ? err.message : 'Failed to auto-assign fit attrs'
+      setNotification(message)
+    })
+  }, [template, selectedSvg, bindingSvgIds, svgElementsById, templateDir])
+
   const handleAddTableGraph = useCallback((pageId: string) => {
     setTemplate((prev) => {
       if (!prev) return prev
@@ -1600,6 +1685,7 @@ export function App() {
       : `${dataRef.source}_${dataRef.key}`
     const svgId = await ensureSvgIdForElement(element, base)
     if (!svgId) return
+    void ensureFitAttrsForElement(element, svgId)
     if (dataRef.source !== 'items') {
       void ensureFitLabelForElement(element, svgId)
     }
@@ -1700,7 +1786,7 @@ export function App() {
 
     setSelectedBindingSvgId(svgId)
     setNotification(`Mapped ${dataRef.source}.${dataRef.key}`)
-  }, [template, selectedPageId, ensureSvgIdForElement, ensureFitLabelForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir, clearBindingsBySvgId])
+  }, [template, selectedPageId, ensureSvgIdForElement, ensureFitAttrsForElement, ensureFitLabelForElement, graphItemsTarget, graphMetaScope, graphTableIndex, normalizeRowGroupsForPage, selectedSvg, templateDir, clearBindingsBySvgId])
 
   const handleUnbindSvgId = useCallback(async (svgId: string) => {
     if (!svgId) return
@@ -2499,6 +2585,7 @@ export function App() {
                     for (const [index, el] of sorted.entries()) {
                       const svgId = await ensureSvgIdForElement(el, `cell_${index + 1}`)
                       if (!svgId) continue
+                      void ensureFitAttrsForElement(el, svgId)
                       cells.push({
                         svg_id: svgId,
                         enabled: true,

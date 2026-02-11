@@ -80,7 +80,17 @@ export interface TextBinding {
 }
 
 export function applyTextBinding(doc: Document, binding: TextBinding, value: string): void {
-  const element = requireElementById(doc, binding.svg_id, `binding:${binding.svg_id}`);
+  const rawElement = requireElementById(doc, binding.svg_id, `binding:${binding.svg_id}`);
+  const element = ensureTextElement(rawElement);
+  applyTextBindingToElement(doc, element, binding, value);
+}
+
+function applyTextBindingToElement(
+  doc: Document,
+  element: Element,
+  binding: Pick<TextBinding, 'fit' | 'align' | 'format'>,
+  value: string
+): void {
   const formattedValue = format(value, binding.format);
 
   if (binding.align) {
@@ -130,6 +140,51 @@ export function applyTextBinding(doc: Document, binding: TextBinding, value: str
 
 export function applyFieldBinding(doc: Document, binding: TextBinding, value: string): void {
   applyTextBinding(doc, binding, value);
+}
+
+function ensureTextElement(element: Element): Element {
+  const tag = element.tagName.toLowerCase();
+  if (tag === 'text') {
+    return element;
+  }
+
+  const doc = element.ownerDocument;
+  if (!doc) {
+    return element;
+  }
+
+  const text = doc.createElementNS(SVG_NS, 'text');
+
+  const id = element.getAttribute('id');
+  if (id) {
+    text.setAttribute('id', id);
+  }
+
+  const copyAttrs = [
+    'x',
+    'y',
+    'text-anchor',
+    'font-size',
+    'font-family',
+    'style',
+    'class',
+    'transform',
+    'data-fit-width',
+    'data-fit-lines',
+    'data-fit-label',
+  ];
+  for (const name of copyAttrs) {
+    const value = element.getAttribute(name);
+    if (value !== null) {
+      text.setAttribute(name, value);
+    }
+  }
+
+  const parent = element.parentNode;
+  if (parent) {
+    parent.replaceChild(text, element);
+  }
+  return text;
 }
 
 export function applyTextAlignment(element: Element, align: string): void {
@@ -403,24 +458,39 @@ export function applyTableBinding(
 
     // Fill in cell data
     for (const cell of binding.cells) {
-      const cellElement = findById(doc, cell.svg_id);
-      if (cellElement && clone.contains(cellElement)) {
-        const value = resolveValue(cell, rowData);
-        const formattedValue = format(value, cell.format);
-        setTextContent(cellElement, formattedValue);
-
-        if (cell.align) {
-          applyTextAlignment(cellElement, cell.align);
-        }
-
-        if (cell.fit === 'shrink') {
-          applyTextShrink(cellElement, formattedValue);
-        }
-      }
+      const cellElement = findElementByIdInSubtree(clone, cell.svg_id);
+      if (!cellElement) continue;
+      const value = resolveValue(cell, rowData);
+      const target = ensureTextElement(cellElement);
+      applyTextBindingToElement(doc, target, cell, value);
     }
 
     container.appendChild(clone);
   });
+}
+
+function findElementByIdInSubtree(root: Element, id: string): Element | null {
+  if (root.getAttribute('id') === id) return root;
+  const queue: Element[] = [];
+  for (let i = 0; i < root.childNodes.length; i += 1) {
+    const node = root.childNodes[i];
+    if (node && node.nodeType === 1) {
+      queue.push(node as Element);
+    }
+  }
+
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    if (node.getAttribute('id') === id) return node;
+    for (let i = 0; i < node.childNodes.length; i += 1) {
+      const child = node.childNodes[i];
+      if (child && child.nodeType === 1) {
+        queue.push(child as Element);
+      }
+    }
+  }
+
+  return null;
 }
 
 export function setPageNumber(
