@@ -580,6 +580,10 @@
   border-bottom: 1px solid #e2e8f0;
 }
 
+.svg-preview-title {
+  margin: 0 0 0.35rem;
+}
+
 .svg-path {
   font-size: 0.875rem;
   color: #555;

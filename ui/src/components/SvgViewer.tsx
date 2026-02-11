@@ -66,7 +66,7 @@ export function SvgViewer({
   const showBindingElements = true
   const showNoBindingElements = true
   const [showGraphLines, setShowGraphLines] = useState(true)
-  const [showUnusedLines, setShowUnusedLines] = useState(true)
+  const [showUnusedLines, setShowUnusedLines] = useState(false)
   const [lineEditMode, setLineEditMode] = useState(false)
   const [bindMode, setBindMode] = useState(false)
   const [unuseMode, setUnuseMode] = useState(false)
@@ -1016,8 +1016,8 @@ export function SvgViewer({
   return (
     <div className="svg-viewer">
       <div className="svg-preview">
-        <h3>帳票プレビュー</h3>
         <div className="svg-preview-toolbar">
+          <h3 className="svg-preview-title">帳票プレビュー</h3>
           <div className="svg-preview-actions">
             <button
               className="btn-secondary"
