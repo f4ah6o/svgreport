@@ -653,6 +653,14 @@
   cursor: pointer;
 }
 
+.svg-preview-actions .btn-secondary.done-mode {
+  background: #e67e22;
+}
+
+.svg-preview-actions .btn-secondary.done-mode:hover {
+  background: #d96f12;
+}
+
 .svg-preview-mode-actions .btn-secondary {
   padding: 0.35rem 0.65rem;
   border: none;

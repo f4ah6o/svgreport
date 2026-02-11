@@ -1049,7 +1049,7 @@ export function SvgViewer({
               {showUnusedLines ? 'Hide Unused Lines' : 'Show Unused Lines'}
             </button>
             <button
-              className={`btn-secondary ${bindMode ? 'active' : ''}`}
+              className={`btn-secondary ${bindMode ? 'active done-mode' : ''}`}
               onClick={() => {
                 setBindMode((prev) => {
                   const next = !prev
@@ -1072,7 +1072,7 @@ export function SvgViewer({
               {bindMode ? 'Done Binding' : 'Bind Mode'}
             </button>
             <button
-              className={`btn-secondary ${unuseMode ? 'active' : ''}`}
+              className={`btn-secondary ${unuseMode ? 'active done-mode' : ''}`}
               onClick={() => {
                 setUnuseMode((prev) => {
                   const next = !prev
@@ -1093,7 +1093,7 @@ export function SvgViewer({
               {unuseMode ? 'Done Unuse' : 'Unuse Mode'}
             </button>
             <button
-              className={`btn-secondary ${editLabelsMode ? 'active' : ''}`}
+              className={`btn-secondary ${editLabelsMode ? 'active done-mode' : ''}`}
               onClick={() => setEditLabelsMode((prev) => !prev)}
               disabled={!canEditLabels}
               title={canEditLabels ? undefined : 'No dynamic elements'}
@@ -1105,7 +1105,7 @@ export function SvgViewer({
             )}
             {onCreateTableFromSelection && (
               <button
-                className={`btn-secondary ${tableSelectMode ? 'active' : ''}`}
+                className={`btn-secondary ${tableSelectMode ? 'active done-mode' : ''}`}
                 onClick={() => {
                   setTableSelectMode((prev) => {
                     const next = !prev
