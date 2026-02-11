@@ -17,7 +17,7 @@
           "rows_per_page": 8,
           "cells": [
             {
-              "svg_id": "text_17",
+              "svg_id": "page_1_text_17",
               "align": "center",
               "value": {
                 "type": "data",
@@ -27,7 +27,7 @@
               "enabled": true
             },
             {
-              "svg_id": "text_18",
+              "svg_id": "page_1_text_18",
               "fit": "shrink",
               "value": {
                 "type": "data",
@@ -47,7 +47,7 @@
               "enabled": false
             },
             {
-              "svg_id": "text_22",
+              "svg_id": "page_1_text_20",
               "align": "right",
               "format": "yen",
               "value": {
@@ -58,7 +58,7 @@
               "enabled": true
             },
             {
-              "svg_id": "text_19",
+              "svg_id": "page_1_text_21",
               "align": "right",
               "format": "yen",
               "value": {
@@ -69,7 +69,7 @@
               "enabled": true
             },
             {
-              "svg_id": "text_21",
+              "svg_id": "page_1_text_22",
               "value": {
                 "type": "data",
                 "source": "items",
@@ -100,34 +100,34 @@
       },
       "fields": [
         {
-          "svg_id": "text_10",
+          "svg_id": "",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "due_date"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_6",
+          "svg_id": "",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "invoice_no"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_8",
+          "svg_id": "",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "issue_date"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_1",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -135,7 +135,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_5",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -143,7 +143,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_7",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -151,7 +151,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_9",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -159,25 +159,25 @@
           "enabled": false
         },
         {
-          "svg_id": "text_4",
+          "svg_id": "",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "customer.address"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_3",
+          "svg_id": "",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "customer.name"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_2",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -185,37 +185,37 @@
           "enabled": false
         },
         {
-          "svg_id": "text_24",
+          "svg_id": "",
           "format": "yen",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "subtotal"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_26",
+          "svg_id": "",
           "format": "yen",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "tax"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_28",
+          "svg_id": "",
           "format": "yen",
           "value": {
             "type": "data",
             "source": "meta",
             "key": "total"
           },
-          "enabled": true
+          "enabled": false
         },
         {
-          "svg_id": "text_25",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -223,7 +223,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_23",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -231,7 +231,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_27",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -239,7 +239,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_11",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -247,7 +247,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_12",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -255,7 +255,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_13",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -263,7 +263,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_14",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -271,7 +271,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_15",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -279,7 +279,7 @@
           "enabled": false
         },
         {
-          "svg_id": "text_16",
+          "svg_id": "",
           "value": {
             "type": "static",
             "text": ""
@@ -300,69 +300,201 @@
           "rows_per_page": 12,
           "cells": [
             {
-              "svg_id": "text_22",
+              "svg_id": "",
               "align": "center",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "no"
-              }
+              },
+              "enabled": false
             },
             {
-              "svg_id": "text_23",
+              "svg_id": "",
               "fit": "shrink",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "name"
-              }
+              },
+              "enabled": false
             },
             {
-              "svg_id": "text_24",
+              "svg_id": "",
               "align": "right",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "qty"
-              }
+              },
+              "enabled": false
             },
             {
-              "svg_id": "text_25",
+              "svg_id": "",
               "align": "center",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "unit"
-              }
+              },
+              "enabled": false
             },
             {
-              "svg_id": "text_26",
+              "svg_id": "",
               "align": "right",
               "format": "yen",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "price"
-              }
+              },
+              "enabled": false
             },
             {
-              "svg_id": "text_27",
+              "svg_id": "",
               "align": "right",
               "format": "yen",
               "value": {
                 "type": "data",
                 "source": "items",
                 "key": "amount"
-              }
+              },
+              "enabled": false
             }
           ]
         }
       ],
       "page_number": {
-        "svg_id": "text_28",
+        "svg_id": "page_follow_text_28",
         "format": "{current}/{total}"
       },
-      "fields": []
+      "fields": [
+        {
+          "svg_id": "page_follow_text_1",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_4",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_10",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_11",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_12",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_13",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_14",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_15",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_6",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_8",
+          "value": {
+            "type": "static",
+            "text": ""
+          },
+          "enabled": false
+        },
+        {
+          "svg_id": "page_follow_text_5",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "customer.address"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "page_follow_text_2",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "customer.name"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "page_follow_text_9",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "due_date"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "page_follow_text_3",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "invoice_no"
+          },
+          "enabled": true
+        },
+        {
+          "svg_id": "page_follow_text_7",
+          "value": {
+            "type": "data",
+            "source": "meta",
+            "key": "issue_date"
+          },
+          "enabled": true
+        }
+      ]
     }
   ],
   "fields": [

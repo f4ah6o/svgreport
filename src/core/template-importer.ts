@@ -126,7 +126,9 @@ export async function importPdfTemplate(
 
     const reindexed: ImportPdfTemplateResult['reindexed'] = [];
     for (const svgPath of copiedSvgFiles) {
-      const result = await reindexSvgTextIds(svgPath, 'text_');
+      const base = path.basename(svgPath, '.svg');
+      const safePrefix = `${base.replace(/[^a-zA-Z0-9]+/g, '_') || 'page'}_text_`;
+      const result = await reindexSvgTextIds(svgPath, safePrefix);
       reindexed.push({
         file: path.basename(svgPath),
         updated: result.updated,

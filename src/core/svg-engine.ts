@@ -447,23 +447,31 @@ export function applyTableBinding(
   }
   childrenToRemove.forEach(child => container.removeChild(child));
 
-  // Create clones for each row
-  rows.forEach((rowData, index) => {
-    const clone = cloneRowTemplate(doc, binding.row_group_id);
-    clone.setAttribute('data-row-type', 'data');
-    clone.setAttribute('data-row-index', String(rowOffset + index));
-    
-    const y = baseY + (index * rowHeight);
-    setRowYPosition(clone, y);
-
+  const fillRow = (rowElement: Element, rowData: Record<string, string>) => {
     // Fill in cell data
     for (const cell of binding.cells) {
-      const cellElement = findElementByIdInSubtree(clone, cell.svg_id);
+      const cellElement = findElementByIdInSubtree(rowElement, cell.svg_id);
       if (!cellElement) continue;
       const value = resolveValue(cell, rowData);
       const target = ensureTextElement(cellElement);
       applyTextBindingToElement(doc, target, cell, value);
     }
+  };
+
+  // Always hide the original row template and render only cloned data rows.
+  // This avoids placeholder text overlapping with generated rows.
+  template.setAttribute('display', 'none');
+
+  // Create clones for each row.
+  rows.forEach((rowData, rowIndex) => {
+    const clone = cloneRowTemplate(doc, binding.row_group_id);
+    clone.removeAttribute('display');
+    clone.setAttribute('data-row-type', 'data');
+    clone.setAttribute('data-row-index', String(rowOffset + rowIndex));
+    
+    const y = baseY + (rowIndex * rowHeight);
+    setRowYPosition(clone, y);
+    fillRow(clone, rowData);
 
     container.appendChild(clone);
   });

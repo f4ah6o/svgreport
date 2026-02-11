@@ -238,7 +238,7 @@ function generateDummyData(
   }
 
   // Generate item rows based on sample data mode
-  const rowCount = sampleData === 'minimal' ? 1 : sampleData === 'realistic' ? 5 : 25;
+  const rowCount = sampleData === 'minimal' ? 1 : sampleData === 'realistic' ? 11 : 25;
 
   for (let i = 0; i < rowCount; i++) {
     const row: Record<string, string> = {};

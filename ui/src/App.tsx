@@ -80,6 +80,13 @@ export function App() {
     return `balanced:${svgPath}`
   }, [])
 
+  const getSvgIdPrefix = useCallback((svgPath: string) => {
+    const fileName = svgPath.split('/').pop() || 'page'
+    const base = fileName.replace(/\.svg$/i, '')
+    const normalized = base.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    return `${normalized || 'page'}_text_`
+  }, [])
+
   const svgElementsById = useMemo(() => {
     const map = new Map<string, TextElement>()
     for (const element of svgElements) {
@@ -643,7 +650,7 @@ export function App() {
         setSvgElements(cached)
       }
       try {
-        const reindex = await rpc.reindexSvgTextIds(svgPath, 'text_')
+        const reindex = await rpc.reindexSvgTextIds(svgPath, getSvgIdPrefix(svgPath))
         if (reindex.updated) {
           setSvgReloadToken((value) => value + 1)
         }
@@ -736,8 +743,8 @@ export function App() {
                 changed = true
                 return { ...binding, svg_id: remap }
               }
-              changed = true
-              return { ...binding, svg_id: '', enabled: false }
+              // Keep unresolved ids as-is to avoid destructive remaps while editing.
+              return binding
             }
             if (binding.value) {
               const remap = resolveByValue(binding.value)
@@ -746,9 +753,7 @@ export function App() {
                 return { ...binding, svg_id: remap, enabled: true }
               }
             }
-            // No svg_id and no auto match: keep unused to avoid validation errors.
-            changed = true
-            return { ...binding, svg_id: '', enabled: false }
+            return binding
           }
 
           const pages = current.pages.map((page) => {
@@ -793,10 +798,10 @@ export function App() {
               const svgId = page.page_number.svg_id
               if (!validIds.has(svgId)) {
                 const remap = resolveSuggested(svgId)
-                pageNumber = remap
-                  ? { ...page.page_number, svg_id: remap }
-                  : { ...page.page_number, svg_id: '' }
-                changed = true
+                if (remap) {
+                  pageNumber = { ...page.page_number, svg_id: remap }
+                  changed = true
+                }
               }
             }
             return { ...page, fields, tables, page_number: pageNumber }
@@ -822,7 +827,7 @@ export function App() {
       detectedElementsCacheRef.current.delete(getDetectCacheKey(svgPath))
       setSvgElements([])
     }
-  }, [applyReindexedSvgIds, templateDir, template, selectDynamicElements, getDetectCacheKey])
+  }, [applyReindexedSvgIds, templateDir, template, selectDynamicElements, getDetectCacheKey, getSvgIdPrefix])
 
   const handleSvgEdited = useCallback(async () => {
     if (!selectedSvg) return
@@ -1404,22 +1409,16 @@ export function App() {
           rowGroupId = nextId
           rowGroupUpdates.set(tableIndex, rowGroupId)
           updatedSvg = true
-        } else if (firstCell && rowGroup && !rowGroup.contains(firstCell)) {
-          const nextId = makeUniqueId(rowGroupId || `table_${tableIndex + 1}_rows`)
-          rowGroup = doc.createElementNS('http://www.w3.org/2000/svg', 'g')
-          rowGroup.setAttribute('id', nextId)
-          targetParent.insertBefore(rowGroup, firstCell)
-          rowGroupId = nextId
-          rowGroupUpdates.set(tableIndex, rowGroupId)
-          updatedSvg = true
-        }
 
-        for (const cellId of cellIds) {
-          const cellEl = doc.getElementById(cellId)
-          if (!cellEl) continue
-          if (cellEl.parentNode !== rowGroup) {
-            rowGroup?.appendChild(cellEl)
-            updatedSvg = true
+          // Preserve existing valid row groups to avoid destructive reparenting while binding.
+          // Only migrate cells when the row group is missing/invalid and we had to create one.
+          for (const cellId of cellIds) {
+            const cellEl = doc.getElementById(cellId)
+            if (!cellEl) continue
+            if (cellEl.parentNode !== rowGroup) {
+              rowGroup?.appendChild(cellEl)
+              updatedSvg = true
+            }
           }
         }
       }
