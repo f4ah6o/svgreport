@@ -15,6 +15,7 @@ interface SvgViewerProps {
   templateDir: string
   bindingSvgIds: string[]
   tableBindingGroups: Array<{ id: string; cellSvgIds: string[] }>
+  tableConfigs?: Array<{ rowsPerPage: number; rowHeightMm: number }>
   selectedElementIndex: number | null
   highlightedBindingSvgId: string | null
   onSelectElement: (index: number) => void
@@ -38,6 +39,7 @@ export function SvgViewer({
   templateDir,
   bindingSvgIds,
   tableBindingGroups,
+  tableConfigs = [],
   selectedElementIndex,
   highlightedBindingSvgId,
   onSelectElement,
@@ -644,13 +646,14 @@ export function SvgViewer({
   const tableOverlays = useMemo(() => {
     const overlays: Array<{
       id: string
+      tableIndex: number
       x: number
       y: number
       w: number
       h: number
       cells: Array<{ x: number; y: number; w: number; h: number }>
     }> = []
-    for (const group of tableBindingGroups) {
+    for (const [groupIndex, group] of tableBindingGroups.entries()) {
       const candidates: TextElement[] = []
       for (const id of group.cellSvgIds) {
         const matches = elementsById.get(id) || []
@@ -701,6 +704,7 @@ export function SvgViewer({
 
       overlays.push({
         id: group.id,
+        tableIndex: groupIndex,
         x: minX - 8,
         y: minY - 8,
         w: Math.max(8, maxX - minX + 16),
@@ -710,6 +714,43 @@ export function SvgViewer({
     }
     return overlays
   }, [tableBindingGroups, elementsById, resolvedBBoxByIndex])
+
+  const tableGhostOverlays = useMemo(() => {
+    const MM_TO_UNITS = 3.7795
+    const ghosts: Array<{
+      id: string
+      x: number
+      y: number
+      w: number
+      h: number
+      row: number
+      cells: Array<{ x: number; y: number; w: number; h: number }>
+    }> = []
+    for (const rect of tableOverlays) {
+      const cfg = tableConfigs[rect.tableIndex]
+      const rowsPerPage = Math.max(1, Math.floor(cfg?.rowsPerPage ?? 1))
+      if (rowsPerPage <= 1) continue
+      const rowHeight = Math.max(6, (cfg?.rowHeightMm ?? 0) * MM_TO_UNITS || rect.h)
+      for (let row = 1; row < rowsPerPage; row += 1) {
+        const dy = row * rowHeight
+        ghosts.push({
+          id: rect.id,
+          row,
+          x: rect.x,
+          y: rect.y + dy,
+          w: rect.w,
+          h: rect.h,
+          cells: rect.cells.map((cell) => ({
+            x: cell.x,
+            y: cell.y + dy,
+            w: cell.w,
+            h: cell.h,
+          })),
+        })
+      }
+    }
+    return ghosts
+  }, [tableOverlays, tableConfigs])
 
   const orderedGraphNodes = useMemo(() => {
     if (!graphMapNodes || graphMapNodes.length === 0) return graphMapNodes || []
@@ -1337,6 +1378,27 @@ export function SvgViewer({
                     </g>
                     )
                   })}
+                  {showElementMap && showBindingElements && tableGhostOverlays.map((rect) => (
+                    <g key={`${rect.id}-ghost-${rect.row}`}>
+                      {rect.cells.map((cell, i) => (
+                        <rect
+                          key={`${rect.id}-ghost-cell-${rect.row}-${i}`}
+                          className="svg-overlay-table-cell-ghost"
+                          x={cell.x - 2}
+                          y={cell.y - 2}
+                          width={Math.max(6, cell.w + 4)}
+                          height={Math.max(6, cell.h + 4)}
+                        />
+                      ))}
+                      <rect
+                        className="svg-overlay-table-ghost"
+                        x={rect.x}
+                        y={rect.y}
+                        width={rect.w}
+                        height={rect.h}
+                      />
+                    </g>
+                  ))}
                   {showElementMap && showBindingElements && tableOverlays.map((rect) => (
                     <g key={rect.id}>
                       {rect.cells.map((cell, i) => (

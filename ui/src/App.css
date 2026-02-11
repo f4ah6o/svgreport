@@ -883,6 +883,24 @@
   pointer-events: none;
 }
 
+.svg-overlay-table-ghost {
+  fill: rgba(127, 140, 141, 0.05);
+  stroke: rgba(127, 140, 141, 0.55);
+  stroke-width: 0.9;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.svg-overlay-table-cell-ghost {
+  fill: rgba(127, 140, 141, 0.08);
+  stroke: rgba(127, 140, 141, 0.45);
+  stroke-width: 0.7;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .svg-overlay-table-select {
   fill: rgba(52, 152, 219, 0.12);
   stroke: #3498db;

@@ -2009,6 +2009,16 @@ export function App() {
     }))
   }, [template, selectedPageId])
 
+  const tableOverlayConfigs = useMemo(() => {
+    if (!template || !selectedPageId) return []
+    const page = template.pages.find(p => p.id === selectedPageId)
+    if (!page) return []
+    return page.tables.map((table) => ({
+      rowsPerPage: Number.isFinite(table.rows_per_page) ? table.rows_per_page : 1,
+      rowHeightMm: Number.isFinite(table.row_height_mm) ? table.row_height_mm : 6,
+    }))
+  }, [template, selectedPageId])
+
   const graphConnections = useMemo(() => {
     if (!template || !selectedPageId) return []
     const page = template.pages.find(p => p.id === selectedPageId)
@@ -2575,6 +2585,7 @@ export function App() {
                   templateDir={templateDir}
                   bindingSvgIds={bindingSvgIds}
                   tableBindingGroups={tableBindingGroups}
+                  tableConfigs={tableOverlayConfigs}
                   selectedElementIndex={selectedTextIndex}
                   highlightedBindingSvgId={selectedBindingSvgId}
                   onSelectElement={handleSelectTextElement}
@@ -2758,6 +2769,7 @@ export function App() {
                 templateDir={templateDir}
                 bindingSvgIds={bindingSvgIds}
                 tableBindingGroups={tableBindingGroups}
+                tableConfigs={tableOverlayConfigs}
                 selectedElementIndex={selectedTextIndex}
                 highlightedBindingSvgId={selectedBindingSvgId}
                 validationSvgIds={validationSvgIds}
