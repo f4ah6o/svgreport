@@ -34,6 +34,7 @@ interface GraphEditorProps {
   onUpdateTable: (pageId: string, tableIndex: number, patch: Partial<TableBinding>) => void
   selectedSvgId: string | null
   onUnbindSvgId: (svgId: string) => void
+  onAutoSetPageNumber: (pageId: string, svgId: string, includeTotal: boolean) => void
 }
 
 export function GraphEditor({
@@ -67,11 +68,13 @@ export function GraphEditor({
   onUpdateTable,
   selectedSvgId,
   onUnbindSvgId,
+  onAutoSetPageNumber,
 }: GraphEditorProps) {
   const [staticInput, setStaticInput] = useState('')
   const [customStaticNodes, setCustomStaticNodes] = useState<string[]>([])
   const [metaUrlInput, setMetaUrlInput] = useState('')
   const [itemsUrlInput, setItemsUrlInput] = useState('')
+  const [pageNumberIncludeTotal, setPageNumberIncludeTotal] = useState(true)
 
   const page = useMemo(() => {
     if (selectedPageId) {
@@ -150,6 +153,11 @@ export function GraphEditor({
       onActiveTableIndexChange(0)
     }
   }, [page, activeTableIndex, onActiveTableIndexChange])
+
+  useEffect(() => {
+    if (!page?.page_number?.format) return
+    setPageNumberIncludeTotal(page.page_number.format.includes('{total}'))
+  }, [page?.id, page?.page_number?.format])
 
   return (
     <div className="graph-editor">
@@ -391,6 +399,38 @@ export function GraphEditor({
                   />
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        <div className="graph-section">
+          <h3>Page Number</h3>
+          {!page ? (
+            <p className="empty">ページを選択してください。</p>
+          ) : (
+            <div className="graph-binding-details">
+              <div className="graph-binding-row">
+                <span className="label">対象ID</span>
+                <span className="value">{selectedSvgId || page.page_number?.svg_id || '(未設定)'}</span>
+              </div>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={pageNumberIncludeTotal}
+                  onChange={(e) => setPageNumberIncludeTotal((e.target as HTMLInputElement).checked)}
+                />
+                Include total
+              </label>
+              <button
+                className="btn-secondary"
+                disabled={!selectedSvgId}
+                onClick={() => {
+                  if (!selectedSvgId) return
+                  onAutoSetPageNumber(page.id, selectedSvgId, pageNumberIncludeTotal)
+                }}
+              >
+                Auto Set
+              </button>
             </div>
           )}
         </div>

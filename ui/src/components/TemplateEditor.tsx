@@ -827,7 +827,6 @@ export function TemplateEditor({
                         data-focus-key={`pages[${pageIndex}].page_number.format`}
                       />
                     </div>
-
                     <div className="page-fields-section">
                       <h4>Page Fields ({(page.fields ?? []).length})</h4>
                       <div className="field-toolbar">

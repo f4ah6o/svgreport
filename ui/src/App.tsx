@@ -1899,6 +1899,28 @@ export function App() {
     setNotification('Binding removed.')
   }, [template, selectedPageId, selectedBindingSvgId])
 
+  const handleAutoSetPageNumber = useCallback((pageId: string, svgId: string, includeTotal: boolean) => {
+    if (!template || !svgId) return
+    const format = includeTotal ? '{current}/{total}' : '{current}'
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => {
+        if (page.id !== pageId) return page
+        return {
+          ...page,
+          page_number: {
+            ...(page.page_number || { svg_id: '' }),
+            svg_id: svgId,
+            format,
+          },
+        }
+      })
+      return { ...prev, pages }
+    })
+    setSelectedBindingSvgId(svgId)
+    setNotification(`Page number auto-set (${includeTotal ? 'with total' : 'current only'}).`)
+  }, [template])
+
 
   const templateModels = useMemo(() => {
     if (!template) return null
@@ -2543,6 +2565,7 @@ export function App() {
                   onUpdateTable={handleUpdateTableGraph}
                   selectedSvgId={selectedBindingSvgId}
                   onUnbindSvgId={handleUnbindSvgId}
+                  onAutoSetPageNumber={handleAutoSetPageNumber}
                 />
               <div className="graph-preview-pane">
                 <SvgViewer
