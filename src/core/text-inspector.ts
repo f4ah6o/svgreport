@@ -44,10 +44,14 @@ export interface SvgTextAnalysis {
   warnings: string[];
 }
 
+export interface ExtractTextOptions {
+  glyphSplitProfile?: 'balanced' | 'split' | 'merge';
+}
+
 /**
  * Extract text elements from SVG file
  */
-export async function extractTextElements(svgPath: string): Promise<SvgTextAnalysis> {
+export async function extractTextElements(svgPath: string, options: ExtractTextOptions = {}): Promise<SvgTextAnalysis> {
   const content = await fs.readFile(svgPath, 'utf-8');
   
   const parser = new DOMParser({
@@ -135,7 +139,7 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
       });
     }
   } else {
-    const fallback = extractGlyphUseElements(svg, warnings);
+    const fallback = extractGlyphUseElements(svg, warnings, options);
     glyphPathCount = fallback.glyphCount;
     textElements.push(...fallback.elements);
     for (const el of fallback.elements) {
@@ -196,7 +200,7 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
   };
 }
 
-function extractGlyphUseElements(svg: Element, warnings: string[]): { elements: TextElementInfo[]; glyphCount: number } {
+function extractGlyphUseElements(svg: Element, warnings: string[], options: ExtractTextOptions): { elements: TextElementInfo[]; glyphCount: number } {
   const useNodes = Array.from(svg.getElementsByTagName('use'));
   const glyphUses: Array<{
     element: Element;
@@ -233,6 +237,14 @@ function extractGlyphUseElements(svg: Element, warnings: string[]): { elements: 
 
   warnings.push(`No <text> elements found. Fallback detected ${glyphUses.length} glyph nodes from <use> references.`);
 
+  const idBackedCount = glyphUses.reduce((count, glyph) => count + (glyph.id ? 1 : 0), 0);
+  const idBackedRatio = idBackedCount / glyphUses.length;
+  if (idBackedRatio >= 0.7) {
+    const elements = extractIdBackedGlyphElements(glyphUses);
+    warnings.push(`Detected ID-backed glyph uses. Kept ${elements.length} <use> nodes as separate candidates.`);
+    return { elements, glyphCount: glyphUses.length };
+  }
+
   const sortedByY = [...glyphUses].sort((a, b) => {
     if (Math.abs(a.y - b.y) < 0.01) return a.x - b.x;
     return a.y - b.y;
@@ -253,6 +265,8 @@ function extractGlyphUseElements(svg: Element, warnings: string[]): { elements: 
 
   const elements: TextElementInfo[] = [];
 
+  const profile = options.glyphSplitProfile || 'balanced';
+
   for (const line of lines) {
     const glyphs = [...line.glyphs].sort((a, b) => a.x - b.x);
     if (glyphs.length === 0) continue;
@@ -263,25 +277,45 @@ function extractGlyphUseElements(svg: Element, warnings: string[]): { elements: 
       if (gap > 0.1) gaps.push(gap);
     }
     const typicalStep = computeTypicalStep(gaps);
-    const splitGap = Math.max(12, typicalStep * 1.8, typicalStep + 5);
+    // Keep initial split fairly strict for table headers, then relax only when
+    // the line looks heavily over-split (e.g. CJK words split per glyph).
+    const splitGap = profile === 'split'
+      ? Math.max(6, typicalStep * 1.15, typicalStep + 1)
+      : profile === 'merge'
+        ? Math.max(12, typicalStep * 1.9, typicalStep + 5)
+        : Math.max(6.8, typicalStep * 1.22, typicalStep + 1.2);
+    let runs = splitGlyphRuns(glyphs, splitGap);
 
-    const runs: Array<typeof glyphs> = [];
-    let currentRun: typeof glyphs = [];
-    for (const glyph of glyphs) {
-      if (currentRun.length === 0) {
-        currentRun = [glyph];
-        continue;
+    if (profile === 'split') {
+      const refinedRuns: typeof runs = [];
+      for (const run of runs) {
+        refinedRuns.push(...splitRunByLargeGaps(run, typicalStep));
       }
-      const prev = currentRun[currentRun.length - 1];
-      const gap = glyph.x - prev.x;
-      if (gap > splitGap) {
-        runs.push(currentRun);
-        currentRun = [glyph];
-      } else {
-        currentRun.push(glyph);
+      runs = refinedRuns;
+    }
+
+    const singleGlyphRuns = runs.reduce((count, run) => count + (run.length === 1 ? 1 : 0), 0);
+    const looksOverSplit = runs.length >= 3 && singleGlyphRuns / runs.length >= 0.6;
+    if (looksOverSplit && profile !== 'split') {
+      const relaxedSplitGap = Math.max(12, typicalStep * 1.8, typicalStep + 5);
+      if (relaxedSplitGap > splitGap) {
+        const relaxedRuns = splitGlyphRuns(glyphs, relaxedSplitGap);
+        if (relaxedRuns.length < runs.length) {
+          runs = relaxedRuns;
+        }
       }
     }
-    if (currentRun.length > 0) runs.push(currentRun);
+
+    // Second-stage merge for CJK-like short-run fragmentation while preserving wide column gaps.
+    const avgRunLen = runs.length > 0 ? glyphs.length / runs.length : glyphs.length;
+    const shouldMergeNearby = profile !== 'split' && runs.length >= 3 && (looksOverSplit || avgRunLen <= 2.35);
+    if (shouldMergeNearby) {
+      const mergeGap = Math.max(14.2, typicalStep * 2.0, typicalStep + 6.2);
+      const mergedRuns = mergeNearbyRuns(runs, mergeGap, typicalStep);
+      if (mergedRuns.length < runs.length) {
+        runs = mergedRuns;
+      }
+    }
 
     for (const run of runs) {
       const first = run[0];
@@ -323,6 +357,77 @@ function extractGlyphUseElements(svg: Element, warnings: string[]): { elements: 
   return { elements, glyphCount: glyphUses.length };
 }
 
+function extractIdBackedGlyphElements(
+  glyphUses: Array<{
+    id: string | null;
+    domIndex: number;
+    x: number;
+    y: number;
+    parentGroup?: string;
+  }>,
+): TextElementInfo[] {
+  const sortedByY = [...glyphUses].sort((a, b) => {
+    if (Math.abs(a.y - b.y) < 0.01) return a.x - b.x;
+    return a.y - b.y;
+  });
+  const lines: Array<{ y: number; glyphs: typeof glyphUses }> = [];
+  const yTolerance = 1.5;
+  for (const glyph of sortedByY) {
+    const lastLine = lines[lines.length - 1];
+    if (!lastLine || Math.abs(glyph.y - lastLine.y) > yTolerance) {
+      lines.push({ y: glyph.y, glyphs: [glyph] });
+      continue;
+    }
+    lastLine.glyphs.push(glyph);
+    const n = lastLine.glyphs.length;
+    lastLine.y = ((lastLine.y * (n - 1)) + glyph.y) / n;
+  }
+
+  const elements: TextElementInfo[] = [];
+  for (const line of lines) {
+    const glyphs = [...line.glyphs].sort((a, b) => a.x - b.x);
+    if (glyphs.length === 0) continue;
+    const lineGaps: number[] = [];
+    for (let i = 1; i < glyphs.length; i += 1) {
+      const gap = glyphs[i].x - glyphs[i - 1].x;
+      if (gap > 0.1) lineGaps.push(gap);
+    }
+    const lineStep = computeTypicalStep(lineGaps);
+
+    for (let i = 0; i < glyphs.length; i += 1) {
+      const glyph = glyphs[i];
+      const prevGap = i > 0 ? glyph.x - glyphs[i - 1].x : lineStep;
+      const nextGap = i < glyphs.length - 1 ? glyphs[i + 1].x - glyph.x : lineStep;
+      const localStep = computeTypicalStep([prevGap, nextGap, lineStep]);
+      const fontSize = clamp(localStep * 1.6, 8, 24);
+      // ID-backed glyphs from PDF often represent narrower visual units.
+      // Keep bbox compact to avoid coarse merged-looking targets.
+      const width = clamp(Math.min(prevGap, nextGap, lineStep * 0.95), 4.5, 24);
+      const height = Math.max(6, fontSize * 1.2);
+      elements.push({
+        id: glyph.id,
+        content: '',
+        x: glyph.x,
+        y: glyph.y,
+        domIndex: glyph.domIndex,
+        textAnchor: 'start',
+        fontSize,
+        fontFamily: null,
+        suggestedId: generateSuggestedId('', glyph.x, glyph.y),
+        isPath: true,
+        parentGroup: glyph.parentGroup,
+        bbox: {
+          x: glyph.x,
+          y: glyph.y - fontSize,
+          w: width,
+          h: height,
+        },
+      });
+    }
+  }
+  return elements;
+}
+
 function getUseHref(use: Element): string | null {
   return use.getAttribute('href') || use.getAttribute('xlink:href');
 }
@@ -350,6 +455,79 @@ function computeTypicalStep(values: number[]): number {
   const sampleCount = Math.max(1, Math.floor((normalized.length + 1) / 2));
   const sample = normalized.slice(0, sampleCount);
   return median(sample);
+}
+
+function splitGlyphRuns<T extends { x: number }>(glyphs: T[], splitGap: number): T[][] {
+  const runs: T[][] = [];
+  let currentRun: T[] = [];
+  for (const glyph of glyphs) {
+    if (currentRun.length === 0) {
+      currentRun = [glyph];
+      continue;
+    }
+    const prev = currentRun[currentRun.length - 1];
+    const gap = glyph.x - prev.x;
+    if (gap > splitGap) {
+      runs.push(currentRun);
+      currentRun = [glyph];
+    } else {
+      currentRun.push(glyph);
+    }
+  }
+  if (currentRun.length > 0) runs.push(currentRun);
+  return runs;
+}
+
+function splitRunByLargeGaps<T extends { x: number }>(run: T[], typicalStep: number): T[][] {
+  if (run.length < 3) return [run];
+  const gaps: number[] = [];
+  for (let i = 1; i < run.length; i += 1) {
+    const gap = run[i].x - run[i - 1].x;
+    if (gap > 0.1) gaps.push(gap);
+  }
+  if (gaps.length === 0) return [run];
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const sampleCount = Math.max(1, Math.floor((sorted.length + 1) / 2));
+  const baseGap = median(sorted.slice(0, sampleCount));
+  const splitThreshold = Math.max(typicalStep * 1.15, baseGap * 1.9, baseGap + 1.5);
+
+  const out: T[][] = [];
+  let current: T[] = [run[0]];
+  for (let i = 1; i < run.length; i += 1) {
+    const gap = run[i].x - run[i - 1].x;
+    if (gap > splitThreshold) {
+      out.push(current);
+      current = [run[i]];
+      continue;
+    }
+    current.push(run[i]);
+  }
+  if (current.length > 0) out.push(current);
+  return out.length > 0 ? out : [run];
+}
+
+function mergeNearbyRuns<T extends { x: number }>(runs: T[][], mergeGap: number, typicalStep: number): T[][] {
+  if (runs.length <= 1) return runs;
+  const merged: T[][] = [];
+  let current = [...runs[0]];
+  for (let i = 1; i < runs.length; i += 1) {
+    const next = runs[i];
+    if (current.length === 0 || next.length === 0) continue;
+    const prevLast = current[current.length - 1];
+    const nextFirst = next[0];
+    const gap = nextFirst.x - prevLast.x;
+    const strictGapForMultiRuns = Math.max(typicalStep * 1.45, typicalStep + 2);
+    const bothAreMultiGlyph = current.length >= 2 && next.length >= 2;
+    const allowedGap = bothAreMultiGlyph ? Math.min(mergeGap, strictGapForMultiRuns) : mergeGap;
+    if (gap <= allowedGap) {
+      current = [...current, ...next];
+      continue;
+    }
+    merged.push(current);
+    current = [...next];
+  }
+  if (current.length > 0) merged.push(current);
+  return merged;
 }
 
 function median(values: number[]): number {

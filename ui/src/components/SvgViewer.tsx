@@ -27,6 +27,7 @@ interface SvgViewerProps {
   validationWarningSvgIds?: string[]
   onCreateTableFromSelection?: (rect: { x: number; y: number; w: number; h: number }, elements: TextElement[]) => void
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
+  onUnuseElements?: (elements: TextElement[]) => void
   onSvgEdited?: () => void
 }
 
@@ -49,6 +50,7 @@ export function SvgViewer({
   validationWarningSvgIds,
   onCreateTableFromSelection,
   onRemoveGraphBinding,
+  onUnuseElements,
   onSvgEdited,
 }: SvgViewerProps) {
   const svgContentRef = useRef<HTMLDivElement | null>(null)
@@ -67,11 +69,12 @@ export function SvgViewer({
   const [showUnusedLines, setShowUnusedLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
   const [bindMode, setBindMode] = useState(false)
+  const [unuseMode, setUnuseMode] = useState(false)
+  const [unuseSelection, setUnuseSelection] = useState<Set<number>>(new Set())
   const [editLabelsMode, setEditLabelsMode] = useState(false)
   const [svgZoom, setSvgZoom] = useState(1)
-  const [tableDrawMode, setTableDrawMode] = useState(false)
-  const [tableDragStart, setTableDragStart] = useState<{ x: number; y: number } | null>(null)
-  const [tableDragRect, setTableDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [tableSelectMode, setTableSelectMode] = useState(false)
+  const [tableSelection, setTableSelection] = useState<Set<number>>(new Set())
   const [graphDataAnchors, setGraphDataAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchors, setGraphSvgAnchors] = useState<Map<string, { x: number; y: number }>>(new Map())
   const [graphSvgAnchorRects, setGraphSvgAnchorRects] = useState<Map<string, { x1: number; y1: number; x2: number; y2: number }>>(new Map())
@@ -143,13 +146,6 @@ export function SvgViewer({
   const bindingSet = useMemo(() => new Set(bindingSvgIds), [bindingSvgIds])
   const validationSet = useMemo(() => new Set(validationSvgIds || []), [validationSvgIds])
   const validationWarningSet = useMemo(() => new Set(validationWarningSvgIds || []), [validationWarningSvgIds])
-
-  const viewBoxNumbers = useMemo(() => {
-    if (!overlayViewBox) return null
-    const parts = overlayViewBox.split(/[,\s]+/).filter(Boolean).map((value) => parseFloat(value))
-    if (parts.length < 4 || parts.some((value) => Number.isNaN(value))) return null
-    return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] }
-  }, [overlayViewBox])
 
   const indexByElementIndex = useMemo(() => {
     const map = new Map<number, number>()
@@ -562,59 +558,28 @@ export function SvgViewer({
     }
   }, [])
 
-  const handleTableMouseDown = useCallback((event: MouseEvent) => {
-    if (!tableDrawMode) return
-    const point = toSvgPoint(event)
-    if (!point) return
-    event.preventDefault()
-    event.stopPropagation()
-    setTableDragStart({ x: point.x, y: point.y })
-    setTableDragRect({ x: point.x, y: point.y, w: 0, h: 0 })
-  }, [tableDrawMode, toSvgPoint])
-
-  const handleTableMouseMove = useCallback((event: MouseEvent) => {
-    if (!tableDrawMode || !tableDragStart) return
-    const point = toSvgPoint(event)
-    if (!point) return
-    event.preventDefault()
-    event.stopPropagation()
-    const x = Math.min(tableDragStart.x, point.x)
-    const y = Math.min(tableDragStart.y, point.y)
-    const w = Math.abs(point.x - tableDragStart.x)
-    const h = Math.abs(point.y - tableDragStart.y)
-    setTableDragRect({ x, y, w, h })
-  }, [tableDrawMode, tableDragStart, toSvgPoint])
-
-  const handleTableMouseUp = useCallback((event: MouseEvent) => {
-    if (!tableDrawMode || !tableDragStart || !tableDragRect) return
-    const point = toSvgPoint(event)
-    if (!point) return
-    event.preventDefault()
-    event.stopPropagation()
-    const x = Math.min(tableDragStart.x, point.x)
-    const y = Math.min(tableDragStart.y, point.y)
-    const w = Math.abs(point.x - tableDragStart.x)
-    const h = Math.abs(point.y - tableDragStart.y)
-    const rect = { x, y, w, h }
-    const hits = elements.filter((element) => {
-      const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
-      const intersects = bbox.x < rect.x + rect.w
-        && bbox.x + bbox.w > rect.x
-        && bbox.y < rect.y + rect.h
-        && bbox.y + bbox.h > rect.y
-      return intersects
-    })
-    if (onCreateTableFromSelection) {
-      onCreateTableFromSelection(rect, hits)
-    }
-    setTableDragStart(null)
-    setTableDragRect(null)
-    setTableDrawMode(false)
-  }, [tableDrawMode, tableDragStart, tableDragRect, toSvgPoint, elements, resolvedBBoxByIndex, onCreateTableFromSelection])
-
   const handleElementClick = useCallback((_element: TextElement, listIndex?: number) => {
     if (listIndex !== undefined) onSelectElement(listIndex)
-  }, [onSelectElement])
+    if (unuseMode) {
+      setUnuseSelection((prev) => {
+        const next = new Set(prev)
+        if (next.has(_element.index)) next.delete(_element.index)
+        else next.add(_element.index)
+        return next
+      })
+      return
+    }
+    if (tableSelectMode) {
+      const bindingType = _element.id ? bindingTypeBySvgId.get(_element.id) || null : null
+      if (bindingType === 'unused') return
+      setTableSelection((prev) => {
+        const next = new Set(prev)
+        if (next.has(_element.index)) next.delete(_element.index)
+        else next.add(_element.index)
+        return next
+      })
+    }
+  }, [onSelectElement, unuseMode, tableSelectMode, bindingTypeBySvgId])
 
   const clampZoom = useCallback((value: number) => Math.min(2.5, Math.max(0.5, value)), [])
   const adjustZoom = useCallback((delta: number) => {
@@ -905,7 +870,37 @@ export function SvgViewer({
   const dynamicElementCount = elements.length
   const canEditLabels = dynamicElementCount > 0
 
+  useEffect(() => {
+    if (!unuseMode) {
+      setUnuseSelection(new Set())
+      return
+    }
+    setUnuseSelection((prev) => {
+      if (prev.size === 0) return prev
+      const existing = new Set(elements.map((el) => el.index))
+      const next = new Set<number>()
+      for (const index of prev) {
+        if (existing.has(index)) next.add(index)
+      }
+      return next
+    })
+  }, [unuseMode, elements])
 
+  useEffect(() => {
+    if (!tableSelectMode) {
+      setTableSelection(new Set())
+      return
+    }
+    setTableSelection((prev) => {
+      if (prev.size === 0) return prev
+      const existing = new Set(elements.map((el) => el.index))
+      const next = new Set<number>()
+      for (const index of prev) {
+        if (existing.has(index)) next.add(index)
+      }
+      return next
+    })
+  }, [tableSelectMode, elements])
 
   const updateContainerRect = useCallback(() => {
     const container = svgContainerRef.current
@@ -1026,6 +1021,10 @@ export function SvgViewer({
                     if (!next) {
                       setLineEditMode(false)
                       setBindMode(false)
+                      setUnuseMode(false)
+                      setUnuseSelection(new Set())
+                      setTableSelectMode(false)
+                      setTableSelection(new Set())
                     }
                     return next
                   })
@@ -1047,11 +1046,12 @@ export function SvgViewer({
             onClick={() => {
               setBindMode((prev) => {
                 const next = !prev
-                setLineEditMode(next)
+                // Bind mode prioritizes drag/drop over line-hit interactions.
+                setLineEditMode(false)
                 if (next) {
-                  setTableDrawMode(false)
-                  setTableDragRect(null)
-                  setTableDragStart(null)
+                  setUnuseMode(false)
+                  setTableSelectMode(false)
+                  setTableSelection(new Set())
                   if (!showGraphLines) {
                     setShowGraphLines(true)
                   }
@@ -1061,9 +1061,44 @@ export function SvgViewer({
             }}
             disabled={!canBindFromGraphMap}
             title={canBindFromGraphMap ? undefined : 'No graph data nodes'}
-          >
-            {bindMode ? 'Done Binding' : 'Bind Mode'}
+            >
+              {bindMode ? 'Done Binding' : 'Bind Mode'}
           </button>
+          <button
+            className={`btn-secondary ${unuseMode ? 'active' : ''}`}
+            onClick={() => {
+              setUnuseMode((prev) => {
+                const next = !prev
+                if (next) {
+                  setBindMode(false)
+                  setLineEditMode(false)
+                  setTableSelectMode(false)
+                  setTableSelection(new Set())
+                } else {
+                  setUnuseSelection(new Set())
+                }
+                return next
+              })
+            }}
+            disabled={!canEditLabels}
+            title={canEditLabels ? undefined : 'No dynamic elements'}
+          >
+            {unuseMode ? 'Done Unuse' : 'Unuse Mode'}
+          </button>
+          {unuseMode && unuseSelection.size > 0 && (
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                if (!onUnuseElements) return
+                const selectedElements = elements.filter((el) => unuseSelection.has(el.index))
+                if (selectedElements.length === 0) return
+                onUnuseElements(selectedElements)
+                setUnuseSelection(new Set())
+              }}
+            >
+              Confirm Unuse ({unuseSelection.size})
+            </button>
+          )}
           <button
             className={`btn-secondary ${editLabelsMode ? 'active' : ''}`}
             onClick={() => setEditLabelsMode((prev) => !prev)}
@@ -1084,18 +1119,55 @@ export function SvgViewer({
           </div>
           {onCreateTableFromSelection && (
             <button
-              className={`btn-secondary ${tableDrawMode ? 'active' : ''}`}
+              className={`btn-secondary ${tableSelectMode ? 'active' : ''}`}
               onClick={() => {
-                setTableDrawMode((prev) => !prev)
-                setTableDragRect(null)
-                setTableDragStart(null)
-                setLineEditMode(false)
-                setBindMode(false)
+                setTableSelectMode((prev) => {
+                  const next = !prev
+                  if (next) {
+                    setLineEditMode(false)
+                    setBindMode(false)
+                    setUnuseMode(false)
+                  } else {
+                    setTableSelection(new Set())
+                  }
+                  return next
+                })
               }}
             >
               {tableEditTargetIndex !== null
-                ? (tableDrawMode ? 'Cancel Table Update' : `Update Table #${tableEditTargetIndex + 1}`)
-                : (tableDrawMode ? 'Cancel Table' : 'Add Table')}
+                ? (tableSelectMode ? 'Cancel Table Update' : `Update Table #${tableEditTargetIndex + 1}`)
+                : (tableSelectMode ? 'Cancel Table' : 'Add Table')}
+            </button>
+          )}
+          {onCreateTableFromSelection && tableSelectMode && tableSelection.size > 0 && (
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                const selectedElements = elements.filter((el) => tableSelection.has(el.index))
+                if (selectedElements.length === 0) return
+                let minX = Infinity
+                let minY = Infinity
+                let maxX = -Infinity
+                let maxY = -Infinity
+                for (const element of selectedElements) {
+                  const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+                  minX = Math.min(minX, bbox.x)
+                  minY = Math.min(minY, bbox.y)
+                  maxX = Math.max(maxX, bbox.x + bbox.w)
+                  maxY = Math.max(maxY, bbox.y + bbox.h)
+                }
+                const rect = {
+                  x: minX,
+                  y: minY,
+                  w: Math.max(1, maxX - minX),
+                  h: Math.max(1, maxY - minY),
+                }
+                onCreateTableFromSelection(rect, selectedElements)
+                setTableSelection(new Set())
+                setTableSelectMode(false)
+              }}
+            >
+              Confirm Table ({tableSelection.size})
             </button>
           )}
         </div>
@@ -1147,6 +1219,8 @@ export function SvgViewer({
                       ? labelDragLines
                       : baseLines
                     const displayRect = getDisplayRectWithLines(element, liveWidth, anchor, liveLines)
+                    const isUnuseTarget = Boolean(unuseMode && unuseSelection.has(element.index))
+                    const isTableTarget = Boolean(tableSelectMode && tableSelection.has(element.index))
                     const baseRectClasses = [
                       isHighlighted
                         ? 'svg-overlay-rect-linked'
@@ -1156,6 +1230,8 @@ export function SvgViewer({
                       isBound && bindingType ? `svg-overlay-rect-${bindingType}` : '',
                       isValidationError ? 'svg-overlay-rect-error' : '',
                       !isValidationError && isValidationWarning ? 'svg-overlay-rect-warning' : '',
+                      isUnuseTarget ? 'svg-overlay-rect-selected' : '',
+                      isTableTarget ? 'svg-overlay-rect-selected' : '',
                     ].join(' ')
                     const baseRect = labelDraggable ? displayRect : {
                       x: bbox.x,
@@ -1205,23 +1281,20 @@ export function SvgViewer({
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
                       />
-                      <text
-                        className={[
-                          isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label',
-                          isBound && bindingType ? `svg-overlay-label-${bindingType}` : '',
-                          labelDragging ? 'svg-overlay-label-dragging' : '',
-                        ].join(' ')}
-                        x={bbox.x + 1}
-                        y={bbox.y - 1}
-                        style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
-                        onClick={() => {
-                          handleElementClick(element, listIndex)
-                        }}
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop(element)}
-                      >
-                        {element.id || element.suggestedId || element.index}
-                      </text>
+                      {unuseMode && (
+                        <text
+                          className={[
+                            isBound ? 'svg-overlay-label-bound' : 'svg-overlay-label',
+                            isBound && bindingType ? `svg-overlay-label-${bindingType}` : '',
+                            labelDragging ? 'svg-overlay-label-dragging' : '',
+                          ].join(' ')}
+                          x={bbox.x + 1}
+                          y={bbox.y - 1}
+                          style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px`, pointerEvents: 'none' }}
+                        >
+                          {element.id || element.suggestedId || element.index}
+                        </text>
+                      )}
                     </g>
                     )
                   })}
@@ -1288,43 +1361,19 @@ export function SvgViewer({
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
                       />
-                      <text
-                        className="svg-overlay-label-bound"
-                        x={bbox.x + 1}
-                        y={bbox.y - 1}
-                        style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px` }}
-                        onClick={() => {
-                          handleElementClick(element, listIndex)
-                        }}
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop(element)}
-                      >
-                        {element.id || element.suggestedId || element.index}
-                      </text>
+                      {unuseMode && (
+                        <text
+                          className="svg-overlay-label-bound"
+                          x={bbox.x + 1}
+                          y={bbox.y - 1}
+                          style={{ fontSize: `${getOverlayLabelSize(element, bbox)}px`, pointerEvents: 'none' }}
+                        >
+                          {element.id || element.suggestedId || element.index}
+                        </text>
+                      )}
                     </g>
                   ))}
-                  {/* capture + selection are rendered last to stay on top while drawing */}
-                  {tableDrawMode && viewBoxNumbers && (
-                    <rect
-                      className="svg-overlay-table-capture"
-                      x={viewBoxNumbers.x}
-                      y={viewBoxNumbers.y}
-                      width={viewBoxNumbers.w}
-                      height={viewBoxNumbers.h}
-                      onMouseDown={handleTableMouseDown}
-                      onMouseMove={handleTableMouseMove}
-                      onMouseUp={handleTableMouseUp}
-                    />
-                  )}
-                  {tableDragRect && (
-                    <rect
-                      className="svg-overlay-table-select"
-                      x={tableDragRect.x}
-                      y={tableDragRect.y}
-                      width={tableDragRect.w}
-                      height={tableDragRect.h}
-                    />
-                  )}
+                  {/* no drag-capture overlay; table selection is click/toggle based */}
                     </svg>
                   )}
                 </div>

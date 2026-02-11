@@ -64,10 +64,10 @@ class RpcClient {
     })
   }
 
-  async inspectText(path: string): Promise<InspectTextResponse> {
+  async inspectText(path: string, options?: { glyphSplitProfile?: 'balanced' | 'split' | 'merge' }): Promise<InspectTextResponse> {
     return this.request<InspectTextResponse>('/inspect-text', {
       method: 'POST',
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path, options }),
     })
   }
 
@@ -127,10 +127,14 @@ class RpcClient {
     })
   }
 
-  async setSvgIds(path: string, assignments: Array<{ selector: { byIndex: number }; id: string }>): Promise<void> {
+  async setSvgIds(
+    path: string,
+    assignments: Array<{ selector: { byIndex: number }; id: string }>,
+    options?: { glyphSplitProfile?: 'balanced' | 'split' | 'merge' },
+  ): Promise<void> {
     await this.request('/svg/set-ids', {
       method: 'POST',
-      body: JSON.stringify({ path, assignments }),
+      body: JSON.stringify({ path, assignments, options }),
     })
   }
 

@@ -76,6 +76,10 @@ export function App() {
   const detectedElementsCacheRef = useRef(new Map<string, TextElement[]>())
   const [svgReloadToken, setSvgReloadToken] = useState(0)
 
+  const getDetectCacheKey = useCallback((svgPath: string) => {
+    return `balanced:${svgPath}`
+  }, [])
+
   const svgElementsById = useMemo(() => {
     const map = new Map<string, TextElement>()
     for (const element of svgElements) {
@@ -134,19 +138,20 @@ export function App() {
     templatePath: string,
     templateJson: TemplateConfig,
   ): Promise<{ totalDetected: number; pageSummaries: string[]; failedPages: string[] }> => {
+    const profile: 'balanced' | 'split' | 'merge' = 'balanced'
     const pageResults = await Promise.all(templateJson.pages.map(async (page) => {
       const svgPath = `${templatePath}/${page.svg}`
       try {
-        const inspectResult = await rpc.inspectText(svgPath)
+        const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: profile })
         const dynamicElements = selectDynamicElements(inspectResult.texts)
-        detectedElementsCacheRef.current.set(svgPath, dynamicElements)
+        detectedElementsCacheRef.current.set(getDetectCacheKey(svgPath), dynamicElements)
         return {
           pageId: page.id,
           count: dynamicElements.length,
           failed: false,
         }
       } catch {
-        detectedElementsCacheRef.current.delete(svgPath)
+        detectedElementsCacheRef.current.delete(getDetectCacheKey(svgPath))
         return {
           pageId: page.id,
           count: 0,
@@ -162,7 +167,7 @@ export function App() {
         .map(page => `${page.pageId}:${page.count}`),
       failedPages: pageResults.filter(page => page.failed).map(page => page.pageId),
     }
-  }, [selectDynamicElements])
+  }, [selectDynamicElements, getDetectCacheKey])
 
   const loadTemplateByPath = useCallback(async (path: string): Promise<TemplateConfig | null> => {
     setIsLoading(true)
@@ -363,7 +368,7 @@ export function App() {
       setStatus(`要素検出が完了しました: ${detectResult.totalDetected}件${detail}`)
       if (selectedSvg) {
         const currentPath = `${templateDir}/${selectedSvg}`
-        const cached = detectedElementsCacheRef.current.get(currentPath)
+        const cached = detectedElementsCacheRef.current.get(getDetectCacheKey(currentPath))
         if (cached) {
           setSvgElements(cached)
         }
@@ -378,7 +383,7 @@ export function App() {
     } finally {
       setDetectLoading(false)
     }
-  }, [template, templateDir, autoDetectTemplateElements, selectedSvg])
+  }, [template, templateDir, autoDetectTemplateElements, selectedSvg, getDetectCacheKey])
 
   const handleValidate = useCallback(async () => {
     if (!template) return
@@ -632,7 +637,8 @@ export function App() {
 
   const loadInspectText = useCallback(async (svgPath: string) => {
     try {
-      const cached = detectedElementsCacheRef.current.get(svgPath)
+      const cacheKey = getDetectCacheKey(svgPath)
+      const cached = detectedElementsCacheRef.current.get(cacheKey)
       if (cached) {
         setSvgElements(cached)
       }
@@ -654,9 +660,9 @@ export function App() {
         const message = err instanceof Error ? err.message : 'Failed to reindex text IDs'
         setNotification(message)
       }
-      const inspectResult = await rpc.inspectText(svgPath)
+      const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: 'balanced' })
       const dynamicTexts = selectDynamicElements(inspectResult.texts)
-      detectedElementsCacheRef.current.set(svgPath, dynamicTexts)
+      detectedElementsCacheRef.current.set(cacheKey, dynamicTexts)
       setSvgElements(dynamicTexts)
       if (template) {
         const relativePath = svgPath.startsWith(`${templateDir}/`)
@@ -755,10 +761,10 @@ export function App() {
         }
       }
     } catch {
-      detectedElementsCacheRef.current.delete(svgPath)
+      detectedElementsCacheRef.current.delete(getDetectCacheKey(svgPath))
       setSvgElements([])
     }
-  }, [applyReindexedSvgIds, templateDir, template, selectDynamicElements])
+  }, [applyReindexedSvgIds, templateDir, template, selectDynamicElements, getDetectCacheKey])
 
   const handleSvgEdited = useCallback(async () => {
     if (!selectedSvg) return
@@ -869,7 +875,7 @@ export function App() {
     autoFixIdsRef.current = true
     const run = async () => {
       if (assignments.length > 0) {
-        await rpc.setSvgIds(svgPath, assignments)
+        await rpc.setSvgIds(svgPath, assignments, { glyphSplitProfile: 'balanced' })
       }
 
       if (missingIds.size > 0) {
@@ -907,7 +913,7 @@ export function App() {
         })
       }
 
-      const inspectResult = await rpc.inspectText(svgPath)
+      const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: 'balanced' })
       setSvgElements(inspectResult.texts)
 
       const parts: string[] = []
@@ -1110,9 +1116,9 @@ export function App() {
       try {
         await rpc.setSvgIds(svgPath, [
           { selector: { byIndex: element.index }, id: candidate },
-        ])
+        ], { glyphSplitProfile: 'balanced' })
         setSvgReloadToken((value) => value + 1)
-        const inspectResult = await rpc.inspectText(svgPath)
+        const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: 'balanced' })
         setSvgElements(inspectResult.texts)
         const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
         if (nextIndex >= 0) {
@@ -1138,8 +1144,8 @@ export function App() {
       try {
         await rpc.setSvgIds(svgPath, [
           { selector: { byIndex: element.index }, id: candidate },
-        ])
-        const inspectResult = await rpc.inspectText(svgPath)
+        ], { glyphSplitProfile: 'balanced' })
+        const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: 'balanced' })
         setSvgElements(inspectResult.texts)
         const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
         if (nextIndex >= 0) {
@@ -1158,9 +1164,9 @@ export function App() {
       const uniqueId = getUniqueSvgId(element.suggestedId, element.index)
       await rpc.setSvgIds(svgPath, [
         { selector: { byIndex: element.index }, id: uniqueId },
-      ])
+      ], { glyphSplitProfile: 'balanced' })
       setSvgReloadToken((value) => value + 1)
-      const inspectResult = await rpc.inspectText(svgPath)
+      const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: 'balanced' })
       setSvgElements(inspectResult.texts)
       const nextIndex = inspectResult.texts.findIndex(t => t.index === element.index)
       if (nextIndex >= 0) {
@@ -1368,7 +1374,7 @@ export function App() {
         })
       }
       if (result.updatedSvg) {
-        const inspectResult = await rpc.inspectText(svgPath)
+        const inspectResult = await rpc.inspectText(svgPath, { glyphSplitProfile: 'balanced' })
         setSvgElements(inspectResult.texts)
         setNotification('Auto-fixed table row groups.')
       }
@@ -1687,7 +1693,7 @@ export function App() {
         })
       }
       if (result?.updatedSvg) {
-        const inspectResult = await rpc.inspectText(`${templateDir}/${selectedSvg}`)
+        const inspectResult = await rpc.inspectText(`${templateDir}/${selectedSvg}`, { glyphSplitProfile: 'balanced' })
         setSvgElements(inspectResult.texts)
       }
     }
@@ -1711,6 +1717,27 @@ export function App() {
     }
     clearBindingsBySvgId(svgId)
   }, [svgElements, selectedText, ensureSvgIdForElement, clearBindingsBySvgId])
+
+  const handleUnuseElements = useCallback(async (elementsToUnuse: TextElement[]) => {
+    if (elementsToUnuse.length === 0) return
+    let lastSvgId: string | null = null
+    let updated = 0
+    for (const element of elementsToUnuse) {
+      const ensured = await ensureSvgIdForElement(element, 'unused', true)
+      if (!ensured) continue
+      clearBindingsBySvgId(ensured)
+      lastSvgId = ensured
+      updated += 1
+    }
+    if (lastSvgId) {
+      setSelectedBindingSvgId(lastSvgId)
+    }
+    if (updated === 0) {
+      setNotification('Selected elements have no id to unbind.')
+      return
+    }
+    setNotification(`Set ${updated} element(s) to unused.`)
+  }, [ensureSvgIdForElement, clearBindingsBySvgId])
 
   const handleRemoveGraphBinding = useCallback((connection: { key: string; svgId: string }) => {
     const ref = decodeDataKeyRef(connection.key)
@@ -2450,7 +2477,8 @@ export function App() {
                   validationSvgIds={validationSvgIds}
                   validationWarningSvgIds={validationWarningSvgIds}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
-                  onSvgEdited={handleSvgEdited}
+                  onUnuseElements={handleUnuseElements}
+                                    onSvgEdited={handleSvgEdited}
                   onCreateTableFromSelection={async (_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)
@@ -2550,7 +2578,7 @@ export function App() {
                         })
                       }
                       if (result?.updatedSvg) {
-                        const inspectResult = await rpc.inspectText(`${templateDir}/${selectedSvg}`)
+                        const inspectResult = await rpc.inspectText(`${templateDir}/${selectedSvg}`, { glyphSplitProfile: 'balanced' })
                         setSvgElements(inspectResult.texts)
                       }
                     }
@@ -2640,7 +2668,8 @@ export function App() {
                 validationWarningSvgIds={validationWarningSvgIds}
                 onSelectElement={handleSelectTextElement}
                 onDropBinding={handleDropBindingOnElement}
-                onSvgEdited={handleSvgEdited}
+                onUnuseElements={handleUnuseElements}
+                                onSvgEdited={handleSvgEdited}
               />
             </div>
           </>

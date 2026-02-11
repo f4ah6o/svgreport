@@ -613,7 +613,10 @@ export class RpcServer {
   }
 
   private async handleInspectText(body: Record<string, unknown>): Promise<RpcResponse> {
-    const { path: inputPath, options = {} } = body as { path: string; options?: { includePathTextWarnings?: boolean; suggestIds?: boolean } };
+    const { path: inputPath, options = {} } = body as {
+      path: string;
+      options?: { includePathTextWarnings?: boolean; suggestIds?: boolean; glyphSplitProfile?: 'balanced' | 'split' | 'merge' };
+    };
 
     if (!inputPath) {
       return { error: { code: 'BAD_REQUEST', message: 'Missing required field: path' } };
@@ -632,7 +635,7 @@ export class RpcServer {
         };
       } else {
         // Single file
-        const analysis = await extractTextElements(resolvedPath);
+        const analysis = await extractTextElements(resolvedPath, options);
         return this.formatInspectTextResponse(analysis, options);
       }
     } catch (error) {
@@ -794,7 +797,10 @@ export class RpcServer {
     }
   }
 
-  private formatInspectTextResponse(analysis: Awaited<ReturnType<typeof extractTextElements>>, options: { includePathTextWarnings?: boolean; suggestIds?: boolean }): RpcResponse {
+  private formatInspectTextResponse(
+    analysis: Awaited<ReturnType<typeof extractTextElements>>,
+    options: { includePathTextWarnings?: boolean; suggestIds?: boolean; glyphSplitProfile?: 'balanced' | 'split' | 'merge' },
+  ): RpcResponse {
     const warnings: Array<{ code: string; message: string }> = [];
 
     if (options.includePathTextWarnings && analysis.statistics.pathText > 0) {
@@ -835,9 +841,10 @@ export class RpcServer {
   }
 
   private async handleSvgSetIds(body: Record<string, unknown>): Promise<RpcResponse> {
-    const { path: inputPath, assignments } = body as {
+    const { path: inputPath, assignments, options = {} } = body as {
       path: string;
       assignments: Array<{ selector: { byIndex?: number }; id: string }>;
+      options?: { glyphSplitProfile?: 'balanced' | 'split' | 'merge' };
     };
 
     if (!inputPath || !assignments) {
@@ -883,7 +890,7 @@ export class RpcServer {
       }
 
       // Resolve set-id targets in the same order and indexing used by inspect-text.
-      const analysis = await extractTextElements(resolvedPath);
+      const analysis = await extractTextElements(resolvedPath, options);
       const textNodes = Array.from(svg.getElementsByTagName('text')) as Element[];
       const useNodes = Array.from(svg.getElementsByTagName('use')) as Element[];
       const targetNodes: Element[] = textNodes.length > 0 ? textNodes : useNodes;

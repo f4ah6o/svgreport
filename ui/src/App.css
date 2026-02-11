@@ -777,6 +777,11 @@
   stroke-dasharray: 2 3;
 }
 
+.svg-overlay-rect-selected {
+  stroke: #d35400;
+  stroke-width: 2;
+}
+
 
 .svg-overlay-label {
   fill: #1f4f8f;

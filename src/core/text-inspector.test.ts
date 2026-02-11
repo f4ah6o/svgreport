@@ -54,3 +54,31 @@ test('extractTextElements falls back to glyph <use> nodes when <text> is missing
   assert.equal(analysis.textElements[0]?.x, 10);
   assert.equal(analysis.textElements[1]?.x, 80);
 });
+
+test('extractTextElements avoids over-splitting compact glyph runs while keeping wide gaps split', async () => {
+  const svgPath = await writeTempSvg(`
+    <svg xmlns="http://www.w3.org/2000/svg"
+         xmlns:xlink="http://www.w3.org/1999/xlink"
+         width="220"
+         height="80">
+      <defs>
+        <g id="glyph-0">
+          <path d="M 0 0 L 5 0 L 5 -8 L 0 -8 Z" />
+        </g>
+      </defs>
+      <!-- compact CJK-like run that should stay merged -->
+      <use xlink:href="#glyph-0" x="10" y="30" />
+      <use xlink:href="#glyph-0" x="18" y="30" />
+      <use xlink:href="#glyph-0" x="30" y="30" />
+      <!-- wide field gap that should split -->
+      <use xlink:href="#glyph-0" x="76" y="30" />
+      <use xlink:href="#glyph-0" x="84" y="30" />
+      <use xlink:href="#glyph-0" x="92" y="30" />
+    </svg>
+  `);
+
+  const analysis = await extractTextElements(svgPath);
+  assert.equal(analysis.statistics.total, 2);
+  assert.equal(analysis.textElements[0]?.x, 10);
+  assert.equal(analysis.textElements[1]?.x, 76);
+});
