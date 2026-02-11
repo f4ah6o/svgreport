@@ -158,7 +158,7 @@ export function TemplateEditor({
 
     return (
       <div
-        className={`binding-card ${isSelected ? 'selected' : ''} ${isBound ? 'bound' : 'unbound'}`}
+        className={`binding-card ${isSelected ? 'selected' : ''} ${isBound ? 'bound' : 'unused'}`}
         draggable
         onDragStart={handleDragStart(ref, valueLabel)}
         onDragOver={handleBindingDragOver}
@@ -168,8 +168,8 @@ export function TemplateEditor({
         <div className="binding-card-header">
           <span className="binding-card-title">{title}</span>
           {subtitle ? <span className="binding-card-subtitle">{subtitle}</span> : null}
-          <span className={`binding-card-status ${isBound ? 'bound' : 'unbound'}`}>
-            {isBound ? 'bound' : 'unbound'}
+          <span className={`binding-card-status ${isBound ? 'bound' : 'unused'}`}>
+            {isBound ? 'bound' : 'unused'}
           </span>
         </div>
         <div className="binding-card-body">
@@ -1373,7 +1373,7 @@ export function TemplateEditor({
                     }
                   }}
                 />
-                Keep unbound (skip validation)
+                Keep unused (skip validation)
               </label>
             </div>
 

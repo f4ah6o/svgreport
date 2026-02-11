@@ -137,7 +137,7 @@
   stroke: #c0392b;
 }
 
-.graph-connector-line-unbound {
+.graph-connector-line-unused {
   stroke: #7f8c8d;
 }
 
@@ -612,6 +612,12 @@
   color: #556275;
 }
 
+.svg-overlay-summary {
+  margin-bottom: 0.55rem;
+  font-size: 0.78rem;
+  color: #5f6f82;
+}
+
 .svg-preview-actions .btn-secondary {
   padding: 0.35rem 0.65rem;
   border: none;
@@ -727,6 +733,11 @@
   stroke: #c0392b;
 }
 
+.svg-overlay-rect-unused {
+  fill: rgba(127, 140, 141, 0.16);
+  stroke: #7f8c8d;
+}
+
 .svg-overlay-label-meta {
   fill: #1d4f91;
 }
@@ -737,6 +748,10 @@
 
 .svg-overlay-label-static {
   fill: #c0392b;
+}
+
+.svg-overlay-label-unused {
+  fill: #5d6d7e;
 }
 
 .svg-overlay-rect-linked {
@@ -1634,7 +1649,7 @@
   color: #c0392b;
 }
 
-.graph-map-node-unbound {
+.graph-map-node-unused {
   border-color: #d5d8dc;
   box-shadow: inset 4px 0 0 #7f8c8d;
   color: #2c3e50;
@@ -1784,7 +1799,7 @@
   background: #f2f8ff;
 }
 
-.binding-card.unbound {
+.binding-card.unused {
   background: #fffdf7;
 }
 
@@ -1819,7 +1834,7 @@
   color: #1e7e34;
 }
 
-.binding-card-status.unbound {
+.binding-card-status.unused {
   background: #fff3cd;
   color: #9a5b00;
 }

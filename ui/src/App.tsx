@@ -8,9 +8,6 @@ import type {
   KVData,
   TableData,
   TableBinding,
-  FieldBinding,
-  TableCell,
-  ValueBinding,
 } from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
@@ -58,6 +55,7 @@ export function App() {
   const [importPdfFile, setImportPdfFile] = useState<File | null>(null)
   const [importEngine, setImportEngine] = useState<'auto' | 'pdf2svg' | 'inkscape'>('auto')
   const [importLoading, setImportLoading] = useState(false)
+  const [detectLoading, setDetectLoading] = useState(false)
   const [graphMetaScope, setGraphMetaScope] = useState<'page' | 'global'>('page')
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
   const [graphTableIndex, setGraphTableIndex] = useState(0)
@@ -75,6 +73,7 @@ export function App() {
   const autoFixIdsRef = useRef(false)
   const autoFixTableRef = useRef(false)
   const validationPathLogRef = useRef(new Set<string>())
+  const detectedElementsCacheRef = useRef(new Map<string, TextElement[]>())
   const [svgReloadToken, setSvgReloadToken] = useState(0)
 
   const svgElementsById = useMemo(() => {
@@ -126,24 +125,67 @@ export function App() {
     }
   }, [template, selectedPageId, graphTableIndex, graphEditTableIndex])
 
-  const loadTemplateByPath = useCallback(async (path: string) => {
+  const selectDynamicElements = useCallback((texts: TextElement[]): TextElement[] => {
+    // Current policy: treat all text nodes as dynamic candidates.
+    return texts
+  }, [])
+
+  const autoDetectTemplateElements = useCallback(async (
+    templatePath: string,
+    templateJson: TemplateConfig,
+  ): Promise<{ totalDetected: number; pageSummaries: string[]; failedPages: string[] }> => {
+    const pageResults = await Promise.all(templateJson.pages.map(async (page) => {
+      const svgPath = `${templatePath}/${page.svg}`
+      try {
+        const inspectResult = await rpc.inspectText(svgPath)
+        const dynamicElements = selectDynamicElements(inspectResult.texts)
+        detectedElementsCacheRef.current.set(svgPath, dynamicElements)
+        return {
+          pageId: page.id,
+          count: dynamicElements.length,
+          failed: false,
+        }
+      } catch {
+        detectedElementsCacheRef.current.delete(svgPath)
+        return {
+          pageId: page.id,
+          count: 0,
+          failed: true,
+        }
+      }
+    }))
+
+    return {
+      totalDetected: pageResults.reduce((sum, page) => sum + page.count, 0),
+      pageSummaries: pageResults
+        .filter(page => !page.failed)
+        .map(page => `${page.pageId}:${page.count}`),
+      failedPages: pageResults.filter(page => page.failed).map(page => page.pageId),
+    }
+  }, [selectDynamicElements])
+
+  const loadTemplateByPath = useCallback(async (path: string): Promise<TemplateConfig | null> => {
     setIsLoading(true)
     setError(null)
     setStatus('Loading template...')
     
     try {
+      detectedElementsCacheRef.current.clear()
       const templateJson = await rpc.loadTemplate(path)
       setTemplate(templateJson)
       const firstPage = templateJson.pages[0]
       setSelectedPageId(firstPage?.id ?? null)
       setSelectedSvg(firstPage?.svg || null)
+      setSvgElements([])
       setSelectedTextIndex(null)
       setSelectedText(null)
       setSelectedBindingSvgId(null)
       setStatus(`Loaded template: ${templateJson.template.id} v${templateJson.template.version}`)
+      return templateJson
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load template')
       setStatus('Error loading template')
+      return null
     } finally {
       setIsLoading(false)
     }
@@ -227,12 +269,24 @@ export function App() {
         setTemplatesError(listErr instanceof Error ? listErr.message : 'Failed to load templates list')
       }
       setTemplateDir(result.templateDir)
-      await loadTemplateByPath(result.templateDir)
+      const loadedTemplate = await loadTemplateByPath(result.templateDir)
+      const notifications: string[] = []
+      if (loadedTemplate) {
+        const detectResult = await autoDetectTemplateElements(result.templateDir, loadedTemplate)
+        const detail = detectResult.pageSummaries.length > 0
+          ? ` (${detectResult.pageSummaries.join(', ')})`
+          : ''
+        setStatus(`帳票テンプレートを作成しました: ${result.templateDir} / 要素検出 ${detectResult.totalDetected}件${detail}`)
+        if (detectResult.failedPages.length > 0) {
+          notifications.push(`要素検出に失敗したページ: ${detectResult.failedPages.join(', ')}`)
+        }
+      }
 
       if (result.warnings.length > 0) {
-        setNotification(`作成完了（警告 ${result.warnings.length} 件）: ${result.warnings.join(' / ')}`)
-      } else {
-        setStatus(`帳票テンプレートを作成しました: ${result.templateDir}`)
+        notifications.push(`作成完了（警告 ${result.warnings.length} 件）: ${result.warnings.join(' / ')}`)
+      }
+      if (notifications.length > 0) {
+        setNotification(notifications.join(' / '))
       }
       closeImportDialog()
     } catch (err) {
@@ -249,6 +303,7 @@ export function App() {
     templatesBaseDir,
     importEngine,
     loadTemplateByPath,
+    autoDetectTemplateElements,
     closeImportDialog,
   ])
 
@@ -293,6 +348,37 @@ export function App() {
       setIsLoading(false)
     }
   }, [templateDir, template])
+
+  const handleDetect = useCallback(async () => {
+    if (!template) return
+
+    setDetectLoading(true)
+    setError(null)
+    setStatus('要素検出を実行中...')
+    try {
+      const detectResult = await autoDetectTemplateElements(templateDir, template)
+      const detail = detectResult.pageSummaries.length > 0
+        ? ` (${detectResult.pageSummaries.join(', ')})`
+        : ''
+      setStatus(`要素検出が完了しました: ${detectResult.totalDetected}件${detail}`)
+      if (selectedSvg) {
+        const currentPath = `${templateDir}/${selectedSvg}`
+        const cached = detectedElementsCacheRef.current.get(currentPath)
+        if (cached) {
+          setSvgElements(cached)
+        }
+      }
+      if (detectResult.failedPages.length > 0) {
+        setNotification(`要素検出に失敗したページ: ${detectResult.failedPages.join(', ')}`)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '要素検出に失敗しました'
+      setError(message)
+      setStatus('要素検出に失敗しました')
+    } finally {
+      setDetectLoading(false)
+    }
+  }, [template, templateDir, autoDetectTemplateElements, selectedSvg])
 
   const handleValidate = useCallback(async () => {
     if (!template) return
@@ -546,6 +632,10 @@ export function App() {
 
   const loadInspectText = useCallback(async (svgPath: string) => {
     try {
+      const cached = detectedElementsCacheRef.current.get(svgPath)
+      if (cached) {
+        setSvgElements(cached)
+      }
       try {
         const reindex = await rpc.reindexSvgTextIds(svgPath, 'text_')
         if (reindex.updated) {
@@ -558,21 +648,23 @@ export function App() {
           applyReindexedSvgIds(relativePath, reindex.mapping, reindex.duplicateOldIds)
         }
         if (reindex.duplicateOldIds.length > 0) {
-          setNotification(`Duplicate text IDs detected. ${reindex.duplicateOldIds.length} bindings were set to unbound.`)
+          setNotification(`Duplicate text IDs detected. ${reindex.duplicateOldIds.length} bindings were set to unused.`)
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to reindex text IDs'
         setNotification(message)
       }
       const inspectResult = await rpc.inspectText(svgPath)
-      setSvgElements(inspectResult.texts)
+      const dynamicTexts = selectDynamicElements(inspectResult.texts)
+      detectedElementsCacheRef.current.set(svgPath, dynamicTexts)
+      setSvgElements(dynamicTexts)
       if (template) {
         const relativePath = svgPath.startsWith(`${templateDir}/`)
           ? svgPath.slice(templateDir.length + 1)
           : svgPath
-        const validIds = new Set(inspectResult.texts.map((text) => text.id).filter(Boolean) as string[])
+        const validIds = new Set(dynamicTexts.map((text) => text.id).filter(Boolean) as string[])
         const suggestedMap = new Map<string, string>()
-        for (const text of inspectResult.texts) {
+        for (const text of dynamicTexts) {
           if (text.suggestedId && text.id && !suggestedMap.has(text.suggestedId)) {
             suggestedMap.set(text.suggestedId, text.id)
           }
@@ -616,7 +708,7 @@ export function App() {
                 return { ...binding, svg_id: remap, enabled: true }
               }
             }
-            // No svg_id and no auto match: keep unbound to avoid validation errors.
+            // No svg_id and no auto match: keep unused to avoid validation errors.
             changed = true
             return { ...binding, svg_id: '', enabled: false }
           }
@@ -663,9 +755,10 @@ export function App() {
         }
       }
     } catch {
+      detectedElementsCacheRef.current.delete(svgPath)
       setSvgElements([])
     }
-  }, [applyReindexedSvgIds, templateDir, template])
+  }, [applyReindexedSvgIds, templateDir, template, selectDynamicElements])
 
   const handleSvgEdited = useCallback(async () => {
     if (!selectedSvg) return
@@ -935,7 +1028,7 @@ export function App() {
     if (selectedBindingSvgId === svgId) {
       setSelectedBindingSvgId(null)
     }
-    setNotification('Binding set to unbound.')
+    setNotification('Binding set to unused.')
   }, [selectedBindingSvgId, selectedPageId])
 
   const updateBindingSvgId = useCallback((ref: BindingRef, svgId: string) => {
@@ -1484,10 +1577,10 @@ export function App() {
     setNotification(`Draw to update Table #${tableIndex + 1}`)
   }, [])
 
-  const handleMapDataToSvg = useCallback(async (dataRef: { source: 'meta' | 'items' | 'static' | 'unbound'; key: string }, element: TextElement) => {
+  const handleMapDataToSvg = useCallback(async (dataRef: DataKeyRef, element: TextElement) => {
     if (!template || !selectedPageId) return
-    if (dataRef.source === 'unbound') {
-      const svgId = await ensureSvgIdForElement(element, 'unbound', true)
+    if (dataRef.source === 'unused') {
+      const svgId = await ensureSvgIdForElement(element, 'unused', true)
       if (!svgId) {
         setNotification('Selected element has no id to unbind.')
         return
@@ -1496,44 +1589,6 @@ export function App() {
       setSelectedBindingSvgId(svgId)
       return
     }
-    const matchesValue = (
-      value: ValueBinding,
-      ref: { source: 'meta' | 'items' | 'static'; key: string },
-      tableSource?: string
-    ) => {
-      if (ref.source === 'static') {
-        return value.type === 'static' && value.text === ref.key
-      }
-      if (value.type !== 'data') return false
-      if (ref.source === 'items') {
-        if (tableSource) {
-          return value.key === ref.key && value.source === tableSource
-        }
-        return value.key === ref.key && value.source === 'items'
-      }
-      return value.key === ref.key && value.source !== 'items'
-    }
-    const dedupeFields = (
-      fields: FieldBinding[],
-      ref: { source: 'meta' | 'static'; key: string },
-      svgId: string,
-      keepIndex: number
-    ) => fields.filter((field, idx) => {
-      if (idx === keepIndex) return true
-      if (field.svg_id === svgId) return false
-      return !matchesValue(field.value, ref)
-    })
-    const dedupeCells = (
-      cells: TableCell[],
-      ref: { source: 'items'; key: string },
-      tableSource: string | undefined,
-      svgId: string,
-      keepIndex: number
-    ) => cells.filter((cell, idx) => {
-      if (idx === keepIndex) return true
-      if (cell.svg_id === svgId) return false
-      return !matchesValue(cell.value, ref, tableSource)
-    })
     const base = dataRef.source === 'static'
       ? `static_${dataRef.key}`
       : `${dataRef.source}_${dataRef.key}`
@@ -1552,38 +1607,27 @@ export function App() {
           if (!page.tables[tableIndex]) return page
           const table = page.tables[tableIndex]
           const value = makeDataValue(table.source || 'items', dataRef.key)
-          const targetRef = { source: 'items' as const, key: dataRef.key }
           if (graphItemsTarget === 'header') {
             const headerCells = table.header?.cells ? [...table.header.cells] : []
             const existing = headerCells.findIndex(cell => cell.svg_id === svgId)
-            const byValue = existing >= 0
-              ? existing
-              : headerCells.findIndex(cell => matchesValue(cell.value, targetRef, table.source))
-            const nextCell = byValue >= 0
-              ? { ...headerCells[byValue], svg_id: svgId, value, enabled: true }
+            const nextCell = existing >= 0
+              ? { ...headerCells[existing], svg_id: svgId, value, enabled: true }
               : { svg_id: svgId, value, enabled: true }
-            if (byValue >= 0) headerCells[byValue] = nextCell
+            if (existing >= 0) headerCells[existing] = nextCell
             else headerCells.push(nextCell)
-            const keepIndex = byValue >= 0 ? byValue : headerCells.length - 1
-            const nextHeaderCells = dedupeCells(headerCells, targetRef, table.source, svgId, keepIndex)
-            const nextTable = { ...table, header: { cells: nextHeaderCells } }
+            const nextTable = { ...table, header: { cells: headerCells } }
             const tables = page.tables.map((t, idx) => idx === tableIndex ? nextTable : t)
             return { ...page, tables }
           }
 
           const cells = [...table.cells]
           const existing = cells.findIndex(cell => cell.svg_id === svgId)
-          const byValue = existing >= 0
-            ? existing
-            : cells.findIndex(cell => matchesValue(cell.value, targetRef, table.source))
-          const nextCell = byValue >= 0
-            ? { ...cells[byValue], svg_id: svgId, value, enabled: true }
+          const nextCell = existing >= 0
+            ? { ...cells[existing], svg_id: svgId, value, enabled: true }
             : { svg_id: svgId, value, enabled: true }
-          if (byValue >= 0) cells[byValue] = nextCell
+          if (existing >= 0) cells[existing] = nextCell
           else cells.push(nextCell)
-          const keepIndex = byValue >= 0 ? byValue : cells.length - 1
-          const nextCells = dedupeCells(cells, targetRef, table.source, svgId, keepIndex)
-          const nextTable = { ...table, cells: nextCells }
+          const nextTable = { ...table, cells }
           const tables = page.tables.map((t, idx) => idx === tableIndex ? nextTable : t)
           return { ...page, tables }
         }
@@ -1591,7 +1635,6 @@ export function App() {
         const value = dataRef.source === 'static'
           ? makeStaticValue(dataRef.key)
           : makeDataValue('meta', dataRef.key)
-        const targetRef = { source: dataRef.source as 'meta' | 'static', key: dataRef.key }
 
         if (graphMetaScope === 'global') {
           return page
@@ -1599,37 +1642,26 @@ export function App() {
 
         const fields = [...(page.fields ?? [])]
         const existing = fields.findIndex(field => field.svg_id === svgId)
-        const byValue = existing >= 0
-          ? existing
-          : fields.findIndex(field => matchesValue(field.value, targetRef))
-        const nextField = byValue >= 0
-          ? { ...fields[byValue], svg_id: svgId, value, enabled: true }
+        const nextField = existing >= 0
+          ? { ...fields[existing], svg_id: svgId, value, enabled: true }
           : { svg_id: svgId, value, enabled: true }
-        if (byValue >= 0) fields[byValue] = nextField
+        if (existing >= 0) fields[existing] = nextField
         else fields.push(nextField)
-        const keepIndex = byValue >= 0 ? byValue : fields.length - 1
-        const nextFields = dedupeFields(fields, targetRef, svgId, keepIndex)
-        return { ...page, fields: nextFields }
+        return { ...page, fields }
       })
 
       if (dataRef.source !== 'items' && graphMetaScope === 'global') {
         const value = dataRef.source === 'static'
           ? makeStaticValue(dataRef.key)
           : makeDataValue('meta', dataRef.key)
-        const targetRef = { source: dataRef.source as 'meta' | 'static', key: dataRef.key }
         const fields = [...prev.fields]
         const existing = fields.findIndex(field => field.svg_id === svgId)
-        const byValue = existing >= 0
-          ? existing
-          : fields.findIndex(field => matchesValue(field.value, targetRef))
-        const nextField = byValue >= 0
-          ? { ...fields[byValue], svg_id: svgId, value, enabled: true }
+        const nextField = existing >= 0
+          ? { ...fields[existing], svg_id: svgId, value, enabled: true }
           : { svg_id: svgId, value, enabled: true }
-        if (byValue >= 0) fields[byValue] = nextField
+        if (existing >= 0) fields[existing] = nextField
         else fields.push(nextField)
-        const keepIndex = byValue >= 0 ? byValue : fields.length - 1
-        const nextFields = dedupeFields(fields, targetRef, svgId, keepIndex)
-        nextTemplate = { ...prev, fields: nextFields, pages }
+        nextTemplate = { ...prev, fields, pages }
         return nextTemplate
       }
 
@@ -1670,7 +1702,7 @@ export function App() {
       ? selectedText
       : (svgElements.find((el) => el.id === svgId || el.suggestedId === svgId) || null)
     if (element) {
-      const ensured = await ensureSvgIdForElement(element, 'unbound', true)
+      const ensured = await ensureSvgIdForElement(element, 'unused', true)
       if (ensured) {
         clearBindingsBySvgId(ensured)
         setSelectedBindingSvgId(ensured)
@@ -1889,7 +1921,7 @@ export function App() {
 
     for (const field of template.fields) {
       if (field.enabled === false) {
-        addConnection({ source: 'unbound', key: 'unbound' }, field.svg_id, undefined, field.svg_id)
+        addConnection({ source: 'unused', key: 'unused' }, field.svg_id, undefined, field.svg_id)
         continue
       }
       addConnection(toDataRef(field.value), field.svg_id)
@@ -1897,7 +1929,7 @@ export function App() {
 
     for (const field of page.fields ?? []) {
       if (field.enabled === false) {
-        addConnection({ source: 'unbound', key: 'unbound' }, field.svg_id, undefined, field.svg_id)
+        addConnection({ source: 'unused', key: 'unused' }, field.svg_id, undefined, field.svg_id)
         continue
       }
       addConnection(toDataRef(field.value), field.svg_id)
@@ -1906,14 +1938,14 @@ export function App() {
     for (const [tableIndex, table] of page.tables.entries()) {
       for (const cell of table.header?.cells ?? []) {
         if (cell.enabled === false) {
-          addConnection({ source: 'unbound', key: 'unbound' }, cell.svg_id, tableIndex, cell.svg_id)
+          addConnection({ source: 'unused', key: 'unused' }, cell.svg_id, tableIndex, cell.svg_id)
           continue
         }
         addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
       }
       for (const cell of table.cells) {
         if (cell.enabled === false) {
-          addConnection({ source: 'unbound', key: 'unbound' }, cell.svg_id, tableIndex, cell.svg_id)
+          addConnection({ source: 'unused', key: 'unused' }, cell.svg_id, tableIndex, cell.svg_id)
           continue
         }
         addConnection(toDataRef(cell.value, table.source || 'items'), cell.svg_id, tableIndex)
@@ -2066,15 +2098,15 @@ export function App() {
       }
     }
 
-    const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2, unbound: 3 }
-    const unboundRef: DataKeyRef = { source: 'unbound', key: 'unbound' }
-    const unboundKey = encodeDataKeyRef(unboundRef)
-    if (!nodes.has(unboundKey)) {
-      nodes.set(unboundKey, {
-        key: unboundKey,
-        ref: unboundRef,
-        label: 'Unbound',
-        type: 'unbound',
+    const typeOrder: Record<DataKeyRef['source'], number> = { meta: 0, items: 1, static: 2, unused: 3 }
+    const unusedRef: DataKeyRef = { source: 'unused', key: 'unused' }
+    const unusedKey = encodeDataKeyRef(unusedRef)
+    if (!nodes.has(unusedKey)) {
+      nodes.set(unusedKey, {
+        key: unusedKey,
+        ref: unusedRef,
+        label: 'Unused',
+        type: 'unused',
         missing: false,
       })
     }
@@ -2318,28 +2350,35 @@ export function App() {
           <div className="templates-actions">
             <button
               onClick={openImportDialog}
-              disabled={isLoading || importLoading}
+              disabled={isLoading || importLoading || detectLoading}
               className="btn-primary"
             >
               PDF取込
             </button>
             <button
+              onClick={handleDetect}
+              disabled={!template || isLoading || detectLoading || importLoading}
+              className="btn-primary"
+            >
+              {detectLoading ? '検出中...' : '検出'}
+            </button>
+            <button
               onClick={handleSave}
-              disabled={!template || isLoading}
+              disabled={!template || isLoading || detectLoading}
               className="btn-primary"
             >
               {isLoading ? '保存中...' : '保存'}
             </button>
             <button
               onClick={handleValidate}
-              disabled={!template || isLoading}
+              disabled={!template || isLoading || detectLoading}
               className="btn-secondary"
             >
               検証
             </button>
             <button
               onClick={handlePreview}
-              disabled={!template || isLoading}
+              disabled={!template || isLoading || detectLoading}
               className="btn-secondary"
             >
               プレビュー

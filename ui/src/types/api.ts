@@ -241,6 +241,12 @@ export interface TemplateImportPdfResponse {
   templateDir: string;
   files: string[];
   warnings: string[];
+  reindexed?: Array<{
+    file: string;
+    updated: boolean;
+    duplicateOldIds: string[];
+    mappingCount: number;
+  }>;
   pageSummary: {
     converted: number;
     adopted: number;

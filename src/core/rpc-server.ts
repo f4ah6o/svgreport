@@ -12,6 +12,7 @@ import { validateTemplateFull, type ValidationResult } from './template-validato
 import { generatePreview } from './preview-generator.js';
 import { generateTemplate } from './template-generator.js';
 import { importPdfTemplate } from './template-importer.js';
+import { reindexSvgTextIds } from './svg-id-reindexer.js';
 import { SVGREPORT_JOB_V0_1_SCHEMA, SVGREPORT_TEMPLATE_V0_2_SCHEMA } from './schema-registry.js';
 import { parseCsv, parseJsonToKv } from './datasource.js';
 const PACKAGE_VERSION = '2026.2.0';
@@ -666,74 +667,13 @@ export class RpcServer {
       return { error: { code: 'BAD_REQUEST', message: 'Missing required field: path' } };
     }
 
-    const idPrefix = typeof prefix === 'string' && prefix.length > 0 ? prefix : 'text_';
-
     try {
       const resolvedPath = this.resolvePath(inputPath);
-      const content = await fs.readFile(resolvedPath, 'utf-8');
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(content, 'image/svg+xml');
-      const svg = doc.documentElement;
-
-      if (!svg) {
-        return { error: { code: 'BAD_REQUEST', message: 'Invalid SVG file' } };
-      }
-
-      const allElements = Array.from(svg.getElementsByTagName('*'));
-      const textNodes = Array.from(svg.getElementsByTagName('text'));
-      const textSet = new Set<Element>(textNodes);
-      const existingIds = new Set<string>();
-
-      for (const el of allElements) {
-        if (textSet.has(el)) continue;
-        const id = el.getAttribute('id');
-        if (id) existingIds.add(id);
-      }
-
-      const oldIdCounts = new Map<string, number>();
-      for (const text of textNodes) {
-        const id = text.getAttribute('id');
-        if (!id) continue;
-        oldIdCounts.set(id, (oldIdCounts.get(id) || 0) + 1);
-      }
-
-      const duplicateOldIds = Array.from(oldIdCounts.entries())
-        .filter(([, count]) => count > 1)
-        .map(([id]) => id);
-
-      const mapping: Array<{ oldId: string | null; newId: string; domIndex: number }> = [];
-      let updated = false;
-
-      for (let i = 0; i < textNodes.length; i += 1) {
-        const text = textNodes[i];
-        const oldId = text.getAttribute('id');
-        const base = `${idPrefix}${i + 1}`;
-        let candidate = base;
-        let counter = 2;
-        while (existingIds.has(candidate)) {
-          candidate = `${base}_${counter}`;
-          counter += 1;
-        }
-        existingIds.add(candidate);
-        if (!oldId || oldId !== candidate) {
-          text.setAttribute('id', candidate);
-          updated = true;
-        }
-        mapping.push({ oldId: oldId || null, newId: candidate, domIndex: i + 1 });
-      }
-
-      if (updated) {
-        const serializer = new XMLSerializer();
-        const updatedContent = serializer.serializeToString(doc);
-        const tempPath = `${resolvedPath}.tmp`;
-        await fs.writeFile(tempPath, updatedContent, 'utf-8');
-        await fs.rename(tempPath, resolvedPath);
-      }
-
+      const result = await reindexSvgTextIds(resolvedPath, prefix);
       return {
-        updated,
-        mapping,
-        duplicateOldIds,
+        updated: result.updated,
+        mapping: result.mapping,
+        duplicateOldIds: result.duplicateOldIds,
         writtenPath: inputPath,
       };
     } catch (error) {
@@ -872,7 +812,14 @@ export class RpcServer {
       },
       warnings,
       texts: analysis.textElements.map((el, index) => {
-        const bbox = estimateTextBBox(el.content, el.x, el.y, el.fontSize, el.textAnchor);
+        const bbox = el.bbox
+          ? {
+              x: el.bbox.x,
+              y: el.bbox.y,
+              w: el.bbox.w,
+              h: el.bbox.h,
+            }
+          : estimateTextBBox(el.content, el.x, el.y, el.fontSize, el.textAnchor);
         return {
           index: index + 1,
           domIndex: el.domIndex,
@@ -935,31 +882,26 @@ export class RpcServer {
         };
       }
 
-      // Get text elements sorted by position (same as inspect-text)
-      const textNodes = Array.from(svg.getElementsByTagName('text'));
-      const textElements = textNodes.map((text) => ({
-        element: text,
-        x: parseFloat(text.getAttribute('x') || '0'),
-        y: parseFloat(text.getAttribute('y') || '0'),
-      }));
-
-      // Sort by Y, then X
-      textElements.sort((a, b) => {
-        if (Math.abs(a.y - b.y) < 5) return a.x - b.x;
-        return a.y - b.y;
-      });
-
-      // Assign sorted index (1-based) to match inspect-text ordering
-      const indexedTextElements = textElements.map((item, idx) => ({
-        ...item,
-        index: idx + 1,
-      }));
+      // Resolve set-id targets in the same order and indexing used by inspect-text.
+      const analysis = await extractTextElements(resolvedPath);
+      const textNodes = Array.from(svg.getElementsByTagName('text')) as Element[];
+      const useNodes = Array.from(svg.getElementsByTagName('use')) as Element[];
+      const targetNodes: Element[] = textNodes.length > 0 ? textNodes : useNodes;
+      const indexedTargets: Array<{ index: number; element: Element }> = [];
+      for (let idx = 0; idx < analysis.textElements.length; idx += 1) {
+        const item = analysis.textElements[idx];
+        if (!item.domIndex || item.domIndex < 1 || item.domIndex > targetNodes.length) {
+          continue;
+        }
+        const element = targetNodes[item.domIndex - 1];
+        indexedTargets.push({ index: idx + 1, element });
+      }
 
       // Assign IDs
       let updated = false;
       for (const assignment of assignments) {
         if (assignment.selector.byIndex) {
-          const target = indexedTextElements.find(t => t.index === assignment.selector.byIndex);
+          const target = indexedTargets.find(t => t.index === assignment.selector.byIndex);
           if (target) {
             target.element.setAttribute('id', assignment.id);
             updated = true;
@@ -1296,6 +1238,7 @@ export class RpcServer {
         files: result.files.map(file => path.relative(this.root, file)),
         warnings: result.warnings,
         pageSummary: result.pageSummary,
+        reindexed: result.reindexed,
         conversion: {
           engine: result.conversion.engine,
           quality: result.conversion.quality,

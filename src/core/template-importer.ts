@@ -9,6 +9,7 @@ import type { TemplateConfig } from '../types/index.js';
 import { SVGReportError } from '../types/index.js';
 import type { ConversionResult } from './pdf-converter.js';
 import { convertPdfToSvg } from './pdf-converter.js';
+import { reindexSvgTextIds } from './svg-id-reindexer.js';
 import type { NormalizationResult } from './svg-normalizer.js';
 import { normalizeSvgBatch } from './svg-normalizer.js';
 
@@ -27,6 +28,12 @@ export interface ImportPdfTemplateResult {
   warnings: string[];
   conversion: ConversionResult;
   normalization: NormalizationResult[];
+  reindexed: Array<{
+    file: string;
+    updated: boolean;
+    duplicateOldIds: string[];
+    mappingCount: number;
+  }>;
   pageSummary: {
     converted: number;
     adopted: number;
@@ -104,14 +111,31 @@ export async function importPdfTemplate(
     await fs.mkdir(templateDir);
 
     const copiedFiles: string[] = [];
+    const copiedSvgFiles: string[] = [];
     const firstTarget = path.join(templateDir, 'page-1.svg');
     await fs.copyFile(normalizedFiles[0], firstTarget);
     copiedFiles.push(firstTarget);
+    copiedSvgFiles.push(firstTarget);
 
     if (hasRepeat) {
       const repeatTarget = path.join(templateDir, 'page-follow.svg');
       await fs.copyFile(normalizedFiles[1], repeatTarget);
       copiedFiles.push(repeatTarget);
+      copiedSvgFiles.push(repeatTarget);
+    }
+
+    const reindexed: ImportPdfTemplateResult['reindexed'] = [];
+    for (const svgPath of copiedSvgFiles) {
+      const result = await reindexSvgTextIds(svgPath, 'text_');
+      reindexed.push({
+        file: path.basename(svgPath),
+        updated: result.updated,
+        duplicateOldIds: result.duplicateOldIds,
+        mappingCount: result.mapping.length,
+      });
+      if (result.duplicateOldIds.length > 0) {
+        warnings.push(`${path.basename(svgPath)} had duplicate text IDs and they were reindexed.`);
+      }
     }
 
     const templateJson: TemplateConfig = {
@@ -139,6 +163,7 @@ export async function importPdfTemplate(
       warnings,
       conversion,
       normalization,
+      reindexed,
       pageSummary: {
         converted: normalizedFiles.length,
         adopted,

@@ -1,0 +1,16 @@
+{
+  "schema": "svgreport-template/v0.2",
+  "template": {
+    "id": "invoice2",
+    "version": "v1"
+  },
+  "pages": [
+    {
+      "id": "first",
+      "svg": "page-1.svg",
+      "kind": "first",
+      "tables": []
+    }
+  ],
+  "fields": []
+}

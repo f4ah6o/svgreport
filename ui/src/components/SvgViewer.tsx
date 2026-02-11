@@ -64,7 +64,7 @@ export function SvgViewer({
   const showBindingElements = true
   const showNoBindingElements = true
   const [showGraphLines, setShowGraphLines] = useState(true)
-  const [showUnboundLines, setShowUnboundLines] = useState(true)
+  const [showUnusedLines, setShowUnusedLines] = useState(true)
   const [lineEditMode, setLineEditMode] = useState(false)
   const [bindMode, setBindMode] = useState(false)
   const [editLabelsMode, setEditLabelsMode] = useState(false)
@@ -175,7 +175,7 @@ export function SvgViewer({
   const bindingTypeBySvgId = useMemo(() => {
     const map = new Map<string, DataKeyRef['source']>()
     if (!graphConnections) return map
-    const priority: Record<DataKeyRef['source'], number> = { items: 3, meta: 2, static: 1, unbound: 0 }
+    const priority: Record<DataKeyRef['source'], number> = { items: 3, meta: 2, static: 1, unused: 0 }
     for (const connection of graphConnections) {
       const ref = decodeDataKeyRef(connection.key)
       const type = ref?.source || 'meta'
@@ -292,7 +292,8 @@ export function SvgViewer({
     if (isBound) {
       return { targetId: element.id, labelId: null, mode: 'value' as const }
     }
-    return null
+    // Allow width/line tuning even before binding exists.
+    return { targetId: element.id, labelId: null, mode: 'value' as const }
   }, [fitLabelById, labelIds, labelsInUse])
 
   const getAnchorForId = useCallback((id: string | null | undefined) => {
@@ -485,10 +486,10 @@ export function SvgViewer({
       if (isBound && !showBindingElements) return false
       if (!isBound && !showNoBindingElements) return false
       const bindingType = element.id ? bindingTypeBySvgId.get(element.id) || null : null
-      if (bindingType === 'unbound' && !showUnboundLines) return false
+      if (bindingType === 'unused' && !showUnusedLines) return false
       return true
     })
-  }, [elements, showBindingElements, showNoBindingElements, bindingSet, bindingTypeBySvgId, showUnboundLines])
+  }, [elements, showBindingElements, showNoBindingElements, bindingSet, bindingTypeBySvgId, showUnusedLines])
 
   const getDropPadding = useCallback((bbox: { w: number; h: number }) => {
     const base = Math.min(bbox.w, bbox.h)
@@ -863,7 +864,7 @@ export function SvgViewer({
     if (!graphConnections || graphConnections.length === 0) return []
     if (!graphContainerRect.width || !graphContainerRect.height) return []
     const getStyle = (type: DataKeyRef['source']) => {
-      if (type === 'unbound') return 'dotted'
+      if (type === 'unused') return 'dotted'
       if (type === 'items') return 'dashed'
       if (type === 'static') return 'longdash'
       return 'solid'
@@ -884,7 +885,7 @@ export function SvgViewer({
         : fallback!
       const ref = decodeDataKeyRef(connection.key)
       const type = ref?.source || 'meta'
-      if (type === 'unbound' && !showUnboundLines) continue
+      if (type === 'unused' && !showUnusedLines) continue
       lines.push({
         x1: start.x - graphContainerRect.left,
         y1: start.y - graphContainerRect.top,
@@ -897,7 +898,12 @@ export function SvgViewer({
       })
     }
     return lines
-  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphSvgAnchorRects, graphContainerRect, showUnboundLines])
+  }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphSvgAnchorRects, graphContainerRect, showUnusedLines])
+
+  const hasGraphConnections = Boolean(graphConnections && graphConnections.length > 0)
+  const canBindFromGraphMap = Boolean(graphMapNodes && graphMapNodes.length > 0)
+  const dynamicElementCount = elements.length
+  const canEditLabels = dynamicElementCount > 0
 
 
 
@@ -1010,7 +1016,7 @@ export function SvgViewer({
       <div className="svg-preview">
         <h3>帳票プレビュー</h3>
         <div className="svg-preview-actions">
-          {graphConnections && graphConnections.length > 0 && (
+          {hasGraphConnections && (
             <>
               <button
                 className="btn-secondary"
@@ -1029,35 +1035,40 @@ export function SvgViewer({
               </button>
               <button
                 className="btn-secondary"
-                onClick={() => setShowUnboundLines((prev) => !prev)}
-                disabled={!showGraphLines}
+                onClick={() => setShowUnusedLines((prev) => !prev)}
+                disabled={!showGraphLines || !hasGraphConnections}
               >
-                {showUnboundLines ? 'Hide Unbound Lines' : 'Show Unbound Lines'}
-              </button>
-              <button
-                className={`btn-secondary ${bindMode ? 'active' : ''}`}
-                onClick={() => {
-                  setBindMode((prev) => {
-                    const next = !prev
-                    setLineEditMode(next)
-                    if (next) {
-                      setTableDrawMode(false)
-                      setTableDragRect(null)
-                      setTableDragStart(null)
-                    }
-                    return next
-                  })
-                }}
-                disabled={!showGraphLines}
-              >
-                {bindMode ? 'Done Binding' : 'Bind Mode'}
+                {showUnusedLines ? 'Hide Unused Lines' : 'Show Unused Lines'}
               </button>
             </>
           )}
           <button
+            className={`btn-secondary ${bindMode ? 'active' : ''}`}
+            onClick={() => {
+              setBindMode((prev) => {
+                const next = !prev
+                setLineEditMode(next)
+                if (next) {
+                  setTableDrawMode(false)
+                  setTableDragRect(null)
+                  setTableDragStart(null)
+                  if (!showGraphLines) {
+                    setShowGraphLines(true)
+                  }
+                }
+                return next
+              })
+            }}
+            disabled={!canBindFromGraphMap}
+            title={canBindFromGraphMap ? undefined : 'No graph data nodes'}
+          >
+            {bindMode ? 'Done Binding' : 'Bind Mode'}
+          </button>
+          <button
             className={`btn-secondary ${editLabelsMode ? 'active' : ''}`}
             onClick={() => setEditLabelsMode((prev) => !prev)}
-            disabled={!graphMapNodes || graphMapNodes.length === 0}
+            disabled={!canEditLabels}
+            title={canEditLabels ? undefined : 'No dynamic elements'}
           >
             {editLabelsMode ? 'Done Labels' : 'Edit Labels'}
           </button>
@@ -1087,6 +1098,9 @@ export function SvgViewer({
                 : (tableDrawMode ? 'Cancel Table' : 'Add Table')}
             </button>
           )}
+        </div>
+        <div className="svg-overlay-summary">
+          動的要素: {dynamicElementCount} 件（全テキスト）
         </div>
 
         {loading && <div className="loading">帳票を読み込み中...</div>}
@@ -1206,7 +1220,7 @@ export function SvgViewer({
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
                       >
-                        {element.index}
+                        {element.id || element.suggestedId || element.index}
                       </text>
                     </g>
                     )
@@ -1285,7 +1299,7 @@ export function SvgViewer({
                         onDragOver={handleDragOver}
                         onDrop={handleDrop(element)}
                       >
-                        {element.index}
+                        {element.id || element.suggestedId || element.index}
                       </text>
                     </g>
                   ))}

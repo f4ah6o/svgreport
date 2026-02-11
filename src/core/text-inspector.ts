@@ -18,6 +18,12 @@ export interface TextElementInfo {
   suggestedId: string;
   isPath: boolean;
   parentGroup?: string;
+  bbox?: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  };
 }
 
 export interface SvgTextAnalysis {
@@ -89,57 +95,55 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
   const warnings: string[] = [];
   let fontSizeSum = 0;
   let fontSizeCount = 0;
+  let glyphPathCount = 0;
 
-  for (let i = 0; i < textNodes.length; i += 1) {
-    const text = textNodes[i];
-    const id = text.getAttribute('id');
-    const textContent = text.textContent?.trim() || '';
-    const localX = parseFloat(text.getAttribute('x') || '0');
-    const localY = parseFloat(text.getAttribute('y') || '0');
-    const textAnchor = text.getAttribute('text-anchor');
-    const fontSize = text.getAttribute('font-size');
-    const fontFamily = text.getAttribute('font-family');
+  if (textNodes.length > 0) {
+    for (let i = 0; i < textNodes.length; i += 1) {
+      const text = textNodes[i];
+      const id = text.getAttribute('id');
+      const textContent = text.textContent?.trim() || '';
+      const localX = parseFloat(text.getAttribute('x') || '0');
+      const localY = parseFloat(text.getAttribute('y') || '0');
+      const textAnchor = text.getAttribute('text-anchor');
+      const fontSize = text.getAttribute('font-size');
+      const fontFamily = text.getAttribute('font-family');
 
-    // Find parent group
-    let parentGroup: string | undefined;
-    let parent = text.parentNode;
-    while (parent && parent.nodeType === 1) {
-      const el = parent as Element;
-      if (el.tagName === 'g') {
-        const gid = el.getAttribute('id');
-        if (gid) {
-          parentGroup = gid;
-          break;
-        }
+      // Calculate font size
+      const fontSizeNum = resolveFontSize(text, fontSize, classFontSizes);
+      if (fontSizeNum) {
+        fontSizeSum += fontSizeNum;
+        fontSizeCount++;
       }
-      parent = parent.parentNode;
+
+      // Generate suggested ID
+      const matrix = getCumulativeTransformMatrix(text);
+      const point = applyMatrixToPoint(matrix, localX, localY);
+      const suggestedId = generateSuggestedId(textContent, point.x, point.y);
+
+      textElements.push({
+        id,
+        content: textContent,
+        x: point.x,
+        y: point.y,
+        domIndex: i + 1,
+        textAnchor,
+        fontSize: fontSizeNum,
+        fontFamily,
+        suggestedId,
+        isPath: false,
+        parentGroup: findParentGroupId(text),
+      });
     }
-
-    // Calculate font size
-    const fontSizeNum = resolveFontSize(text, fontSize, classFontSizes);
-    if (fontSizeNum) {
-      fontSizeSum += fontSizeNum;
-      fontSizeCount++;
+  } else {
+    const fallback = extractGlyphUseElements(svg, warnings);
+    glyphPathCount = fallback.glyphCount;
+    textElements.push(...fallback.elements);
+    for (const el of fallback.elements) {
+      if (el.fontSize) {
+        fontSizeSum += el.fontSize;
+        fontSizeCount += 1;
+      }
     }
-
-    // Generate suggested ID
-    const matrix = getCumulativeTransformMatrix(text);
-    const point = applyMatrixToPoint(matrix, localX, localY);
-    const suggestedId = generateSuggestedId(textContent, point.x, point.y);
-
-    textElements.push({
-      id,
-      content: textContent,
-      x: point.x,
-      y: point.y,
-      domIndex: i + 1,
-      textAnchor,
-      fontSize: fontSizeNum,
-      fontFamily,
-      suggestedId,
-      isPath: false,
-      parentGroup,
-    });
   }
 
   // Check for path-based text (text converted to paths - common in PDF conversion)
@@ -155,7 +159,9 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
     }
   }
 
-  if (pathTextCount > 0) {
+  pathTextCount = Math.max(pathTextCount, glyphPathCount);
+
+  if (pathTextCount > 0 && glyphPathCount === 0) {
     warnings.push(`Found ${pathTextCount} potential text-as-path elements. These may need to be converted to <text> elements for data binding.`);
   }
 
@@ -188,6 +194,173 @@ export async function extractTextElements(svgPath: string): Promise<SvgTextAnaly
     },
     warnings,
   };
+}
+
+function extractGlyphUseElements(svg: Element, warnings: string[]): { elements: TextElementInfo[]; glyphCount: number } {
+  const useNodes = Array.from(svg.getElementsByTagName('use'));
+  const glyphUses: Array<{
+    element: Element;
+    id: string | null;
+    domIndex: number;
+    x: number;
+    y: number;
+    parentGroup?: string;
+  }> = [];
+
+  for (let i = 0; i < useNodes.length; i += 1) {
+    const use = useNodes[i];
+    const href = getUseHref(use);
+    if (!href || !/^#glyph-/i.test(href)) continue;
+
+    const localX = parseFloat(use.getAttribute('x') || '0');
+    const localY = parseFloat(use.getAttribute('y') || '0');
+    const matrix = getCumulativeTransformMatrix(use);
+    const point = applyMatrixToPoint(matrix, localX, localY);
+
+    glyphUses.push({
+      element: use,
+      id: use.getAttribute('id'),
+      domIndex: i + 1,
+      x: point.x,
+      y: point.y,
+      parentGroup: findParentGroupId(use),
+    });
+  }
+
+  if (glyphUses.length === 0) {
+    return { elements: [], glyphCount: 0 };
+  }
+
+  warnings.push(`No <text> elements found. Fallback detected ${glyphUses.length} glyph nodes from <use> references.`);
+
+  const sortedByY = [...glyphUses].sort((a, b) => {
+    if (Math.abs(a.y - b.y) < 0.01) return a.x - b.x;
+    return a.y - b.y;
+  });
+
+  const lines: Array<{ y: number; glyphs: typeof glyphUses }> = [];
+  const yTolerance = 1.5;
+  for (const glyph of sortedByY) {
+    const lastLine = lines[lines.length - 1];
+    if (!lastLine || Math.abs(glyph.y - lastLine.y) > yTolerance) {
+      lines.push({ y: glyph.y, glyphs: [glyph] });
+      continue;
+    }
+    lastLine.glyphs.push(glyph);
+    const n = lastLine.glyphs.length;
+    lastLine.y = ((lastLine.y * (n - 1)) + glyph.y) / n;
+  }
+
+  const elements: TextElementInfo[] = [];
+
+  for (const line of lines) {
+    const glyphs = [...line.glyphs].sort((a, b) => a.x - b.x);
+    if (glyphs.length === 0) continue;
+
+    const gaps: number[] = [];
+    for (let i = 1; i < glyphs.length; i += 1) {
+      const gap = glyphs[i].x - glyphs[i - 1].x;
+      if (gap > 0.1) gaps.push(gap);
+    }
+    const typicalStep = computeTypicalStep(gaps);
+    const splitGap = Math.max(12, typicalStep * 1.8, typicalStep + 5);
+
+    const runs: Array<typeof glyphs> = [];
+    let currentRun: typeof glyphs = [];
+    for (const glyph of glyphs) {
+      if (currentRun.length === 0) {
+        currentRun = [glyph];
+        continue;
+      }
+      const prev = currentRun[currentRun.length - 1];
+      const gap = glyph.x - prev.x;
+      if (gap > splitGap) {
+        runs.push(currentRun);
+        currentRun = [glyph];
+      } else {
+        currentRun.push(glyph);
+      }
+    }
+    if (currentRun.length > 0) runs.push(currentRun);
+
+    for (const run of runs) {
+      const first = run[0];
+      const last = run[run.length - 1];
+      const runGaps: number[] = [];
+      for (let i = 1; i < run.length; i += 1) {
+        const gap = run[i].x - run[i - 1].x;
+        if (gap > 0.1) runGaps.push(gap);
+      }
+      const runStep = computeTypicalStep(runGaps.length > 0 ? runGaps : [typicalStep]);
+      const fontSize = clamp(runStep * 1.8, 8, 24);
+      const width = Math.max(runStep, (last.x - first.x) + runStep);
+      const height = Math.max(6, fontSize * 1.2);
+      const suggestedId = generateSuggestedId('', first.x, first.y);
+
+      elements.push({
+        id: first.id,
+        content: '',
+        x: first.x,
+        y: first.y,
+        domIndex: first.domIndex,
+        textAnchor: 'start',
+        fontSize,
+        fontFamily: null,
+        suggestedId,
+        isPath: true,
+        parentGroup: first.parentGroup,
+        bbox: {
+          x: first.x,
+          y: first.y - fontSize,
+          w: width,
+          h: height,
+        },
+      });
+    }
+  }
+
+  warnings.push(`Grouped glyph nodes into ${elements.length} candidate text segments.`);
+  return { elements, glyphCount: glyphUses.length };
+}
+
+function getUseHref(use: Element): string | null {
+  return use.getAttribute('href') || use.getAttribute('xlink:href');
+}
+
+function findParentGroupId(element: Element): string | undefined {
+  let parent = element.parentNode;
+  while (parent && parent.nodeType === 1) {
+    const el = parent as Element;
+    if (el.tagName === 'g') {
+      const gid = el.getAttribute('id');
+      if (gid) return gid;
+    }
+    parent = parent.parentNode;
+  }
+  return undefined;
+}
+
+function computeTypicalStep(values: number[]): number {
+  const normalized = values
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
+
+  if (normalized.length === 0) return 6;
+
+  const sampleCount = Math.max(1, Math.floor((normalized.length + 1) / 2));
+  const sample = normalized.slice(0, sampleCount);
+  return median(sample);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const middle = Math.floor(values.length / 2);
+  if (values.length % 2 === 1) return values[middle];
+  return (values[middle - 1] + values[middle]) / 2;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function resolveFontSize(text: Element, inlineFontSize: string | null, classFontSizes: Map<string, number>): number | null {

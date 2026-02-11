@@ -20,5 +20,15 @@ export default defineConfig([
     },
     platform: 'node',
     target: 'node24'
+  },
+  {
+    input: 'src/core/text-inspector.test.ts',
+    output: {
+      file: 'dist/core/text-inspector.test.js',
+      format: 'esm',
+      sourcemap: true
+    },
+    platform: 'node',
+    target: 'node24'
   }
 ])

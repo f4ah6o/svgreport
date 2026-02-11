@@ -1,5 +1,5 @@
 export type DataKeyRef = {
-  source: 'meta' | 'items' | 'static' | 'unbound';
+  source: 'meta' | 'items' | 'static' | 'unused';
   key: string;
 };
 
@@ -12,16 +12,19 @@ export function encodeDataKeyRef(ref: DataKeyRef): string {
 export function decodeDataKeyRef(payload: string | null): DataKeyRef | null {
   if (!payload) return null;
   try {
-    const parsed = JSON.parse(payload) as DataKeyRef;
+    const parsed = JSON.parse(payload) as { source?: string; key?: unknown };
     if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.key !== 'string') return null;
+    if (parsed.source === 'unbound') {
+      return { source: 'unused', key: parsed.key };
+    }
     if (
-      (parsed.source === 'meta'
-        || parsed.source === 'items'
-        || parsed.source === 'static'
-        || parsed.source === 'unbound')
-      && typeof parsed.key === 'string'
+      parsed.source === 'meta'
+      || parsed.source === 'items'
+      || parsed.source === 'static'
+      || parsed.source === 'unused'
     ) {
-      return parsed;
+      return { source: parsed.source, key: parsed.key };
     }
     return null;
   } catch {
