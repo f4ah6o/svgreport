@@ -570,6 +570,16 @@
   min-width: 0;
 }
 
+.svg-preview-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  padding: 0.35rem 0 0.4rem;
+  margin-bottom: 0.2rem;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95));
+  border-bottom: 1px solid #e2e8f0;
+}
+
 .svg-path {
   font-size: 0.875rem;
   color: #555;
@@ -577,15 +587,27 @@
 }
 
 .svg-preview-actions {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
   align-items: center;
 }
 
+.svg-preview-mode-actions {
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.svg-preview-actions-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .svg-preview-zoom {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.75rem;
@@ -619,6 +641,15 @@
 }
 
 .svg-preview-actions .btn-secondary {
+  padding: 0.35rem 0.65rem;
+  border: none;
+  border-radius: 4px;
+  background: #95a5a6;
+  color: #fff;
+  cursor: pointer;
+}
+
+.svg-preview-mode-actions .btn-secondary {
   padding: 0.35rem 0.65rem;
   border: none;
   border-radius: 4px;

@@ -866,6 +866,13 @@ export function SvgViewer({
   }, [graphConnections, graphDataAnchors, graphSvgAnchors, graphSvgAnchorRects, graphContainerRect, showUnusedLines])
 
   const hasGraphConnections = Boolean(graphConnections && graphConnections.length > 0)
+  const hasUnusedConnections = useMemo(() => {
+    if (!graphConnections || graphConnections.length === 0) return false
+    return graphConnections.some((connection) => {
+      const ref = decodeDataKeyRef(connection.key)
+      return ref?.source === 'unused'
+    })
+  }, [graphConnections])
   const canBindFromGraphMap = Boolean(graphMapNodes && graphMapNodes.length > 0)
   const dynamicElementCount = elements.length
   const canEditLabels = dynamicElementCount > 0
@@ -1010,166 +1017,195 @@ export function SvgViewer({
     <div className="svg-viewer">
       <div className="svg-preview">
         <h3>帳票プレビュー</h3>
-        <div className="svg-preview-actions">
-          {hasGraphConnections && (
-            <>
+        <div className="svg-preview-toolbar">
+          <div className="svg-preview-actions">
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                setShowGraphLines((prev) => {
+                  const next = !prev
+                  if (!next) {
+                    setLineEditMode(false)
+                    setBindMode(false)
+                    setUnuseMode(false)
+                    setUnuseSelection(new Set())
+                    setTableSelectMode(false)
+                    setTableSelection(new Set())
+                  }
+                  return next
+                })
+              }}
+              disabled={!hasGraphConnections}
+              title={hasGraphConnections ? undefined : 'No bindings'}
+            >
+              {showGraphLines ? 'Hide Binding Lines' : 'Show Binding Lines'}
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => setShowUnusedLines((prev) => !prev)}
+              disabled={!hasUnusedConnections}
+              title={hasUnusedConnections ? undefined : 'No unused bindings'}
+            >
+              {showUnusedLines ? 'Hide Unused Lines' : 'Show Unused Lines'}
+            </button>
+            <button
+              className={`btn-secondary ${bindMode ? 'active' : ''}`}
+              onClick={() => {
+                setBindMode((prev) => {
+                  const next = !prev
+                  // Bind mode prioritizes drag/drop over line-hit interactions.
+                  setLineEditMode(false)
+                  if (next) {
+                    setUnuseMode(false)
+                    setTableSelectMode(false)
+                    setTableSelection(new Set())
+                    if (!showGraphLines) {
+                      setShowGraphLines(true)
+                    }
+                  }
+                  return next
+                })
+              }}
+              disabled={!canBindFromGraphMap}
+              title={canBindFromGraphMap ? undefined : 'No graph data nodes'}
+            >
+              {bindMode ? 'Done Binding' : 'Bind Mode'}
+            </button>
+            <button
+              className={`btn-secondary ${unuseMode ? 'active' : ''}`}
+              onClick={() => {
+                setUnuseMode((prev) => {
+                  const next = !prev
+                  if (next) {
+                    setBindMode(false)
+                    setLineEditMode(false)
+                    setTableSelectMode(false)
+                    setTableSelection(new Set())
+                  } else {
+                    setUnuseSelection(new Set())
+                  }
+                  return next
+                })
+              }}
+              disabled={!canEditLabels}
+              title={canEditLabels ? undefined : 'No dynamic elements'}
+            >
+              {unuseMode ? 'Done Unuse' : 'Unuse Mode'}
+            </button>
+            <button
+              className={`btn-secondary ${editLabelsMode ? 'active' : ''}`}
+              onClick={() => setEditLabelsMode((prev) => !prev)}
+              disabled={!canEditLabels}
+              title={canEditLabels ? undefined : 'No dynamic elements'}
+            >
+              {editLabelsMode ? 'Done Labels' : 'Edit Labels'}
+            </button>
+            {editLabelsMode && (
+              <span className="edit-labels-hint">Drag horizontally to set width, vertically to set lines (Shift = width only)</span>
+            )}
+            {onCreateTableFromSelection && (
               <button
-                className="btn-secondary"
+                className={`btn-secondary ${tableSelectMode ? 'active' : ''}`}
                 onClick={() => {
-                  setShowGraphLines((prev) => {
+                  setTableSelectMode((prev) => {
                     const next = !prev
-                    if (!next) {
+                    if (next) {
                       setLineEditMode(false)
                       setBindMode(false)
                       setUnuseMode(false)
-                      setUnuseSelection(new Set())
-                      setTableSelectMode(false)
+                    } else {
                       setTableSelection(new Set())
                     }
                     return next
                   })
                 }}
               >
-                {showGraphLines ? 'Hide Binding Lines' : 'Show Binding Lines'}
+                {tableEditTargetIndex !== null
+                  ? (tableSelectMode ? 'Done Table Update Mode' : `Update Table #${tableEditTargetIndex + 1}`)
+                  : (tableSelectMode ? 'Done Add Table Mode' : 'Add Table')}
               </button>
-              <button
-                className="btn-secondary"
-                onClick={() => setShowUnusedLines((prev) => !prev)}
-                disabled={!showGraphLines || !hasGraphConnections}
-              >
-                {showUnusedLines ? 'Hide Unused Lines' : 'Show Unused Lines'}
-              </button>
-            </>
-          )}
-          <button
-            className={`btn-secondary ${bindMode ? 'active' : ''}`}
-            onClick={() => {
-              setBindMode((prev) => {
-                const next = !prev
-                // Bind mode prioritizes drag/drop over line-hit interactions.
-                setLineEditMode(false)
-                if (next) {
-                  setUnuseMode(false)
-                  setTableSelectMode(false)
-                  setTableSelection(new Set())
-                  if (!showGraphLines) {
-                    setShowGraphLines(true)
-                  }
-                }
-                return next
-              })
-            }}
-            disabled={!canBindFromGraphMap}
-            title={canBindFromGraphMap ? undefined : 'No graph data nodes'}
-            >
-              {bindMode ? 'Done Binding' : 'Bind Mode'}
-          </button>
-          <button
-            className={`btn-secondary ${unuseMode ? 'active' : ''}`}
-            onClick={() => {
-              setUnuseMode((prev) => {
-                const next = !prev
-                if (next) {
-                  setBindMode(false)
-                  setLineEditMode(false)
-                  setTableSelectMode(false)
-                  setTableSelection(new Set())
-                } else {
-                  setUnuseSelection(new Set())
-                }
-                return next
-              })
-            }}
-            disabled={!canEditLabels}
-            title={canEditLabels ? undefined : 'No dynamic elements'}
-          >
-            {unuseMode ? 'Done Unuse' : 'Unuse Mode'}
-          </button>
-          {unuseMode && unuseSelection.size > 0 && (
-            <button
-              className="btn-secondary"
-              onClick={() => {
-                if (!onUnuseElements) return
-                const selectedElements = elements.filter((el) => unuseSelection.has(el.index))
-                if (selectedElements.length === 0) return
-                onUnuseElements(selectedElements)
-                setUnuseSelection(new Set())
-              }}
-            >
-              Confirm Unuse ({unuseSelection.size})
-            </button>
-          )}
-          <button
-            className={`btn-secondary ${editLabelsMode ? 'active' : ''}`}
-            onClick={() => setEditLabelsMode((prev) => !prev)}
-            disabled={!canEditLabels}
-            title={canEditLabels ? undefined : 'No dynamic elements'}
-          >
-            {editLabelsMode ? 'Done Labels' : 'Edit Labels'}
-          </button>
-          {editLabelsMode && (
-            <span className="edit-labels-hint">Drag horizontally to set width, vertically to set lines (Shift = width only)</span>
-          )}
-          <div className="svg-preview-zoom">
-            <span>A4</span>
-            <button className="btn-secondary" onClick={() => adjustZoom(-0.1)}>-</button>
-            <button className="btn-secondary" onClick={() => setSvgZoom(1)}>Fit</button>
-            <button className="btn-secondary" onClick={() => adjustZoom(0.1)}>+</button>
-            <span className="svg-preview-zoom-value">{Math.round(svgZoom * 100)}%</span>
+            )}
+            <div className="svg-preview-actions-spacer" />
+            <div className="svg-preview-zoom">
+              <span>A4</span>
+              <button className="btn-secondary" onClick={() => adjustZoom(-0.1)}>-</button>
+              <button className="btn-secondary" onClick={() => setSvgZoom(1)}>Fit</button>
+              <button className="btn-secondary" onClick={() => adjustZoom(0.1)}>+</button>
+              <span className="svg-preview-zoom-value">{Math.round(svgZoom * 100)}%</span>
+            </div>
           </div>
-          {onCreateTableFromSelection && (
-            <button
-              className={`btn-secondary ${tableSelectMode ? 'active' : ''}`}
-              onClick={() => {
-                setTableSelectMode((prev) => {
-                  const next = !prev
-                  if (next) {
-                    setLineEditMode(false)
-                    setBindMode(false)
+          <div className="svg-preview-mode-actions">
+            {unuseMode && (
+              <>
+                <button
+                  className="btn-secondary"
+                  disabled={unuseSelection.size === 0}
+                  onClick={() => {
+                    if (!onUnuseElements) return
+                    const selectedElements = elements.filter((el) => unuseSelection.has(el.index))
+                    if (selectedElements.length === 0) return
+                    onUnuseElements(selectedElements)
+                    setUnuseSelection(new Set())
                     setUnuseMode(false)
-                  } else {
+                  }}
+                >
+                  Confirm Unuse ({unuseSelection.size})
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setUnuseSelection(new Set())
+                    setUnuseMode(false)
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {onCreateTableFromSelection && tableSelectMode && (
+              <>
+                <button
+                  className="btn-secondary"
+                  disabled={tableSelection.size === 0}
+                  onClick={() => {
+                    const selectedElements = elements.filter((el) => tableSelection.has(el.index))
+                    if (selectedElements.length === 0) return
+                    let minX = Infinity
+                    let minY = Infinity
+                    let maxX = -Infinity
+                    let maxY = -Infinity
+                    for (const element of selectedElements) {
+                      const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
+                      minX = Math.min(minX, bbox.x)
+                      minY = Math.min(minY, bbox.y)
+                      maxX = Math.max(maxX, bbox.x + bbox.w)
+                      maxY = Math.max(maxY, bbox.y + bbox.h)
+                    }
+                    const rect = {
+                      x: minX,
+                      y: minY,
+                      w: Math.max(1, maxX - minX),
+                      h: Math.max(1, maxY - minY),
+                    }
+                    onCreateTableFromSelection(rect, selectedElements)
                     setTableSelection(new Set())
-                  }
-                  return next
-                })
-              }}
-            >
-              {tableEditTargetIndex !== null
-                ? (tableSelectMode ? 'Cancel Table Update' : `Update Table #${tableEditTargetIndex + 1}`)
-                : (tableSelectMode ? 'Cancel Table' : 'Add Table')}
-            </button>
-          )}
-          {onCreateTableFromSelection && tableSelectMode && tableSelection.size > 0 && (
-            <button
-              className="btn-secondary"
-              onClick={() => {
-                const selectedElements = elements.filter((el) => tableSelection.has(el.index))
-                if (selectedElements.length === 0) return
-                let minX = Infinity
-                let minY = Infinity
-                let maxX = -Infinity
-                let maxY = -Infinity
-                for (const element of selectedElements) {
-                  const bbox = resolvedBBoxByIndex.get(element.index) || element.bbox
-                  minX = Math.min(minX, bbox.x)
-                  minY = Math.min(minY, bbox.y)
-                  maxX = Math.max(maxX, bbox.x + bbox.w)
-                  maxY = Math.max(maxY, bbox.y + bbox.h)
-                }
-                const rect = {
-                  x: minX,
-                  y: minY,
-                  w: Math.max(1, maxX - minX),
-                  h: Math.max(1, maxY - minY),
-                }
-                onCreateTableFromSelection(rect, selectedElements)
-                setTableSelection(new Set())
-                setTableSelectMode(false)
-              }}
-            >
-              Confirm Table ({tableSelection.size})
-            </button>
-          )}
+                    setTableSelectMode(false)
+                  }}
+                >
+                  Confirm Table ({tableSelection.size})
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setTableSelection(new Set())
+                    setTableSelectMode(false)
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="svg-overlay-summary">
           動的要素: {dynamicElementCount} 件（全テキスト）

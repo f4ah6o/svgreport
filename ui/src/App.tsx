@@ -2478,7 +2478,7 @@ export function App() {
                   validationWarningSvgIds={validationWarningSvgIds}
                   onRemoveGraphBinding={handleRemoveGraphBinding}
                   onUnuseElements={handleUnuseElements}
-                                    onSvgEdited={handleSvgEdited}
+                  onSvgEdited={handleSvgEdited}
                   onCreateTableFromSelection={async (_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)
@@ -2489,36 +2489,22 @@ export function App() {
                       return
                     }
 
-                    const headers = itemsData?.headers || []
-                    const guessKey = (el: TextElement) => {
-                      const candidates: string[] = []
-                      if (el.id) candidates.push(el.id)
-                      if (el.suggestedId && el.suggestedId !== el.id) candidates.push(el.suggestedId)
-                      if (el.id?.startsWith('item_')) candidates.push(el.id.replace(/^item_/, ''))
-                      if (el.suggestedId?.startsWith('item_')) candidates.push(el.suggestedId.replace(/^item_/, ''))
-                      const match = headers.find(h => candidates.includes(h))
-                      return match || candidates[0] || `col_${el.index}`
-                    }
-
                     const sorted = [...filtered].sort((a, b) => {
                       const ab = (a.bbox.x + a.bbox.w / 2) - (b.bbox.x + b.bbox.w / 2)
                       if (Math.abs(ab) > 1) return ab
                       return (a.bbox.y + a.bbox.h / 2) - (b.bbox.y + b.bbox.h / 2)
                     })
 
-                    const resolved = []
-                    for (const el of sorted) {
-                      const key = guessKey(el)
-                      const svgId = await ensureSvgIdForElement(el, `item_${key}`)
-                      if (svgId) {
-                        resolved.push({ svgId, key })
-                      }
+                    const cells: Array<{ svg_id: string; enabled: boolean; value: { type: 'static'; text: string } }> = []
+                    for (const [index, el] of sorted.entries()) {
+                      const svgId = await ensureSvgIdForElement(el, `cell_${index + 1}`)
+                      if (!svgId) continue
+                      cells.push({
+                        svg_id: svgId,
+                        enabled: true,
+                        value: makeStaticValue(''),
+                      })
                     }
-
-                    const cells = resolved.map((entry) => ({
-                      svg_id: entry.svgId,
-                      value: makeDataValue('items', entry.key),
-                    }))
 
                     if (cells.length === 0) {
                       setNotification('No SVG IDs resolved for table selection.')
