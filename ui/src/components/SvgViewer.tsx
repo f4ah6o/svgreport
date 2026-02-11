@@ -1243,7 +1243,8 @@ export function SvgViewer({
                     >
                   {showElementMap && overlayItems.map(({ element, bbox, listIndex, isBound, isHighlighted, bindingType, isValidationError, isValidationWarning, isFitLabel, dragTarget }) => {
                     const dragId = dragTarget?.targetId || null
-                    const labelDraggable = editLabelsMode && Boolean(dragTarget) && isFitLabel
+                    const canFitLabel = Boolean(dragTarget) && isFitLabel
+                    const labelDraggable = editLabelsMode && canFitLabel
                     const labelDragging = Boolean(dragId && labelDrag?.targetId === dragId)
                     const anchor = getAnchorForId(element.id)
                     const baseWidth = getWidthForId(element.id, bbox.w)
@@ -1269,12 +1270,14 @@ export function SvgViewer({
                       isUnuseTarget ? 'svg-overlay-rect-selected' : '',
                       isTableTarget ? 'svg-overlay-rect-selected' : '',
                     ].join(' ')
-                    const baseRect = labelDraggable ? displayRect : {
-                      x: bbox.x,
-                      y: bbox.y,
-                      w: Math.max(bbox.w, 6),
-                      h: Math.max(bbox.h, 6),
-                    }
+                    const baseRect = canFitLabel
+                      ? displayRect
+                      : {
+                          x: bbox.x,
+                          y: bbox.y,
+                          w: Math.max(bbox.w, 6),
+                          h: Math.max(bbox.h, 6),
+                        }
                     return (
                     <g key={`${element.index}-${element.id || 'noid'}`}>
                       <rect
