@@ -17,6 +17,7 @@ import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
 import { SvgViewer } from './components/SvgViewer'
 import { GraphEditor } from './components/GraphEditor'
+import { ConfigPanel } from './components/ConfigPanel'
 import { StatusBar } from './components/StatusBar'
 import type { DataKeyRef } from './types/data-key'
 import { encodeDataKeyRef, decodeDataKeyRef } from './types/data-key'
@@ -60,6 +61,7 @@ export function App() {
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
   const [graphTableIndex, setGraphTableIndex] = useState(0)
   const [graphEditTableIndex, setGraphEditTableIndex] = useState<number | null>(null)
+  const [editorMainTab, setEditorMainTab] = useState<'graph' | 'config'>('graph')
   const [notification, setNotification] = useState<string | null>(null)
   const [validationGroupsOpen, setValidationGroupsOpen] = useState<Record<'pages' | 'fields' | 'formatters' | 'other', boolean>>({
     pages: true,
@@ -2550,6 +2552,22 @@ export function App() {
         ) : null}
 
         <div className="templates-bar-right">
+          <div className="editor-mode-toggle">
+            <button
+              className={`btn-secondary ${editorMainTab === 'graph' ? 'active' : ''}`}
+              onClick={() => setEditorMainTab('graph')}
+              type="button"
+            >
+              GraphEditor
+            </button>
+            <button
+              className={`btn-secondary ${editorMainTab === 'config' ? 'active' : ''}`}
+              onClick={() => setEditorMainTab('config')}
+              type="button"
+            >
+              Config
+            </button>
+          </div>
           <div className="templates-actions">
             <button
               onClick={openImportDialog}
@@ -2600,27 +2618,11 @@ export function App() {
         )}
 
         {template ? (
+          editorMainTab === 'graph' ? (
           <div className="graph-pane">
             <GraphEditor
               template={template}
               selectedPageId={selectedPageId}
-              metaData={metaData}
-              itemsData={itemsData}
-              metaFileName={metaFileName}
-              itemsFileName={itemsFileName}
-              dataError={dataError}
-              dataLoading={dataLoading}
-              onLoadDemoData={handleLoadDemoData}
-              onMetaUpload={handleMetaUpload}
-              onItemsUpload={handleItemsUpload}
-              onMetaUrlLoad={handleMetaUrlLoad}
-              onItemsUrlLoad={handleItemsUrlLoad}
-              onClearMeta={clearMetaData}
-              onClearItems={clearItemsData}
-              metaScope={graphMetaScope}
-              onMetaScopeChange={setGraphMetaScope}
-              itemsTarget={graphItemsTarget}
-              onItemsTargetChange={setGraphItemsTarget}
               activeTableIndex={graphTableIndex}
               onActiveTableIndexChange={setGraphTableIndex}
               onUpdateTable={handleUpdateTableGraph}
@@ -2775,6 +2777,27 @@ export function App() {
                 />
             </div>
           </div>
+          ) : (
+            <ConfigPanel
+              metaData={metaData}
+              itemsData={itemsData}
+              metaFileName={metaFileName}
+              itemsFileName={itemsFileName}
+              dataError={dataError}
+              dataLoading={dataLoading}
+              onLoadDemoData={handleLoadDemoData}
+              onMetaUpload={handleMetaUpload}
+              onItemsUpload={handleItemsUpload}
+              onMetaUrlLoad={handleMetaUrlLoad}
+              onItemsUrlLoad={handleItemsUrlLoad}
+              onClearMeta={clearMetaData}
+              onClearItems={clearItemsData}
+              metaScope={graphMetaScope}
+              onMetaScopeChange={setGraphMetaScope}
+              itemsTarget={graphItemsTarget}
+              onItemsTargetChange={setGraphItemsTarget}
+            />
+          )
         ) : (
           <div className="welcome">
             <h2>帳票テンプレートエディタ</h2>

@@ -92,6 +92,17 @@
   display: block;
 }
 
+.config-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.config-pane .graph-section {
+  max-width: 980px;
+}
+
 .graph-preview-pane .svg-viewer {
   position: relative;
   z-index: 1;
