@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
+import type { ComponentChildren } from 'preact'
 import type { TextElement } from '../types/api'
 import { rpc } from '../lib/rpc'
 import type { BindingRef } from '../types/binding'
@@ -30,6 +31,7 @@ interface SvgViewerProps {
   onRemoveGraphBinding?: (connection: { key: string; svgId: string }) => void
   onUnuseElements?: (elements: TextElement[]) => void
   onSvgEdited?: () => void
+  pageTabs?: ComponentChildren
 }
 
 export function SvgViewer({
@@ -54,6 +56,7 @@ export function SvgViewer({
   onRemoveGraphBinding,
   onUnuseElements,
   onSvgEdited,
+  pageTabs,
 }: SvgViewerProps) {
   const svgContentRef = useRef<HTMLDivElement | null>(null)
   const svgContainerRef = useRef<HTMLDivElement | null>(null)
@@ -1254,6 +1257,8 @@ export function SvgViewer({
 
         {loading && <div className="loading">帳票を読み込み中...</div>}
         {error && <div className="error">{error}</div>}
+
+        {pageTabs ? <div className="preview-page-tabs">{pageTabs}</div> : null}
 
         {svgContent && (
           <div className="svg-container" ref={svgContainerRef}>

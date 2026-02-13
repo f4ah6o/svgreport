@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'preact/hooks'
 import type {
   TemplateConfig,
+  PageConfig,
+  FieldBinding,
+  TableCell,
+  FormatterDef,
   TextElement,
   ValidationResponse,
   ValidationError,
@@ -11,7 +15,6 @@ import type {
 } from './types/api'
 import type { BindingRef } from './types/binding'
 import { rpc } from './lib/rpc'
-import { TemplateEditor } from './components/TemplateEditor'
 import { SvgViewer } from './components/SvgViewer'
 import { GraphEditor } from './components/GraphEditor'
 import { StatusBar } from './components/StatusBar'
@@ -35,10 +38,8 @@ export function App() {
   const [selectedTextIndex, setSelectedTextIndex] = useState<number | null>(null)
   const [selectedText, setSelectedText] = useState<TextElement | null>(null)
   const [selectedBindingSvgId, setSelectedBindingSvgId] = useState<string | null>(null)
-  const [selectedBindingRef, setSelectedBindingRef] = useState<BindingRef | null>(null)
-  const [templatesBaseDir, setTemplatesBaseDir] = useState('templates')
+  const templatesBaseDir = 'templates'
   const [templatesList, setTemplatesList] = useState<TemplateListItem[]>([])
-  const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templatesError, setTemplatesError] = useState<string | null>(null)
   const [metaData, setMetaData] = useState<KVData | null>(null)
   const [itemsData, setItemsData] = useState<TableData | null>(null)
@@ -46,7 +47,6 @@ export function App() {
   const [itemsFileName, setItemsFileName] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const [dataLoading, setDataLoading] = useState(false)
-  const editorMode = 'graph' as const
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importTemplateId, setImportTemplateId] = useState('')
   const [importVersion, setImportVersion] = useState('v1')
@@ -60,7 +60,6 @@ export function App() {
   const [graphItemsTarget, setGraphItemsTarget] = useState<'body' | 'header'>('body')
   const [graphTableIndex, setGraphTableIndex] = useState(0)
   const [graphEditTableIndex, setGraphEditTableIndex] = useState<number | null>(null)
-  const [focusTarget, setFocusTarget] = useState<{ tab: 'pages' | 'fields' | 'formatters'; path: string } | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
   const [validationGroupsOpen, setValidationGroupsOpen] = useState<Record<'pages' | 'fields' | 'formatters' | 'other', boolean>>({
     pages: true,
@@ -68,8 +67,6 @@ export function App() {
     formatters: true,
     other: true,
   })
-  const [editorPaneWidth, setEditorPaneWidth] = useState(44)
-  const mainSplitRef = useRef<HTMLDivElement | null>(null)
   const autoFixIdsRef = useRef(false)
   const autoFixTableRef = useRef(false)
   const validationPathLogRef = useRef(new Set<string>())
@@ -103,12 +100,9 @@ export function App() {
       .then(async () => {
         setStatus('Connected to RPC server')
         try {
-          const workspace = await rpc.getWorkspace()
-          if (workspace.templatesDirDefault) {
-            setTemplatesBaseDir(workspace.templatesDirDefault)
-          }
+          await rpc.getWorkspace()
         } catch {
-          // Ignore workspace errors, allow manual base dir input
+          // Ignore workspace errors
         }
       })
       .catch(() => setStatus('Error: Cannot connect to RPC server'))
@@ -117,7 +111,6 @@ export function App() {
   useEffect(() => {
     const saved = loadSession()
     if (saved.templateDir) setTemplateDir(saved.templateDir)
-    if (saved.templatesBaseDir) setTemplatesBaseDir(saved.templatesBaseDir)
     if (saved.selectedPageId) setSelectedPageId(saved.selectedPageId)
   }, [])
 
@@ -308,34 +301,24 @@ export function App() {
     } finally {
       setImportLoading(false)
     }
-  }, [
-    importPdfFile,
-    importTemplateId,
-    importVersion,
-    templatesBaseDir,
-    importEngine,
-    loadTemplateByPath,
-    autoDetectTemplateElements,
-    closeImportDialog,
-  ])
+  }, [importPdfFile, importTemplateId, importVersion, importEngine, loadTemplateByPath, autoDetectTemplateElements, closeImportDialog])
 
   const refreshTemplatesList = useCallback(async (baseDir: string) => {
-    setTemplatesLoading(true)
     setTemplatesError(null)
 
     try {
+      // TODO: Template list retrieval should be routed via API-owned source selection
+      // instead of client-side base-dir wiring. Keep UI base-dir omitted and migrate
+      // this call path to server-configured template discovery.
       const result = await rpc.listTemplates(baseDir)
       setTemplatesList(result.templates)
     } catch (err) {
       setTemplatesError(err instanceof Error ? err.message : 'Failed to load templates list')
       setTemplatesList([])
-    } finally {
-      setTemplatesLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    if (!templatesBaseDir) return
     refreshTemplatesList(templatesBaseDir)
   }, [templatesBaseDir, refreshTemplatesList])
 
@@ -402,7 +385,6 @@ export function App() {
     try {
       const result = await rpc.validate(templateDir)
       setValidationResult(result)
-      setFocusTarget(null)
       setStatus(result.ok ? 'Validation passed' : `Validation failed: ${result.errors.length} errors`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Validation failed')
@@ -526,8 +508,171 @@ export function App() {
     await handleItemsUrlLoad(`${origin}/mock/items.csv`)
   }, [handleMetaUrlLoad, handleItemsUrlLoad])
 
-  const handleTemplateChange = useCallback((newTemplate: TemplateConfig) => {
-    setTemplate(newTemplate)
+  const handleUpdateTemplateMeta = useCallback((patch: Partial<TemplateConfig['template']>) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      return { ...prev, template: { ...prev.template, ...patch } }
+    })
+  }, [])
+
+  const handleUpdatePageGraph = useCallback((pageId: string, patch: Partial<PageConfig>) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => (page.id === pageId ? { ...page, ...patch } : page))
+      return { ...prev, pages }
+    })
+    if (patch.id && selectedPageId === pageId) {
+      setSelectedPageId(patch.id)
+    }
+  }, [selectedPageId])
+
+  const handleUpdatePageNumberGraph = useCallback((pageId: string, patch: Partial<NonNullable<PageConfig['page_number']>>) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => {
+        if (page.id !== pageId) return page
+        const page_number = { ...(page.page_number || { svg_id: '' }), ...patch }
+        if (!page_number.svg_id && !page_number.format) {
+          const { page_number: _removed, ...rest } = page
+          return rest as PageConfig
+        }
+        return { ...page, page_number }
+      })
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleRemoveHeaderCellGraph = useCallback((pageId: string, tableIndex: number, cellIndex: number) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const pages = prev.pages.map((page) => {
+        if (page.id !== pageId) return page
+        const tables = page.tables.map((table, idx) => {
+          if (idx !== tableIndex || !table.header?.cells) return table
+          const cells = table.header.cells.filter((_, i) => i !== cellIndex)
+          return cells.length > 0 ? { ...table, header: { cells } } : { ...table, header: undefined }
+        })
+        return { ...page, tables }
+      })
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleUpdateBindingRefGraph = useCallback((
+    ref: BindingRef,
+    patch: Partial<FieldBinding> | Partial<TableCell>
+  ) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      if (ref.kind === 'global-field') {
+        const fields = prev.fields.map((field, index) =>
+          index === ref.index ? { ...field, ...patch } : field
+        )
+        return { ...prev, fields }
+      }
+      const pages = prev.pages.map((page) => {
+        if (page.id !== ref.pageId) return page
+        if (ref.kind === 'page-field') {
+          const fields = (page.fields ?? []).map((field, index) =>
+            index === ref.index ? { ...field, ...patch } : field
+          )
+          return { ...page, fields }
+        }
+        if (ref.kind === 'table-header') {
+          const tables = page.tables.map((table, tableIndex) => {
+            if (tableIndex !== ref.tableIndex || !table.header?.cells) return table
+            const cells = table.header.cells.map((cell, cellIndex) =>
+              cellIndex === ref.cellIndex ? { ...cell, ...patch } : cell
+            )
+            return { ...table, header: { cells } }
+          })
+          return { ...page, tables }
+        }
+        if (ref.kind === 'table-cell') {
+          const tables = page.tables.map((table, tableIndex) => {
+            if (tableIndex !== ref.tableIndex) return table
+            const cells = table.cells.map((cell, cellIndex) =>
+              cellIndex === ref.cellIndex ? { ...cell, ...patch } : cell
+            )
+            return { ...table, cells }
+          })
+          return { ...page, tables }
+        }
+        return page
+      })
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleRemoveBindingRefGraph = useCallback((ref: BindingRef) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      if (ref.kind === 'global-field') {
+        return { ...prev, fields: prev.fields.filter((_, index) => index !== ref.index) }
+      }
+      const pages = prev.pages.map((page) => {
+        if (page.id !== ref.pageId) return page
+        if (ref.kind === 'page-field') {
+          return { ...page, fields: (page.fields ?? []).filter((_, index) => index !== ref.index) }
+        }
+        if (ref.kind === 'table-header') {
+          const tables = page.tables.map((table, tableIndex) => {
+            if (tableIndex !== ref.tableIndex || !table.header?.cells) return table
+            const cells = table.header.cells.filter((_, cellIndex) => cellIndex !== ref.cellIndex)
+            return cells.length > 0 ? { ...table, header: { cells } } : { ...table, header: undefined }
+          })
+          return { ...page, tables }
+        }
+        if (ref.kind === 'table-cell') {
+          const tables = page.tables.map((table, tableIndex) =>
+            tableIndex === ref.tableIndex
+              ? { ...table, cells: table.cells.filter((_, cellIndex) => cellIndex !== ref.cellIndex) }
+              : table
+          )
+          return { ...page, tables }
+        }
+        return page
+      })
+      return { ...prev, pages }
+    })
+  }, [])
+
+  const handleAddFormatterGraph = useCallback(() => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const formatters = prev.formatters || {}
+      const key = `formatter_${Object.keys(formatters).length + 1}`
+      return { ...prev, formatters: { ...formatters, [key]: { kind: 'date' } } }
+    })
+  }, [])
+
+  const handleUpdateFormatterGraph = useCallback((key: string, patch: FormatterDef) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const formatters = prev.formatters || {}
+      return { ...prev, formatters: { ...formatters, [key]: { ...formatters[key], ...patch } } }
+    })
+  }, [])
+
+  const handleRemoveFormatterGraph = useCallback((key: string) => {
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const formatters = { ...(prev.formatters || {}) }
+      delete formatters[key]
+      return { ...prev, formatters }
+    })
+  }, [])
+
+  const handleRenameFormatterGraph = useCallback((oldKey: string, newKey: string) => {
+    const key = newKey.trim()
+    if (!key || oldKey === key) return
+    setTemplate((prev) => {
+      if (!prev) return prev
+      const formatters = prev.formatters || {}
+      if (!formatters[oldKey] || formatters[key]) return prev
+      const { [oldKey]: target, ...rest } = formatters
+      return { ...prev, formatters: { ...rest, [key]: target } }
+    })
   }, [])
 
   const handlePageSelect = useCallback(async (pageId: string) => {
@@ -539,10 +684,6 @@ export function App() {
       setSelectedSvg(page.svg)
     }
   }, [template])
-
-  const handleSelectedPageIdChange = useCallback((pageId: string) => {
-    setSelectedPageId(pageId)
-  }, [])
 
   const applyReindexedSvgIds = useCallback((
     svgFile: string,
@@ -1005,8 +1146,8 @@ export function App() {
   }, [template, selectedPageId, selectedSvg])
 
   useEffect(() => {
-    saveSession({ templateDir, templatesBaseDir, selectedPageId: selectedPageId || undefined })
-  }, [templateDir, templatesBaseDir, selectedPageId])
+    saveSession({ templateDir, selectedPageId: selectedPageId || undefined })
+  }, [templateDir, selectedPageId])
 
   const handleSelectTextElement = useCallback((index: number) => {
     const element = svgElements[index]
@@ -1015,31 +1156,6 @@ export function App() {
     setSelectedText(element)
     setSelectedBindingSvgId(element.id || element.suggestedId || null)
   }, [svgElements])
-
-
-  const resolveBindingSvgId = useCallback((ref: BindingRef | null, templateRef: TemplateConfig | null): string | null => {
-    if (!ref || !templateRef) return null
-    if (ref.kind === 'global-field') {
-      return templateRef.fields[ref.index]?.svg_id ?? null
-    }
-    const page = templateRef.pages.find(p => p.id === ref.pageId)
-    if (!page) return null
-    if (ref.kind === 'page-field') {
-      return page.fields?.[ref.index]?.svg_id ?? null
-    }
-    if (ref.kind === 'table-header') {
-      return page.tables[ref.tableIndex]?.header?.cells?.[ref.cellIndex]?.svg_id ?? null
-    }
-    if (ref.kind === 'table-cell') {
-      return page.tables[ref.tableIndex]?.cells?.[ref.cellIndex]?.svg_id ?? null
-    }
-    return null
-  }, [])
-
-  const handleSelectBindingRef = useCallback((ref: BindingRef | null) => {
-    setSelectedBindingRef(ref)
-    setSelectedBindingSvgId(resolveBindingSvgId(ref, template))
-  }, [resolveBindingSvgId, template])
 
   const clearBindingsBySvgId = useCallback((svgId: string) => {
     if (!svgId) return
@@ -1486,7 +1602,6 @@ export function App() {
     if (!targetId) return
     void ensureFitAttrsForElement(element, targetId)
     updateBindingSvgId(ref, targetId)
-    setSelectedBindingRef(ref)
     setSelectedBindingSvgId(targetId)
     if (ref.kind === 'global-field' || ref.kind === 'page-field') {
       void ensureFitLabelForElement(element, targetId)
@@ -1667,32 +1782,6 @@ export function App() {
     })
   }, [template, selectedSvg, bindingSvgIds, svgElementsById, templateDir])
 
-  const handleAddTableGraph = useCallback((pageId: string) => {
-    setTemplate((prev) => {
-      if (!prev) return prev
-      const page = prev.pages.find(p => p.id === pageId)
-      const usedIds = new Set((page?.tables ?? []).map(t => t.row_group_id).filter(Boolean))
-      const base = `table_${(page?.tables.length ?? 0) + 1}_rows`
-      let rowGroupId = base
-      let counter = 2
-      while (usedIds.has(rowGroupId)) {
-        rowGroupId = `${base}_${counter}`
-        counter += 1
-      }
-      const newTable = {
-        source: 'items',
-        row_group_id: rowGroupId,
-        row_height_mm: 6,
-        rows_per_page: 10,
-        cells: [],
-      }
-      const pages = prev.pages.map((page) =>
-        page.id === pageId ? { ...page, tables: [...page.tables, newTable] } : page
-      )
-      return { ...prev, pages }
-    })
-  }, [])
-
   const handleUpdateTableGraph = useCallback((pageId: string, tableIndex: number, patch: Partial<TableBinding>) => {
     setTemplate((prev) => {
       if (!prev) return prev
@@ -1703,26 +1792,6 @@ export function App() {
       })
       return { ...prev, pages }
     })
-  }, [])
-
-  const handleDeleteTableGraph = useCallback((pageId: string, tableIndex: number) => {
-    setTemplate((prev) => {
-      if (!prev) return prev
-      const pages = prev.pages.map((page) => {
-        if (page.id !== pageId) return page
-        const tables = page.tables.filter((_, idx) => idx !== tableIndex)
-        return { ...page, tables }
-      })
-      return { ...prev, pages }
-    })
-    setGraphEditTableIndex((prev) => (prev === tableIndex ? null : prev))
-    setGraphTableIndex((prev) => (prev > 0 ? Math.max(0, prev - 1) : 0))
-    setNotification(`Deleted Table #${tableIndex + 1}`)
-  }, [])
-
-  const handleEditTableCells = useCallback((tableIndex: number) => {
-    setGraphEditTableIndex(tableIndex)
-    setNotification(`Draw to update Table #${tableIndex + 1}`)
   }, [])
 
   const handleMapDataToSvg = useCallback(async (dataRef: DataKeyRef, element: TextElement) => {
@@ -1976,81 +2045,6 @@ export function App() {
     })
     setSelectedBindingSvgId(svgId)
     setNotification(`Page number auto-set (${includeTotal ? 'with total' : 'current only'}).`)
-  }, [template])
-
-
-  const templateModels = useMemo(() => {
-    if (!template) return null
-
-    const tableSources = new Set<string>()
-    for (const page of template.pages) {
-      for (const table of page.tables) {
-        if (table.source) tableSources.add(table.source)
-      }
-    }
-
-    type ModelBucket = { kind: 'kv' | 'table'; fields: Set<string>; columns: Set<string> }
-    const buckets = new Map<string, ModelBucket>()
-
-    const ensureBucket = (source: string, kind: 'kv' | 'table') => {
-      if (!buckets.has(source)) {
-        buckets.set(source, { kind, fields: new Set<string>(), columns: new Set<string>() })
-      }
-      const bucket = buckets.get(source)!
-      if (bucket.kind !== kind && kind === 'table') {
-        bucket.kind = 'table'
-      }
-      return bucket
-    }
-
-    const addKey = (source: string, key: string, kindHint?: 'kv' | 'table') => {
-      if (!source || !key) return
-      const inferred = kindHint || (tableSources.has(source) || source === 'items' ? 'table' : 'kv')
-      const bucket = ensureBucket(source, inferred)
-      if (bucket.kind === 'table') {
-        bucket.columns.add(key)
-      } else {
-        bucket.fields.add(key)
-      }
-    }
-
-    const visitBinding = (binding: { value: { type: string; source?: string; key?: string } }) => {
-      if (binding.value.type !== 'data') return
-      addKey(binding.value.source || '', binding.value.key || '')
-    }
-
-    for (const field of template.fields) {
-      visitBinding(field)
-    }
-
-    for (const page of template.pages) {
-      for (const field of page.fields ?? []) {
-        visitBinding(field)
-      }
-      for (const table of page.tables) {
-        for (const cell of table.header?.cells ?? []) {
-          if (cell.value.type !== 'data') continue
-          const kind = cell.value.source === table.source ? 'table' : undefined
-          addKey(cell.value.source || '', cell.value.key || '', kind)
-        }
-        for (const cell of table.cells) {
-          if (cell.value.type !== 'data') continue
-          const kind = cell.value.source === table.source ? 'table' : undefined
-          addKey(cell.value.source || '', cell.value.key || '', kind)
-        }
-      }
-    }
-
-    const result: Record<string, { kind: 'kv' | 'table'; fields?: string[]; columns?: string[] }> = {}
-    for (const [source, bucket] of buckets.entries()) {
-      if (bucket.kind === 'table') {
-        result[source] = { kind: 'table', columns: Array.from(bucket.columns).sort() }
-      } else {
-        result[source] = { kind: 'kv', fields: Array.from(bucket.fields).sort() }
-      }
-    }
-
-    return result
   }, [template])
 
   const tableBindingGroups = useMemo(() => {
@@ -2342,15 +2336,8 @@ export function App() {
       setNotification(`This validation error is not auto-jumpable. Please read the message.${suffix}`)
       return
     }
-    const tab = normalized.startsWith('fields')
-      ? 'fields'
-      : normalized.startsWith('formatters')
-        ? 'formatters'
-        : 'pages'
-
     const svgId = resolveSvgIdFromPathForTemplate(template, selectedPageId, path)
     if (svgId) setSelectedBindingSvgId(svgId)
-    setFocusTarget({ tab, path: normalized })
   }, [template, selectedPageId])
 
   const handleCopyValidation = useCallback(async (payload: { code: string; path: string; file: string; message: string }) => {
@@ -2385,35 +2372,6 @@ export function App() {
     if (!confirm('Reset saved session?')) return
     clearSession()
     setNotification('Session reset.')
-  }, [])
-
-  const startResizeMain = useCallback((event: MouseEvent) => {
-    event.preventDefault()
-    const container = mainSplitRef.current
-    if (!container) return
-
-    const rect = container.getBoundingClientRect()
-    const startX = event.clientX
-    const startWidth = editorPaneWidth
-
-    const onMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX
-      const ratio = (dx / rect.width) * 100
-      const next = Math.min(65, Math.max(28, startWidth + ratio))
-      setEditorPaneWidth(next)
-    }
-
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [editorPaneWidth])
-
-  const clearFocusTarget = useCallback(() => {
-    setFocusTarget(null)
   }, [])
 
   useEffect(() => {
@@ -2519,6 +2477,14 @@ export function App() {
     }
   }, [validationResult, template, unmappedValidationErrors])
 
+  const templatesBarPage = useMemo(() => {
+    if (!template) return null
+    if (selectedPageId) {
+      return template.pages.find((p) => p.id === selectedPageId) || template.pages[0] || null
+    }
+    return template.pages[0] || null
+  }, [template, selectedPageId])
+
   return (
     <div className="app">
       <header className="app-header">
@@ -2536,18 +2502,53 @@ export function App() {
       </header>
 
       <div className="templates-bar">
-        <div className="templates-bar-left">
-          <label>テンプレートベース</label>
-          <input
-            type="text"
-            value={templatesBaseDir}
-            onChange={(e) => setTemplatesBaseDir((e.target as HTMLInputElement).value)}
-            placeholder="templates"
-          />
-          <button onClick={() => refreshTemplatesList(templatesBaseDir)} disabled={templatesLoading}>
-            {templatesLoading ? '読込中...' : '更新'}
-          </button>
-        </div>
+        {template ? (
+          <div className="templates-bar-left">
+            <div className="templates-bar-meta-fields">
+              <label>Template ID</label>
+              <input
+                type="text"
+                value={template.template.id}
+                onChange={(e) => handleUpdateTemplateMeta({ id: (e.target as HTMLInputElement).value })}
+              />
+              <label>Version</label>
+              <input
+                type="text"
+                value={template.template.version}
+                onChange={(e) => handleUpdateTemplateMeta({ version: (e.target as HTMLInputElement).value })}
+              />
+              <label>Schema</label>
+              <input type="text" value={template.schema} disabled />
+
+              {templatesBarPage ? (
+                <>
+                  <label>Page ID</label>
+                  <input
+                    type="text"
+                    value={templatesBarPage.id}
+                    onChange={(e) => handleUpdatePageGraph(templatesBarPage.id, { id: (e.target as HTMLInputElement).value })}
+                  />
+                  <label>SVG</label>
+                  <input
+                    type="text"
+                    value={templatesBarPage.svg}
+                    onChange={(e) => handleUpdatePageGraph(templatesBarPage.id, { svg: (e.target as HTMLInputElement).value })}
+                  />
+                  <label>Kind</label>
+                  <select
+                    value={templatesBarPage.kind}
+                    onChange={(e) => handleUpdatePageGraph(templatesBarPage.id, { kind: (e.target as HTMLSelectElement).value as PageConfig['kind'] })}
+                  >
+                    <option value="first">first</option>
+                    <option value="repeat">repeat</option>
+                  </select>
+                </>
+              ) : null}
+            </div>
+
+          </div>
+        ) : null}
+
         <div className="templates-bar-right">
           <div className="templates-actions">
             <button
@@ -2590,7 +2591,7 @@ export function App() {
         </div>
       </div>
 
-      <main className="app-main" ref={mainSplitRef}>
+      <main className="app-main">
         {error && (
           <div className="error-banner">
             {error}
@@ -2599,64 +2600,81 @@ export function App() {
         )}
 
         {template ? (
-          editorMode === 'graph' ? (
-            <div className="graph-pane">
-                <GraphEditor
-                  template={template}
-                  selectedPageId={selectedPageId}
-                  onSelectPageId={handlePageSelect}
-                  metaData={metaData}
-                  itemsData={itemsData}
-                  metaFileName={metaFileName}
-                  itemsFileName={itemsFileName}
-                  dataError={dataError}
-                  dataLoading={dataLoading}
-                  onLoadDemoData={handleLoadDemoData}
-                  onMetaUpload={handleMetaUpload}
-                  onItemsUpload={handleItemsUpload}
-                  onMetaUrlLoad={handleMetaUrlLoad}
-                  onItemsUrlLoad={handleItemsUrlLoad}
-                  onClearMeta={clearMetaData}
-                  onClearItems={clearItemsData}
-                  metaScope={graphMetaScope}
-                  onMetaScopeChange={setGraphMetaScope}
-                  itemsTarget={graphItemsTarget}
-                  onItemsTargetChange={setGraphItemsTarget}
-                  activeTableIndex={graphTableIndex}
-                  onActiveTableIndexChange={setGraphTableIndex}
-                  editTableIndex={graphEditTableIndex}
-                  onEditTableCells={handleEditTableCells}
-                  onCancelEditTable={() => setGraphEditTableIndex(null)}
-                  onDeleteTable={handleDeleteTableGraph}
-                  onAddTable={handleAddTableGraph}
-                  onUpdateTable={handleUpdateTableGraph}
-                  selectedSvgId={selectedBindingSvgId}
-                  onUnbindSvgId={handleUnbindSvgId}
-                  onAutoSetPageNumber={handleAutoSetPageNumber}
-                />
-              <div className="graph-preview-pane">
-                <SvgViewer
-                  svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
-                  svgReloadToken={svgReloadToken}
-                  elements={svgElements}
-                  templateDir={templateDir}
-                  bindingSvgIds={bindingSvgIds}
-                  tableBindingGroups={tableBindingGroups}
-                  tableConfigs={tableOverlayConfigs}
-                  selectedElementIndex={selectedTextIndex}
-                  highlightedBindingSvgId={selectedBindingSvgId}
-                  onSelectElement={handleSelectTextElement}
-                  onDropBinding={handleDropBindingOnElement}
-                  onDropData={handleMapDataToSvg}
-                  graphMapNodes={graphNodes}
-                  graphConnections={graphConnections}
-                  tableEditTargetIndex={graphEditTableIndex}
-                  validationSvgIds={validationSvgIds}
-                  validationWarningSvgIds={validationWarningSvgIds}
-                  onRemoveGraphBinding={handleRemoveGraphBinding}
-                  onUnuseElements={handleUnuseElements}
-                  onSvgEdited={handleSvgEdited}
-                  onCreateTableFromSelection={async (_rect, hitElements) => {
+          <div className="graph-pane">
+            <GraphEditor
+              template={template}
+              selectedPageId={selectedPageId}
+              metaData={metaData}
+              itemsData={itemsData}
+              metaFileName={metaFileName}
+              itemsFileName={itemsFileName}
+              dataError={dataError}
+              dataLoading={dataLoading}
+              onLoadDemoData={handleLoadDemoData}
+              onMetaUpload={handleMetaUpload}
+              onItemsUpload={handleItemsUpload}
+              onMetaUrlLoad={handleMetaUrlLoad}
+              onItemsUrlLoad={handleItemsUrlLoad}
+              onClearMeta={clearMetaData}
+              onClearItems={clearItemsData}
+              metaScope={graphMetaScope}
+              onMetaScopeChange={setGraphMetaScope}
+              itemsTarget={graphItemsTarget}
+              onItemsTargetChange={setGraphItemsTarget}
+              activeTableIndex={graphTableIndex}
+              onActiveTableIndexChange={setGraphTableIndex}
+              onUpdateTable={handleUpdateTableGraph}
+              selectedSvgId={selectedBindingSvgId}
+              onSelectBindingSvgId={setSelectedBindingSvgId}
+              onUnbindSvgId={handleUnbindSvgId}
+              onAutoSetPageNumber={handleAutoSetPageNumber}
+              onUpdatePageNumber={handleUpdatePageNumberGraph}
+              onRemoveHeaderCell={handleRemoveHeaderCellGraph}
+              onUpdateBinding={handleUpdateBindingRefGraph}
+              onRemoveBinding={handleRemoveBindingRefGraph}
+              onAddFormatter={handleAddFormatterGraph}
+              onUpdateFormatter={handleUpdateFormatterGraph}
+              onRemoveFormatter={handleRemoveFormatterGraph}
+              onRenameFormatter={handleRenameFormatterGraph}
+            />
+            <div className="graph-preview-pane">
+              <SvgViewer
+                pageTabs={(
+                  <div className="templates-bar-page-tabs" role="tablist" aria-label="Pages">
+                    {template.pages.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`templates-page-tab ${templatesBarPage?.id === p.id ? 'active' : ''}`}
+                        onClick={() => handlePageSelect(p.id)}
+                      >
+                        <span>{p.id}</span>
+                        <span className="templates-page-kind">{p.kind}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
+                svgReloadToken={svgReloadToken}
+                elements={svgElements}
+                templateDir={templateDir}
+                bindingSvgIds={bindingSvgIds}
+                tableBindingGroups={tableBindingGroups}
+                tableConfigs={tableOverlayConfigs}
+                selectedElementIndex={selectedTextIndex}
+                highlightedBindingSvgId={selectedBindingSvgId}
+                onSelectElement={handleSelectTextElement}
+                onDropBinding={handleDropBindingOnElement}
+                onDropData={handleMapDataToSvg}
+                graphMapNodes={graphNodes}
+                graphConnections={graphConnections}
+                tableEditTargetIndex={graphEditTableIndex}
+                validationSvgIds={validationSvgIds}
+                validationWarningSvgIds={validationWarningSvgIds}
+                onRemoveGraphBinding={handleRemoveGraphBinding}
+                onUnuseElements={handleUnuseElements}
+                onSvgEdited={handleSvgEdited}
+                onCreateTableFromSelection={async (_rect, hitElements) => {
                     if (!template || !selectedPageId) return
                     const page = template.pages.find(p => p.id === selectedPageId)
                     if (!page) return
@@ -2755,90 +2773,8 @@ export function App() {
                     }
                   }}
                 />
-              </div>
             </div>
-          ) : (
-          <>
-            <div className="editor-pane" style={{ width: `${editorPaneWidth}%` }}>
-              <div className="templates-panel">
-                <h3>Templates</h3>
-                {templatesList.length === 0 ? (
-                  <p className="empty">No templates found under {templatesBaseDir}</p>
-                ) : (
-                  <ul className="templates-list">
-                    {templatesList.map((item) => (
-                      <li key={`${item.id}-${item.version}`}>
-                        <button
-                          className="templates-item"
-                          onClick={() => {
-                            setTemplateDir(item.path)
-                            void loadTemplateByPath(item.path)
-                          }}
-                        >
-                          <span className="templates-item-id">{item.id}</span>
-                          <span className="templates-item-version">v{item.version}</span>
-                          <span className="templates-item-path">{item.path}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <TemplateEditor
-                template={template}
-                onChange={handleTemplateChange}
-                onPageSelect={handlePageSelect}
-                selectedPageId={selectedPageId}
-                onSelectedPageIdChange={handleSelectedPageIdChange}
-                focusTarget={focusTarget}
-                onFocusTargetConsumed={clearFocusTarget}
-                selectedPreviewSvgId={selectedText?.id || null}
-                onSelectBindingSvgId={setSelectedBindingSvgId}
-                selectedBindingRef={selectedBindingRef}
-                onSelectBindingRef={handleSelectBindingRef}
-                metaData={metaData}
-                itemsData={itemsData}
-                metaFileName={metaFileName}
-                itemsFileName={itemsFileName}
-                dataError={dataError}
-                dataLoading={dataLoading}
-                templateModels={templateModels}
-                onMetaUpload={handleMetaUpload}
-                onItemsUpload={handleItemsUpload}
-                onMetaUrlLoad={handleMetaUrlLoad}
-                onItemsUrlLoad={handleItemsUrlLoad}
-                onClearMeta={clearMetaData}
-                onClearItems={clearItemsData}
-                onNotify={setNotification}
-              />
-            </div>
-            <div
-              className="main-divider"
-              onMouseDown={(e) => startResizeMain(e as unknown as MouseEvent)}
-              role="separator"
-              aria-orientation="vertical"
-            />
-            <div className="preview-pane" style={{ width: `${100 - editorPaneWidth}%` }}>
-              <SvgViewer
-                svgPath={selectedSvg ? `${templateDir}/${selectedSvg}` : null}
-                svgReloadToken={svgReloadToken}
-                elements={svgElements}
-                templateDir={templateDir}
-                bindingSvgIds={bindingSvgIds}
-                tableBindingGroups={tableBindingGroups}
-                tableConfigs={tableOverlayConfigs}
-                selectedElementIndex={selectedTextIndex}
-                highlightedBindingSvgId={selectedBindingSvgId}
-                validationSvgIds={validationSvgIds}
-                validationWarningSvgIds={validationWarningSvgIds}
-                onSelectElement={handleSelectTextElement}
-                onDropBinding={handleDropBindingOnElement}
-                onUnuseElements={handleUnuseElements}
-                                onSvgEdited={handleSvgEdited}
-              />
-            </div>
-          </>
-          )
+          </div>
         ) : (
           <div className="welcome">
             <h2>帳票テンプレートエディタ</h2>
@@ -3426,19 +3362,19 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-function loadSession(): { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string } {
+function loadSession(): { templateDir?: string; selectedPageId?: string } {
   if (typeof window === 'undefined') return {}
   try {
     const raw = window.localStorage.getItem('svgpaper.session')
     if (!raw) return {}
-    const parsed = JSON.parse(raw) as { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string }
+    const parsed = JSON.parse(raw) as { templateDir?: string; selectedPageId?: string }
     return parsed || {}
   } catch {
     return {}
   }
 }
 
-function saveSession(data: { templateDir?: string; templatesBaseDir?: string; selectedPageId?: string }) {
+function saveSession(data: { templateDir?: string; selectedPageId?: string }) {
   if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem('svgpaper.session', JSON.stringify(data))
