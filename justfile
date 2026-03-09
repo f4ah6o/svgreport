@@ -1,6 +1,9 @@
 # SVG Paper - Justfile
 # タスクランナー設定
 
+KCC_DIR := env_var_or_default('KCC_DIR', '/home/f12o/src/kintone-control-center')
+KINTONE_TMP_DIR := ".tmp/kintone"
+
 # デフォルトタスク
 _default:
     @just --list
@@ -175,3 +178,121 @@ demo-mac template="test-templates/delivery-slip/v1": build build-ui
     @echo "Starting demo server..."
     @open http://127.0.0.1:8788/
     node dist/cli.js server -p 8788 -r . --ui-static-dir ./ui/dist
+
+# ==========================================
+# kintone setup tasks (svgreport report-api/worker 向け)
+# ==========================================
+
+@kintone-preflight auth_item="kintone開発者アカウント" env_item="kintone帳票":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v opz >/dev/null
+    command -v aci >/dev/null
+    test -d "{{KCC_DIR}}"
+    test -f "{{KCC_DIR}}/aci.toml"
+    mkdir -p "{{KINTONE_TMP_DIR}}"
+    opz "{{auth_item}}" "{{env_item}}" -- bash -lc ': "${REPORT_TEMPLATE_APP_ID:?REPORT_TEMPLATE_APP_ID is required}"; : "${REPORT_JOB_APP_ID:?REPORT_JOB_APP_ID is required}"; [ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; node scripts/kintone/build-field-payloads.mjs --out-dir "{{KINTONE_TMP_DIR}}"'
+    echo "Preflight OK (auth={{auth_item}}, env={{env_item}})"
+
+kintone-plan auth_item="kintone開発者アカウント" env_item="kintone帳票":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just kintone-preflight "{{auth_item}}" "{{env_item}}"
+    mkdir -p "{{KINTONE_TMP_DIR}}"
+    TEMPLATE_APP_ID="$(cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc 'printf "%s" "${REPORT_TEMPLATE_APP_ID}"')"
+    JOB_APP_ID="$(cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc 'printf "%s" "${REPORT_JOB_APP_ID}"')"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone getPreviewAppFormFields --app "${REPORT_TEMPLATE_APP_ID}"') > "{{KINTONE_TMP_DIR}}/template-current.json"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone getPreviewAppFormFields --app "${REPORT_JOB_APP_ID}"') > "{{KINTONE_TMP_DIR}}/job-current.json"
+    node scripts/kintone/diff-fields.mjs --label "template-app(${TEMPLATE_APP_ID})" --current "{{KINTONE_TMP_DIR}}/template-current.json" --desired "{{KINTONE_TMP_DIR}}/template-properties.json"
+    node scripts/kintone/diff-fields.mjs --label "job-app(${JOB_APP_ID})" --current "{{KINTONE_TMP_DIR}}/job-current.json" --desired "{{KINTONE_TMP_DIR}}/job-properties.json"
+
+kintone-apply-fields auth_item="kintone開発者アカウント" env_item="kintone帳票":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just kintone-preflight "{{auth_item}}" "{{env_item}}"
+    mkdir -p "{{KINTONE_TMP_DIR}}"
+    TEMPLATE_APP_ID="$(cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc 'printf "%s" "${REPORT_TEMPLATE_APP_ID}"')"
+    JOB_APP_ID="$(cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc 'printf "%s" "${REPORT_JOB_APP_ID}"')"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone getPreviewAppFormFields --app "${REPORT_TEMPLATE_APP_ID}"') > "{{KINTONE_TMP_DIR}}/template-current.json"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone getPreviewAppFormFields --app "${REPORT_JOB_APP_ID}"') > "{{KINTONE_TMP_DIR}}/job-current.json"
+    node scripts/kintone/build-add-put-bodies.mjs --current "{{KINTONE_TMP_DIR}}/template-current.json" --desired "{{KINTONE_TMP_DIR}}/template-properties.json" --app "${TEMPLATE_APP_ID}" --out-add "{{KINTONE_TMP_DIR}}/template-add-body.json" --out-put "{{KINTONE_TMP_DIR}}/template-put-body.json"
+    node scripts/kintone/build-add-put-bodies.mjs --current "{{KINTONE_TMP_DIR}}/job-current.json" --desired "{{KINTONE_TMP_DIR}}/job-properties.json" --app "${JOB_APP_ID}" --out-add "{{KINTONE_TMP_DIR}}/job-add-body.json" --out-put "{{KINTONE_TMP_DIR}}/job-put-body.json"
+    TEMPLATE_ADD_BODY="$(cat {{KINTONE_TMP_DIR}}/template-add-body.json)"
+    JOB_ADD_BODY="$(cat {{KINTONE_TMP_DIR}}/job-add-body.json)"
+    TEMPLATE_PUT_BODY="$(cat {{KINTONE_TMP_DIR}}/template-put-body.json)"
+    JOB_PUT_BODY="$(cat {{KINTONE_TMP_DIR}}/job-put-body.json)"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone raw k v1 preview app form fields.json -X POST -d "$0"' "$TEMPLATE_ADD_BODY") > "{{KINTONE_TMP_DIR}}/template-add-result.json"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone raw k v1 preview app form fields.json -X POST -d "$0"' "$JOB_ADD_BODY") > "{{KINTONE_TMP_DIR}}/job-add-result.json"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone raw k v1 preview app form fields.json -X PUT -d "$0"' "$TEMPLATE_PUT_BODY") > "{{KINTONE_TMP_DIR}}/template-put-result.json"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone raw k v1 preview app form fields.json -X PUT -d "$0"' "$JOB_PUT_BODY") > "{{KINTONE_TMP_DIR}}/job-put-result.json"
+    DEPLOY_BODY="$(opz "{{auth_item}}" "{{env_item}}" -- node -e 'const t=Number(process.env.REPORT_TEMPLATE_APP_ID); const j=Number(process.env.REPORT_JOB_APP_ID); process.stdout.write(JSON.stringify({apps:[{app:t},{app:j}]}));')"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone raw k v1 preview app deploy.json -X POST -d "$0"' "$DEPLOY_BODY") > "{{KINTONE_TMP_DIR}}/deploy-request-result.json"
+    for i in $(seq 1 30); do
+      (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone raw k v1 preview app deploy.json --query "apps='"${TEMPLATE_APP_ID}"'" --query "apps='"${JOB_APP_ID}"'"') > "{{KINTONE_TMP_DIR}}/deploy-status.json"
+      if node scripts/kintone/check-deploy-status.mjs --file "{{KINTONE_TMP_DIR}}/deploy-status.json"; then
+        echo "Deploy succeeded"
+        exit 0
+      fi
+      status=$?
+      if [ "$status" -ne 10 ]; then
+        echo "Deploy failed"
+        exit "$status"
+      fi
+      sleep 2
+    done
+    echo "Deploy polling timed out"
+    exit 1
+
+kintone-verify auth_item="kintone開発者アカウント" env_item="kintone帳票":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just kintone-preflight "{{auth_item}}" "{{env_item}}"
+    mkdir -p "{{KINTONE_TMP_DIR}}"
+    TEMPLATE_APP_ID="$(cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc 'printf "%s" "${REPORT_TEMPLATE_APP_ID}"')"
+    JOB_APP_ID="$(cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc 'printf "%s" "${REPORT_JOB_APP_ID}"')"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone getPreviewAppFormFields --app "${REPORT_TEMPLATE_APP_ID}"') > "{{KINTONE_TMP_DIR}}/template-current.json"
+    (cd "{{KCC_DIR}}" && opz "{{auth_item}}" "{{env_item}}" -- bash -lc '[ -n "${password:-}" ] || export password="${credential:-}"; : "${username:?username is required}"; : "${password:?password is required}"; aci --config aci.toml kintone getPreviewAppFormFields --app "${REPORT_JOB_APP_ID}"') > "{{KINTONE_TMP_DIR}}/job-current.json"
+    node scripts/kintone/diff-fields.mjs --strict true --label "template-app(${TEMPLATE_APP_ID})" --current "{{KINTONE_TMP_DIR}}/template-current.json" --desired "{{KINTONE_TMP_DIR}}/template-properties.json"
+    node scripts/kintone/diff-fields.mjs --strict true --label "job-app(${JOB_APP_ID})" --current "{{KINTONE_TMP_DIR}}/job-current.json" --desired "{{KINTONE_TMP_DIR}}/job-properties.json"
+    echo "Verify OK"
+
+kintone-setup auth_item="kintone開発者アカウント" env_item="kintone帳票":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just kintone-plan "{{auth_item}}" "{{env_item}}"
+    just kintone-apply-fields "{{auth_item}}" "{{env_item}}"
+    just kintone-verify "{{auth_item}}" "{{env_item}}"
+    echo "kintone setup completed for template/job apps"
+
+# ==========================================
+# kintone report e2e / cleanup / verify tasks
+# ==========================================
+
+@report-tsc:
+    pnpm exec tsc --outDir .tmp/tsc --declaration false --declarationMap false --sourceMap false
+
+report-e2e auth_item="kintone開発者アカウント" env_item="kintone帳票" source_app_id="45" source_record_id="1" template_code="demo_delivery_slip" action_code="todo_delivery":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just report-tsc
+    opz "{{auth_item}}" "{{env_item}}" -- node scripts/kintone/e2e-run.mjs \
+      --source-app-id "{{source_app_id}}" \
+      --source-record-id "{{source_record_id}}" \
+      --template-code "{{template_code}}" \
+      --action-code "{{action_code}}"
+
+report-cleanup auth_item="kintone開発者アカウント" env_item="kintone帳票" source_app_id="45" source_record_id="1" action_codes="todo_delivery" template_codes="demo_delivery_slip,diag_delivery":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    opz "{{auth_item}}" "{{env_item}}" -- node scripts/kintone/cleanup-test-data.mjs \
+      --source-app-id "{{source_app_id}}" \
+      --source-record-id "{{source_record_id}}" \
+      --action-codes "{{action_codes}}" \
+      --template-codes "{{template_codes}}"
+
+report-verify-template-api auth_item="kintone開発者アカウント" env_item="kintone帳票" source_app_id="45":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just report-tsc
+    opz "{{auth_item}}" "{{env_item}}" -- node scripts/kintone/verify-draft-publish.mjs \
+      --source-app-id "{{source_app_id}}"

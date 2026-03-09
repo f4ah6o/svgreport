@@ -2,6 +2,7 @@
 // Main exports for svgreport
 
 export * from './types/index.js';
+export * from './types/reporting.js';
 export * from './core/datasource.js';
 export * from './core/manifest.js';
 export * from './core/template.js';
@@ -20,3 +21,10 @@ export * from './core/template-generator.js';
 export * from './core/template-importer.js';
 export * from './core/svg-id-reindexer.js';
 export * from './core/rpc-server.js';
+export * from './core/report-mapping.js';
+export * from './core/report-api-server.js';
+export * from './core/report-worker.js';
+export * from './core/kintone-rest.js';
+export * from './core/kintone-job-queue.js';
+export * from './core/kintone-template-store.js';
+export * from './core/pdf-playwright.js';

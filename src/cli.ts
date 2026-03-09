@@ -18,6 +18,8 @@ import { generatePreview } from './core/preview-generator.js';
 import { extractTextElements, analyzeTemplateSvgs, printTextReport, exportTextElementsJson } from './core/text-inspector.js';
 import { generateTemplate } from './core/template-generator.js';
 import { startRpcServer } from './core/rpc-server.js';
+import { startReportApiServer } from './core/report-api-server.js';
+import { startReportWorker } from './core/report-worker.js';
 
 const program = new Command();
 
@@ -384,6 +386,145 @@ program
       handleError(error);
     }
   });
+
+program
+  .command('report-api')
+  .description('Start kintone report API server')
+  .option('-p, --port <number>', 'Server port', process.env.REPORT_API_PORT ?? '8790')
+  .option('-h, --host <address>', 'Bind address', process.env.REPORT_API_HOST ?? '127.0.0.1')
+  .option('--auth-token <token>', 'Bearer token for plugin/API caller', process.env.REPORT_API_AUTH_TOKEN)
+  .option('--kintone-base-url <url>', 'kintone base URL', process.env.KINTONE_BASE_URL)
+  .option('--kintone-api-token <token>', 'kintone API token (comma-separated)', process.env.KINTONE_API_TOKEN)
+  .option('--queue-app <id>', 'kintone app id for job queue', process.env.REPORT_JOB_APP_ID)
+  .option('--template-app <id>', 'kintone app id for template store', process.env.REPORT_TEMPLATE_APP_ID)
+  .action(async (options) => {
+    try {
+      const config = resolveKintoneConfig(options.kintoneBaseUrl, options.kintoneApiToken);
+      const queueApp = requiredAppId(options.queueApp, 'REPORT_JOB_APP_ID');
+      const templateApp = requiredAppId(options.templateApp, 'REPORT_TEMPLATE_APP_ID');
+      await startReportApiServer({
+        host: options.host,
+        port: Number.parseInt(options.port, 10),
+        authToken: options.authToken,
+        kintone: config,
+        queue: {
+          app: queueApp,
+          fields: getQueueFieldMap(),
+        },
+        templates: {
+          app: templateApp,
+          fields: getTemplateFieldMap(),
+        },
+      });
+      await new Promise(() => {});
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+program
+  .command('report-worker')
+  .description('Start kintone report async worker')
+  .option('--kintone-base-url <url>', 'kintone base URL', process.env.KINTONE_BASE_URL)
+  .option('--kintone-api-token <token>', 'kintone API token (comma-separated)', process.env.KINTONE_API_TOKEN)
+  .option('--queue-app <id>', 'kintone app id for job queue', process.env.REPORT_JOB_APP_ID)
+  .option('--template-app <id>', 'kintone app id for template store', process.env.REPORT_TEMPLATE_APP_ID)
+  .option('--poll-ms <number>', 'Poll interval milliseconds', process.env.REPORT_WORKER_POLL_MS ?? '5000')
+  .option('--retry-backoff-ms <number>', 'Base retry backoff milliseconds', process.env.REPORT_WORKER_RETRY_BACKOFF_MS ?? '10000')
+  .option('--playwright-command <cmd>', 'Playwright CLI command', process.env.REPORT_PLAYWRIGHT_CMD ?? 'playwright')
+  .action(async (options) => {
+    try {
+      const config = resolveKintoneConfig(options.kintoneBaseUrl, options.kintoneApiToken);
+      const queueApp = requiredAppId(options.queueApp, 'REPORT_JOB_APP_ID');
+      const templateApp = requiredAppId(options.templateApp, 'REPORT_TEMPLATE_APP_ID');
+      await startReportWorker({
+        kintone: config,
+        queue: {
+          app: queueApp,
+          fields: getQueueFieldMap(),
+        },
+        templates: {
+          app: templateApp,
+          fields: getTemplateFieldMap(),
+        },
+        pollIntervalMs: Number.parseInt(options.pollMs, 10),
+        retryBackoffMs: Number.parseInt(options.retryBackoffMs, 10),
+        playwrightCommand: options.playwrightCommand,
+      });
+    } catch (error) {
+      handleError(error);
+    }
+  });
+
+function resolveKintoneConfig(baseUrl?: string, apiTokenRaw?: string): { baseUrl: string; apiToken: string | string[] } {
+  if (!baseUrl) {
+    throw new SVGReportError('Missing kintone base URL', 'KINTONE_BASE_URL');
+  }
+  if (!apiTokenRaw) {
+    throw new SVGReportError('Missing kintone API token', 'KINTONE_API_TOKEN');
+  }
+  const tokens = apiTokenRaw
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  if (!tokens.length) {
+    throw new SVGReportError('No valid kintone API token provided', 'KINTONE_API_TOKEN');
+  }
+  return {
+    baseUrl,
+    apiToken: tokens.length === 1 ? tokens[0] : tokens,
+  };
+}
+
+function requiredAppId(raw: string | undefined, envName: string): number {
+  if (!raw) {
+    throw new SVGReportError(`Missing app id: ${envName}`);
+  }
+  const appId = Number.parseInt(raw, 10);
+  if (!Number.isFinite(appId) || appId <= 0) {
+    throw new SVGReportError(`Invalid app id: ${raw}`, envName);
+  }
+  return appId;
+}
+
+function getQueueFieldMap() {
+  return {
+    jobId: process.env.REPORT_JOB_FIELD_JOB_ID ?? 'job_id',
+    idempotencyKey: process.env.REPORT_JOB_FIELD_IDEMPOTENCY_KEY ?? 'idempotency_key',
+    status: process.env.REPORT_JOB_FIELD_STATUS ?? 'status',
+    appId: process.env.REPORT_JOB_FIELD_APP_ID ?? 'source_app_id',
+    recordId: process.env.REPORT_JOB_FIELD_RECORD_ID ?? 'source_record_id',
+    templateActionCode: process.env.REPORT_JOB_FIELD_TEMPLATE_ACTION_CODE ?? 'template_action_code',
+    templateCode: process.env.REPORT_JOB_FIELD_TEMPLATE_CODE ?? 'template_code',
+    templateVersion: process.env.REPORT_JOB_FIELD_TEMPLATE_VERSION ?? 'template_version',
+    requestedBy: process.env.REPORT_JOB_FIELD_REQUESTED_BY ?? 'requested_by',
+    attempts: process.env.REPORT_JOB_FIELD_ATTEMPTS ?? 'attempts',
+    maxAttempts: process.env.REPORT_JOB_FIELD_MAX_ATTEMPTS ?? 'max_attempts',
+    nextRunAt: process.env.REPORT_JOB_FIELD_NEXT_RUN_AT ?? 'next_run_at',
+    startedAt: process.env.REPORT_JOB_FIELD_STARTED_AT ?? 'started_at',
+    finishedAt: process.env.REPORT_JOB_FIELD_FINISHED_AT ?? 'finished_at',
+    inputSnapshotJson: process.env.REPORT_JOB_FIELD_INPUT_SNAPSHOT_JSON ?? 'input_snapshot_json',
+    renderDebugJson: process.env.REPORT_JOB_FIELD_RENDER_DEBUG_JSON ?? 'render_debug_json',
+    outputPdf: process.env.REPORT_JOB_FIELD_OUTPUT_PDF ?? 'output_pdf',
+    outputSvgZip: process.env.REPORT_JOB_FIELD_OUTPUT_SVG_ZIP ?? 'rendered_svgs_zip',
+    errorCode: process.env.REPORT_JOB_FIELD_ERROR_CODE ?? 'error_code',
+    errorMessage: process.env.REPORT_JOB_FIELD_ERROR_MESSAGE ?? 'error_message',
+  };
+}
+
+function getTemplateFieldMap() {
+  return {
+    templateCode: process.env.REPORT_TEMPLATE_FIELD_TEMPLATE_CODE ?? 'template_code',
+    version: process.env.REPORT_TEMPLATE_FIELD_VERSION ?? 'version',
+    sourceAppId: process.env.REPORT_TEMPLATE_FIELD_SOURCE_APP_ID ?? 'source_app_id',
+    status: process.env.REPORT_TEMPLATE_FIELD_STATUS ?? 'status',
+    publishedSeq: process.env.REPORT_TEMPLATE_FIELD_PUBLISHED_SEQ ?? 'published_seq',
+    actionCode: process.env.REPORT_TEMPLATE_FIELD_ACTION_CODE ?? 'action_code',
+    templateJson: process.env.REPORT_TEMPLATE_FIELD_TEMPLATE_JSON ?? 'template_json',
+    page1Svg: process.env.REPORT_TEMPLATE_FIELD_PAGE1_SVG ?? 'page_1_svg',
+    pageFollowSvg: process.env.REPORT_TEMPLATE_FIELD_PAGE_FOLLOW_SVG ?? 'page_follow_svg',
+  };
+}
 
 function handleError(error: unknown): void {
   if (error instanceof SVGReportError) {

@@ -30,5 +30,15 @@ export default defineConfig([
     },
     platform: 'node',
     target: 'node24'
+  },
+  {
+    input: 'src/core/report-mapping.test.ts',
+    output: {
+      file: 'dist/core/report-mapping.test.js',
+      format: 'esm',
+      sourcemap: true
+    },
+    platform: 'node',
+    target: 'node24'
   }
 ])

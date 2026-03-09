@@ -180,6 +180,55 @@ out/
         └── render.json
 ```
 
+## kintone帳票セットアップ（justタスク）
+
+`kintone-control-center` と `opz` を使って、帳票テンプレ管理App/ジョブ履歴Appの必須フィールドを更新できます。
+
+前提:
+- 1Password アイテム `kintone開発者アカウント` に `KINTONE_BASE_URL` / `username` / `password` が存在
+- 1Password アイテム `kintone帳票` に `REPORT_TEMPLATE_APP_ID` / `REPORT_JOB_APP_ID` / `REPORT_*_FIELD_*` が存在
+
+実行:
+
+```bash
+# 差分確認のみ
+just kintone-plan
+
+# フィールド更新 + deploy
+just kintone-apply-fields
+
+# 反映後の厳密検証
+just kintone-verify
+
+# 一括実行
+just kintone-setup
+```
+
+引数でアイテムを変える場合:
+
+```bash
+just kintone-setup "kintone開発者アカウント" "kintone帳票"
+```
+
+## kintone帳票E2E/検証/クリーンアップ
+
+`report-api` / `report-worker` の疎通確認用タスクです。
+
+```bash
+# 1) E2E（テンプレdraft/publish + ジョブ投入 + PDF添付確認）
+just report-e2e
+
+# 2) テストデータのクリーンアップ（失敗ジョブ・テストテンプレ・テスト添付）
+just report-cleanup
+
+# 3) draft/publish API の単体検証
+just report-verify-template-api
+```
+
+補足:
+- `KCC_DIR` は環境変数で上書き可能です（未指定時は従来パス）。
+- 1Password 経由で実行するため `.env` は不要です。
+
 ## ライセンス
 
 MIT
