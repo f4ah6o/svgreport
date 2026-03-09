@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kintone SVG Rollout"
+  short_description: "Automate kintone svgreport rollout"
+  default_prompt: "Inspect a source app, clone a sandbox app, scaffold an SVG template from PDF, prepare report mapping candidates, upload and verify the template, and gate production cutover."
