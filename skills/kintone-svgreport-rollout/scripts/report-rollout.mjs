@@ -63,12 +63,12 @@ function usage() {
 
 Commands:
   inspect-source   Export source app metadata and optionally issue a source app API token
-  clone-sandbox    Create a sandbox app and clone source app fields/layout/settings
-  seed-sandbox     Create dummy records in the sandbox app
+  clone-sandbox    Optional: create a sandbox app and clone source app fields/layout/settings
+  seed-sandbox     Optional: create dummy records in the sandbox app
   scaffold-template Import a PDF into a template workspace and collect mapping context
   prepare-mapping  Generate report mapping candidates and review notes
   upload-draft     Upload the current template + mapping as a Draft through report-api
-  verify-sandbox   Publish the sandbox template and run a report job against a sandbox record
+  verify-sandbox   Publish and run a report job against the sandbox app if present, otherwise the source app
   cutover-prod     Re-draft/publish for the production app and optionally run one smoke job
 
 Shared options:
@@ -79,8 +79,8 @@ Shared options:
 
 Examples:
   node skills/kintone-svgreport-rollout/scripts/report-rollout.mjs inspect-source --run-id demo --source-app-id 42 --sample-record-id 1
-  node skills/kintone-svgreport-rollout/scripts/report-rollout.mjs clone-sandbox --run-id demo
   node skills/kintone-svgreport-rollout/scripts/report-rollout.mjs scaffold-template --run-id demo --pdf /abs/path/source.pdf --template-code invoice_demo --version v1 --action-code print_invoice
+  node skills/kintone-svgreport-rollout/scripts/report-rollout.mjs verify-sandbox --run-id demo --record-id 1
 `);
 }
 
@@ -208,6 +208,9 @@ async function cmdCloneSandbox(args) {
   const createBody = { name: sandboxName };
   if (sourceApp.spaceId) {
     createBody.space = Number(sourceApp.spaceId);
+    if (sourceApp.threadId) {
+      createBody.thread = Number(sourceApp.threadId);
+    }
   }
   const createResponse = await kintoneAdminRequest(auth, '/k/v1/preview/app.json', 'POST', createBody);
   const sandboxAppId = Number(createResponse.app);
@@ -302,7 +305,7 @@ async function cmdScaffoldTemplate(args) {
   const actionCode = requiredString(args['action-code'], '--action-code');
   const templateBaseDir = path.join(context.runDir, 'templates');
   await ensureSvgreportBuild();
-  const { importPdfTemplate } = await importDistModule('core/template-importer.js');
+  const { importPdfTemplate, extractTextElements } = await importDistModule('index.js');
   const pdfBuffer = await fs.readFile(pdfPath);
   const imported = await importPdfTemplate({
     templateId: templateCode,
@@ -311,7 +314,6 @@ async function cmdScaffoldTemplate(args) {
     pdfBuffer,
     pdfFileName: path.basename(pdfPath),
   });
-  const { extractTextElements } = await importDistModule('core/text-inspector.js');
   const page1Path = path.join(imported.templateDir, 'page-1.svg');
   const pageFollowPath = path.join(imported.templateDir, 'page-follow.svg');
   const page1Text = await extractTextElements(page1Path);
@@ -401,46 +403,56 @@ async function cmdUploadDraft(args) {
 
 async function cmdVerifySandbox(args) {
   const context = await loadRunContext(args, { create: false });
-  ensureSandboxRun(context.run);
+  ensureSourceRun(context.run);
   applyDraftOverrides(context.run, args);
   ensureDraftInputs(context.run);
   await ensureSvgreportBuild();
   const runtime = await buildRuntimeContext(context.run);
-  const reportTemplate = await buildReportTemplateFromRun(context.run, context.run.sandbox.appId);
-  const sourceRecordId = args['record-id'] || context.run.sandbox.seedRecordIds?.[0];
+  const targetAppId = context.run.sandbox?.appId || context.run.source.appId;
+  const verificationMode = context.run.sandbox?.appId ? 'sandbox' : 'source';
+  const sourceRecordId = args['record-id'] || context.run.sandbox?.seedRecordIds?.[0] || context.run.source.sampleRecordId || '';
   if (!sourceRecordId) {
-    throw new Error('Missing sandbox record id. Run seed-sandbox first or pass --record-id.');
+    throw new Error('Missing verification record id. Pass --record-id or keep a sample record id in run.json.');
   }
+  const reportTemplate = await buildReportTemplateFromRun(context.run, targetAppId);
 
   const outcome = await withReportServices(runtime.env, async () => {
-    const draft = await uploadDraft(runtime, context.run.template.templateDir, reportTemplate, context.run.sandbox.appId, context.run.template.actionCode);
-    const publish = await publishTemplate(runtime, context.run.template.templateCode, context.run.template.version, context.run.sandbox.appId);
-    const job = await enqueueJob(runtime, context.run.sandbox.appId, sourceRecordId, context.run.template.actionCode);
+    const draft = await uploadDraft(runtime, context.run.template.templateDir, reportTemplate, targetAppId, context.run.template.actionCode);
+    const publish = await publishTemplate(runtime, context.run.template.templateCode, context.run.template.version, targetAppId);
+    const job = await enqueueJob(runtime, targetAppId, sourceRecordId, context.run.template.actionCode);
     const finalStatus = await waitForJob(runtime, job.job_id);
-    const attachmentCheck = await verifySourceAttachment(runtime, context.run.sandbox.appId, sourceRecordId, reportTemplate.output.output_attachment_field_code);
+    const attachmentCheck = await verifySourceAttachment(runtime, targetAppId, sourceRecordId, reportTemplate.output.output_attachment_field_code);
     return { draft, publish, job, finalStatus, attachmentCheck };
   });
 
   context.run.template.draft = {
     recordId: outcome.draft.record_id,
-    sourceAppId: context.run.sandbox.appId,
+    sourceAppId: targetAppId,
     uploadedAt: new Date().toISOString(),
   };
   context.run.template.publish = {
     recordId: outcome.publish.record_id,
     publishedSeq: outcome.publish.published_seq,
-    sourceAppId: context.run.sandbox.appId,
+    sourceAppId: targetAppId,
     publishedAt: new Date().toISOString(),
   };
   context.run.verification = {
     ...(context.run.verification || {}),
-    sandboxJobId: outcome.job.job_id,
-    sandboxStatus: outcome.finalStatus.status,
-    sandboxRecordId: sourceRecordId,
-    sandboxAttachmentCount: outcome.attachmentCheck.count,
+    mode: verificationMode,
+    targetAppId,
+    sandboxJobId: verificationMode === 'sandbox' ? outcome.job.job_id : context.run.verification?.sandboxJobId,
+    sandboxStatus: verificationMode === 'sandbox' ? outcome.finalStatus.status : context.run.verification?.sandboxStatus,
+    sandboxRecordId: verificationMode === 'sandbox' ? sourceRecordId : context.run.verification?.sandboxRecordId,
+    sandboxAttachmentCount: verificationMode === 'sandbox' ? outcome.attachmentCheck.count : context.run.verification?.sandboxAttachmentCount,
+    sourceJobId: verificationMode === 'source' ? outcome.job.job_id : context.run.verification?.sourceJobId,
+    sourceStatus: verificationMode === 'source' ? outcome.finalStatus.status : context.run.verification?.sourceStatus,
+    sourceRecordId: verificationMode === 'source' ? sourceRecordId : context.run.verification?.sourceRecordId,
+    sourceAttachmentCount: verificationMode === 'source' ? outcome.attachmentCheck.count : context.run.verification?.sourceAttachmentCount,
   };
   await context.save();
   printSummary('verify-sandbox', {
+    mode: verificationMode,
+    target_app_id: targetAppId,
     sandbox_job_id: outcome.job.job_id,
     status: outcome.finalStatus.status,
     attachment_count: outcome.attachmentCheck.count,
@@ -540,10 +552,10 @@ async function fetchSourceAppSnapshot(auth, appId) {
 }
 
 async function loadAuthConfig(itemTitle) {
-  const item = await readOpItem(itemTitle);
-  const username = await readOpFieldValue(item, 'username');
-  const password = await readOpFieldValue(item, 'password') || await readOpFieldValue(item, 'credential');
-  const baseUrl = normalizeBaseUrl(await readOpFieldValue(item, 'KINTONE_BASE_URL'));
+  const injected = readInjectedFields([itemTitle], ['username', 'password', 'credential', 'KINTONE_BASE_URL']);
+  const username = injected.username || '';
+  const password = injected.password || injected.credential || '';
+  const baseUrl = normalizeBaseUrl(injected.KINTONE_BASE_URL || '');
   if (!username || !password || !baseUrl) {
     throw new Error(`Missing username/password/KINTONE_BASE_URL in 1Password item: ${itemTitle}`);
   }
@@ -552,8 +564,43 @@ async function loadAuthConfig(itemTitle) {
 
 async function buildRuntimeContext(run) {
   const auth = await loadAuthConfig(run.authItem);
-  const envItem = await readOpItem(run.reportEnvItem);
-  const envFields = await readAllOpFields(envItem);
+  const envFields = readInjectedFields([run.authItem, run.reportEnvItem], [
+    'KINTONE_API_TOKEN',
+    'REPORT_TEMPLATE_APP_ID',
+    'REPORT_JOB_APP_ID',
+    'REPORT_API_AUTH_TOKEN',
+    'REPORT_API_HOST',
+    'REPORT_API_PORT',
+    'REPORT_TEMPLATE_FIELD_TEMPLATE_CODE',
+    'REPORT_TEMPLATE_FIELD_VERSION',
+    'REPORT_TEMPLATE_FIELD_SOURCE_APP_ID',
+    'REPORT_TEMPLATE_FIELD_STATUS',
+    'REPORT_TEMPLATE_FIELD_PUBLISHED_SEQ',
+    'REPORT_TEMPLATE_FIELD_ACTION_CODE',
+    'REPORT_TEMPLATE_FIELD_TEMPLATE_JSON',
+    'REPORT_TEMPLATE_FIELD_PAGE1_SVG',
+    'REPORT_TEMPLATE_FIELD_PAGE_FOLLOW_SVG',
+    'REPORT_JOB_FIELD_JOB_ID',
+    'REPORT_JOB_FIELD_IDEMPOTENCY_KEY',
+    'REPORT_JOB_FIELD_STATUS',
+    'REPORT_JOB_FIELD_APP_ID',
+    'REPORT_JOB_FIELD_RECORD_ID',
+    'REPORT_JOB_FIELD_TEMPLATE_ACTION_CODE',
+    'REPORT_JOB_FIELD_TEMPLATE_CODE',
+    'REPORT_JOB_FIELD_TEMPLATE_VERSION',
+    'REPORT_JOB_FIELD_REQUESTED_BY',
+    'REPORT_JOB_FIELD_ATTEMPTS',
+    'REPORT_JOB_FIELD_MAX_ATTEMPTS',
+    'REPORT_JOB_FIELD_NEXT_RUN_AT',
+    'REPORT_JOB_FIELD_STARTED_AT',
+    'REPORT_JOB_FIELD_FINISHED_AT',
+    'REPORT_JOB_FIELD_INPUT_SNAPSHOT_JSON',
+    'REPORT_JOB_FIELD_RENDER_DEBUG_JSON',
+    'REPORT_JOB_FIELD_OUTPUT_PDF',
+    'REPORT_JOB_FIELD_OUTPUT_SVG_ZIP',
+    'REPORT_JOB_FIELD_ERROR_CODE',
+    'REPORT_JOB_FIELD_ERROR_MESSAGE',
+  ]);
   const tokenValues = [];
   if (envFields.KINTONE_API_TOKEN) {
     tokenValues.push(...envFields.KINTONE_API_TOKEN.split(',').map((value) => value.trim()).filter(Boolean));
@@ -784,6 +831,9 @@ function normalizeCloneableField(definition) {
   if (!definition || typeof definition !== 'object') return null;
   if (!CLONEABLE_FIELD_TYPES.has(definition.type)) return null;
   const cloned = stripReadOnlyKeys(definition, ['referenceTable']);
+  if (definition.code) {
+    cloned.code = definition.code;
+  }
   if (definition.type === 'SUBTABLE' && definition.fields) {
     const children = {};
     for (const [childCode, childDef] of Object.entries(definition.fields)) {
@@ -1113,8 +1163,21 @@ async function deployPreviewApp(auth, appId) {
 }
 
 function issueApiToken({ appId, permissions, envKey, headed }) {
-  const args = ['issue-api-token', String(appId), permissions.join(' '), `env_key=${envKey}`, `headed=${headed ? 'true' : 'false'}`];
-  runCommand('just', args, { cwd: DEFAULT_KCC_DIR });
+  const command = [
+    'opz',
+    shellQuote(DEFAULT_AUTH_ITEM),
+    '--',
+    'pnpm',
+    'run',
+    'kintone:issue-api-token',
+    '--app-id',
+    String(appId),
+    ...permissions.flatMap((permission) => ['--permission', shellQuote(permission)]),
+    '--env-key',
+    shellQuote(envKey),
+    ...(headed ? ['--headed'] : []),
+  ].join(' ');
+  runCommand('bash', ['-lc', command], { cwd: DEFAULT_KCC_DIR });
 }
 
 async function kintoneAdminRequest(auth, pathname, method, body = null, query = null) {
@@ -1144,33 +1207,42 @@ async function kintoneAdminRequest(auth, pathname, method, body = null, query = 
   return json;
 }
 
-async function readOpItem(title) {
-  const stdout = runCommand('op', ['item', 'get', title, '--format', 'json'], { cwd: SVGREPORT_DIR, capture: true });
-  return JSON.parse(stdout);
-}
-
-async function readAllOpFields(item) {
+function readInjectedFields(itemTitles, fieldNames) {
+  const present = {};
+  let allPresent = true;
+  for (const field of fieldNames) {
+    const value = process.env[field];
+    if (value === undefined) {
+      allPresent = false;
+      break;
+    }
+    present[field] = value;
+  }
+  if (allPresent) {
+    return present;
+  }
+  const lines = fieldNames.map((field) => `printf '%s=%s\\n' '${field}' \"\${${field}:-}\"`);
+  const command = [
+    'opz',
+    ...itemTitles.map((item) => shellQuote(item)),
+    '--',
+    'bash',
+    '-lc',
+    shellQuote(lines.join('; ')),
+  ].join(' ');
+  const stdout = runCommand('bash', ['-lc', command], { cwd: SVGREPORT_DIR, capture: true });
   const out = {};
-  for (const field of item.fields || []) {
-    if (!field.label) continue;
-    out[field.label] = await readOpFieldValue(item, field.label);
+  for (const line of stdout.split('\n')) {
+    if (!line.includes('=')) continue;
+    const index = line.indexOf('=');
+    out[line.slice(0, index)] = line.slice(index + 1);
   }
   return out;
 }
 
-async function readOpFieldValue(item, label) {
-  const field = (item.fields || []).find((entry) => entry.label === label);
-  if (!field) return '';
-  if (field.value !== undefined && field.value !== null && String(field.value) !== '') {
-    return String(field.value);
-  }
-  if (!field.reference) return '';
-  return runCommand('op', ['read', field.reference], { cwd: SVGREPORT_DIR, capture: true }).trim();
-}
-
 async function readTokenFromItem(title, envKey) {
-  const item = await readOpItem(title);
-  const value = await readOpFieldValue(item, envKey);
+  const injected = readInjectedFields([title], [envKey]);
+  const value = injected[envKey] || '';
   if (!value) {
     throw new Error(`Missing ${envKey} in token item ${title}`);
   }
@@ -1244,6 +1316,10 @@ function resolveRequiredPath(value, flagName) {
 
 function normalizeBaseUrl(value) {
   return String(value || '').replace(/\/$/, '');
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'\"'\"'`)}'`;
 }
 
 function readBooleanOption(value, fallback) {

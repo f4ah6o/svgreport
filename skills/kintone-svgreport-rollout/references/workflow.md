@@ -8,14 +8,19 @@ Do not invent alternate state files.
 The normal sequence is:
 
 1. `inspect-source`
-2. `clone-sandbox`
-3. `seed-sandbox`
-4. `scaffold-template`
-5. `prepare-mapping`
-6. Human confirms `template.json` and mapping artifacts
-7. `upload-draft`
-8. `verify-sandbox`
-9. `cutover-prod --confirm production`
+2. `scaffold-template`
+3. `prepare-mapping`
+4. Human confirms `template.json` and mapping artifacts
+5. `upload-draft`
+6. `verify-sandbox`
+7. `cutover-prod --confirm production`
+
+Optional isolation sequence:
+
+1. `clone-sandbox`
+2. `seed-sandbox`
+
+Insert those only when the development-stage rollout needs a separate verification app. Otherwise verify directly on the source app.
 
 ## Runtime assumptions
 
@@ -28,6 +33,7 @@ The normal sequence is:
 
 - Stop after `prepare-mapping` until the user confirms `template.json` render bindings and mapping output.
 - Stop before `cutover-prod` unless the command includes `--confirm production`.
+- When no sandbox exists, require an explicit verification record id or a saved `sampleRecordId` before `verify-sandbox`.
 
 ## Out of scope for v1
 
