@@ -1,7 +1,7 @@
 # SVG Paper - Justfile
 # タスクランナー設定
 
-KCC_DIR := env_var_or_default('KCC_DIR', '/home/f12o/src/kintone-control-center')
+KCC_DIR := env_var_or_default('KCC_DIR', '../../kintone-control-center')
 KINTONE_TMP_DIR := ".tmp/kintone"
 
 # デフォルトタスク

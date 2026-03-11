@@ -14,7 +14,8 @@ const SVGREPORT_DIR = path.resolve(SKILL_DIR, '..', '..');
 const ROOT_TMP_DIR = path.join(SVGREPORT_DIR, '.tmp', 'kintone-report-rollout');
 const DEFAULT_AUTH_ITEM = 'kintone開発者アカウント';
 const DEFAULT_REPORT_ENV_ITEM = 'kintone帳票';
-const DEFAULT_KCC_DIR = process.env.KCC_DIR || '/home/f12o/src/kintone-control-center';
+const DEFAULT_KCC_DIR =
+  process.env.KCC_DIR || path.resolve(SVGREPORT_DIR, '..', '..', 'kintone-control-center');
 const DEFAULT_REPORT_HOST = '127.0.0.1';
 const DEFAULT_REPORT_PORT = '8790';
 const REPORT_REQUESTED_BY = 'kintone-svgreport-rollout';
