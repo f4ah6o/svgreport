@@ -3,13 +3,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { SVGReportError } from '../types/index.js';
-import { createRenderer } from './renderer.js';
-import { parseSvg } from './svg-engine.js';
+import { createRenderer } from '../core/renderer.js';
+import { parseSvg } from '../core/svg-engine.js';
 import { KintoneJobQueue, type JobQueueConfig } from './kintone-job-queue.js';
 import { KintoneRestGateway, readAttachments, toMappingRecord, type KintoneApiConfig } from './kintone-rest.js';
 import { KintoneTemplateStore, type TemplateStoreConfig } from './kintone-template-store.js';
 import { mapRecordToReportData } from './report-mapping.js';
-import { generatePdfWithPlaywrightCli } from './pdf-playwright.js';
+import { generatePdfWithPlaywrightCli } from '../core/pdf-playwright.js';
 
 export interface ReportWorkerOptions {
   kintone: KintoneApiConfig;

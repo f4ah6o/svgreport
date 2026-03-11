@@ -147,6 +147,13 @@ src/
 │   ├── preview-generator.ts   # プレビュー生成（ダミーデータ）
 │   ├── html-writer.ts         # HTML生成
 │   └── zip-handler.ts         # ZIP読込
+├── kintone/
+│   ├── report-api-server.ts   # kintone連携向け帳票APIサーバー
+│   ├── report-worker.ts       # キューを処理してPDF生成/アップロード
+│   ├── kintone-rest.ts        # kintone REST APIラッパー
+│   ├── kintone-job-queue.ts   # ジョブキューApp操作
+│   ├── kintone-template-store.ts # 公開テンプレート解決
+│   └── report-mapping.ts      # kintoneレコード→帳票データ変換
 ├── types/
 │   └── index.ts               # 型定義
 ├── cli.ts                     # CLIエントリーポイント

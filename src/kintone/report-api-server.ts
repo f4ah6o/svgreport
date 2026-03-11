@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { createHash, randomUUID } from 'crypto';
-import { getReportJobValidator, getReportTemplateValidator } from './schema-registry.js';
+import { getReportJobValidator, getReportTemplateValidator } from '../core/schema-registry.js';
 import type { ReportJobRequestV1, ReportTemplateV1 } from '../types/reporting.js';
 import { KintoneJobQueue, type JobQueueConfig } from './kintone-job-queue.js';
 import { KintoneRestGateway, type KintoneApiConfig } from './kintone-rest.js';

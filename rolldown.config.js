@@ -9,7 +9,8 @@ export default defineConfig([
       sourcemap: true
     },
     platform: 'node',
-    target: 'node24'
+    target: 'node24',
+    external: ['@kintone/rest-api-client']
   },
   {
     input: 'src/index.ts',
@@ -19,7 +20,8 @@ export default defineConfig([
       sourcemap: true
     },
     platform: 'node',
-    target: 'node24'
+    target: 'node24',
+    external: ['@kintone/rest-api-client']
   },
   {
     input: 'src/core/text-inspector.test.ts',
@@ -29,16 +31,18 @@ export default defineConfig([
       sourcemap: true
     },
     platform: 'node',
-    target: 'node24'
+    target: 'node24',
+    external: ['@kintone/rest-api-client']
   },
   {
-    input: 'src/core/report-mapping.test.ts',
+    input: 'src/kintone/report-mapping.test.ts',
     output: {
-      file: 'dist/core/report-mapping.test.js',
+      file: 'dist/kintone/report-mapping.test.js',
       format: 'esm',
       sourcemap: true
     },
     platform: 'node',
-    target: 'node24'
+    target: 'node24',
+    external: ['@kintone/rest-api-client']
   }
 ])

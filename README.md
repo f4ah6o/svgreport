@@ -150,6 +150,13 @@ src/
 │   ├── preview-generator.ts   # Preview generation (dummy data)
 │   ├── html-writer.ts         # HTML generation
 │   └── zip-handler.ts         # ZIP loading
+├── kintone/
+│   ├── report-api-server.ts   # Report API server for kintone integration
+│   ├── report-worker.ts       # Queue worker to render/upload PDFs
+│   ├── kintone-rest.ts        # kintone REST gateway wrapper
+│   ├── kintone-job-queue.ts   # Job queue record operations
+│   ├── kintone-template-store.ts # Published template resolver
+│   └── report-mapping.ts      # kintone record -> report data mapping
 ├── types/
 │   └── index.ts               # Type definitions
 ├── cli.ts                     # CLI entry point

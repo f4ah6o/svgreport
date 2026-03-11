@@ -18,8 +18,8 @@ import { generatePreview } from './core/preview-generator.js';
 import { extractTextElements, analyzeTemplateSvgs, printTextReport, exportTextElementsJson } from './core/text-inspector.js';
 import { generateTemplate } from './core/template-generator.js';
 import { startRpcServer } from './core/rpc-server.js';
-import { startReportApiServer } from './core/report-api-server.js';
-import { startReportWorker } from './core/report-worker.js';
+import { startReportApiServer } from './kintone/report-api-server.js';
+import { startReportWorker } from './kintone/report-worker.js';
 
 const program = new Command();
 

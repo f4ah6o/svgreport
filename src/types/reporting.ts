@@ -1,4 +1,4 @@
-import type { TemplateConfig } from './index.js';
+type TemplateConfig = import('./index.js').TemplateConfig;
 
 export type ReportJobStatus =
   | 'QUEUED'
