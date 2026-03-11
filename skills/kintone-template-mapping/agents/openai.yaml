@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kintone Template Mapping"
+  short_description: "Configure kintone field mapping in template JSON"
+  default_prompt: "Locate and configure mapping.kv_bindings and mapping.table for kintone templates."
