@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` holds the TypeScript library and CLI. `src/cli.ts` is the entry; `src/core/` contains rendering pipeline modules.
+- `src/` holds the TypeScript library and CLI. `src/cli.ts` is the entry; `src/core/` contains rendering pipeline modules and `src/kintone/` contains kintone-specific API/queue/worker modules.
 - `src/schemas/` defines job/template JSON schemas; `src/types/` defines shared types.
 - `ui/` is a separate Preact + Vite app (build output in `ui/dist/`).
 - `templates/`, `test-templates/`, and `examples/` contain SVG templates and sample inputs. `dist/` is build output; `out/` is runtime output.
@@ -23,7 +23,7 @@
 ## Coding Style & Naming Conventions
 - Use ES module imports with explicit `.js` extensions (compiled output is ESM).
 - Indentation is 2 spaces; follow existing file layout and comment style.
-- Naming: `PascalCase` for types/classes, `camelCase` for functions/variables, `kebab-case` for filenames in `src/core/`.
+- Naming: `PascalCase` for types/classes, `camelCase` for functions/variables, `kebab-case` for filenames in `src/core/` and `src/kintone/`.
 
 ## Testing Guidelines
 - Tests run via `node --test` on built files. Add `*.test.ts` near the code they cover; ensure `pnpm build` emits `dist/**/*.test.js`.
